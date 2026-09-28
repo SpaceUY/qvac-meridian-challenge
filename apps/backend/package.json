@@ -1,0 +1,32 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.ts",
+    "basic-prompt": "OPENAI_API_KEY=\"aa\" tsx src/ai/orchestrator/meridianGraph.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.13.6",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.2.12",
+    "@langchain/langgraph": "^1.4.16",
+    "@langchain/openai": "^1.5.13",
+    "@qvac/sdk": "0.18.2",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "meridian-stock-tool": "^1.0.0"
+  }
+}
