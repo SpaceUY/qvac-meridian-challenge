@@ -1,0 +1,367 @@
+{
+  "info": {
+    "name": "Local Model Management",
+    "description": "Exercises the Local Model Management HTTP API (apps/backend/src/models/models.router.ts): registry discovery, setup/provisioning (downloadAsset, separate from load), the full loadModel -> inference -> unloadModel -> close lifecycle, and the centralized error-handling paths.\n\nRun requests top to bottom inside a folder. `modelId` is captured automatically from the Load responses into a collection variable, so Inference/Unload just reuse {{modelId}}.\n\nBefore running: start the backend with `npm run dev:server` (only one QVAC-backed process at a time - stop `model-lifecycle-demo` first if it's running, the SDK locks its local storage to a single process).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3001", "type": "string" },
+    {
+      "key": "registryPath",
+      "value": "unsloth/Qwen3-1.7B-GGUF/resolve/d7f544eead698dbd1f15126ef60b45a1e1933222/Qwen3-1.7B-Q4_0.gguf",
+      "type": "string",
+      "description": "Same model demo.ts targets - matches @qvac/sdk's QWEN3_1_7B_INST_Q4 catalog constant."
+    },
+    { "key": "registrySource", "value": "hf", "type": "string" },
+    {
+      "key": "httpModelUrl",
+      "value": "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_0.gguf",
+      "type": "string"
+    },
+    { "key": "modelId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0. Health",
+      "item": [
+        {
+          "name": "GET /api/ping",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/ping", "host": ["{{baseUrl}}"], "path": ["api", "ping"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Discovery",
+      "item": [
+        {
+          "name": "GET /api/models/registry (list all)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/models/registry", "host": ["{{baseUrl}}"], "path": ["api", "models", "registry"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has models array', () => Array.isArray(pm.response.json().models));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/models/registry (search Qwen3-1.7B)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/models/registry?filter=Qwen3-1.7B&engine=llamacpp-completion",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "models", "registry"],
+              "query": [
+                { "key": "filter", "value": "Qwen3-1.7B" },
+                { "key": "engine", "value": "llamacpp-completion" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Finds Qwen3-1.7B-Q4_0', () => {",
+                  "  const models = pm.response.json().models;",
+                  "  pm.expect(models.some(m => m.name === 'Qwen3-1.7B-Q4_0')).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Setup (provision - downloadAsset, no load into memory)",
+      "item": [
+        {
+          "name": "POST /api/models/provision (registry source)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source\": {\n    \"kind\": \"registry\",\n    \"registryPath\": \"{{registryPath}}\",\n    \"registrySource\": \"{{registrySource}}\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/models/provision", "host": ["{{baseUrl}}"], "path": ["api", "models", "provision"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('ok:true', () => pm.response.json().ok === true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/models/provision (HTTPS/HuggingFace source)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source\": {\n    \"kind\": \"url\",\n    \"url\": \"{{httpModelUrl}}\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/models/provision", "host": ["{{baseUrl}}"], "path": ["api", "models", "provision"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('ok:true', () => pm.response.json().ok === true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/models/provision (invalid body -> 400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source\": { \"kind\": \"registry\" }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/models/provision", "host": ["{{baseUrl}}"], "path": ["api", "models", "provision"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Load (should reuse the provisioned cache, not re-download)",
+      "item": [
+        {
+          "name": "POST /api/models/load (registry source)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source\": {\n    \"kind\": \"registry\",\n    \"registryPath\": \"{{registryPath}}\",\n    \"registrySource\": \"{{registrySource}}\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/models/load", "host": ["{{baseUrl}}"], "path": ["api", "models", "load"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Has modelId', () => typeof json.modelId === 'string' && json.modelId.length > 0);",
+                  "if (json.modelId) {",
+                  "  pm.collectionVariables.set('modelId', json.modelId);",
+                  "  console.log('modelId ->', json.modelId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Inference",
+      "item": [
+        {
+          "name": "POST /api/models/{{modelId}}/infer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"In one sentence, what is a local-first AI model?\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/models/{{modelId}}/infer",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "models", "{{modelId}}", "infer"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has text', () => typeof pm.response.json().text === 'string');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/models/{{modelId}}/infer (empty prompt -> 400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/models/{{modelId}}/infer",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "models", "{{modelId}}", "infer"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/models/no-existe/infer (unknown modelId -> 404)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"hola\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/models/no-existe/infer",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "models", "no-existe", "infer"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Unload",
+      "item": [
+        {
+          "name": "POST /api/models/{{modelId}}/unload",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/models/{{modelId}}/unload",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "models", "{{modelId}}", "unload"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('ok:true', () => pm.response.json().ok === true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/models/{{modelId}}/unload again (already unloaded -> 404)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/models/{{modelId}}/unload",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "models", "{{modelId}}", "unload"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Close",
+      "item": [
+        {
+          "name": "POST /api/models/close",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/models/close", "host": ["{{baseUrl}}"], "path": ["api", "models", "close"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('ok:true', () => pm.response.json().ok === true);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

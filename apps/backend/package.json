@@ -7,7 +7,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.ts",
-    "basic-prompt": "OPENAI_API_KEY=\"aa\" tsx src/ai/orchestrator/meridianGraph.ts"
+    "basic-prompt": "OPENAI_API_KEY=\"aa\" tsx src/ai/demo.ts",
+    "model-lifecycle-demo": "tsx src/models/demo.ts"
   },
   "keywords": [],
   "author": "",
