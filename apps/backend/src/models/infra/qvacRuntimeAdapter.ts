@@ -1,4 +1,15 @@
-import { close, completion, downloadAsset, loadModel, modelRegistryList, modelRegistrySearch, unloadModel } from '@qvac/sdk';
+import {
+  cancel,
+  close,
+  completion,
+  downloadAsset,
+  InferenceCancelledError,
+  loadModel,
+  modelRegistryList,
+  modelRegistrySearch,
+  unloadModel
+} from '@qvac/sdk';
+import { OperationCancelledError } from '../domain/errors.js';
 import type { ModelProvisioningPort, ModelRuntimePort } from '../domain/ports.js';
 import type {
   ChatCompletionRequest,
@@ -12,6 +23,7 @@ import type {
   RegistrySearchQuery
 } from '../domain/types.js';
 import { DEFAULT_MODEL_TYPE } from './qvacRuntimeAdapter.const.js';
+import { toSdkModelConfig } from './loadModelConfig.js';
 
 /**
  * The only file in this feature that imports `@qvac/sdk`. Translates
@@ -50,24 +62,42 @@ export class QvacRuntimeAdapter implements ModelProvisioningPort, ModelRuntimePo
     });
   }
 
-  async load(
+  /**
+   * `requestId` is available synchronously on `loadModel()`'s returned
+   * promise (`Promise<string> & { requestId: string }`, per the SDK's own
+   * type) - grabbed before the `await`/`.then()` so it's usable to cancel
+   * this exact load while it's still in flight.
+   */
+  load(
     source: ModelSource,
     options?: LoadModelOptions,
     onProgress?: (progress: ModelDownloadProgress) => void
-  ): Promise<LoadedModel> {
-    const modelId = await loadModel({
+  ): Promise<LoadedModel> & { requestId: string } {
+    const call = loadModel({
       modelSrc: toModelSrc(source),
       modelType: source.modelType ?? DEFAULT_MODEL_TYPE,
-      modelConfig: options && { ctx_size: options.ctxSize, tools: options.tools },
+      modelConfig: toSdkModelConfig(options),
       onProgress: toSdkProgressCallback(onProgress)
     });
-    return { modelId, source, loadedAt: new Date() };
+    const requestId = call.requestId;
+    const result = call
+      .then((modelId) => ({ modelId, source, loadedAt: new Date() }))
+      .catch((err: unknown) => {
+        throw toDomainError(requestId, err);
+      });
+    return Object.assign(result, { requestId });
   }
 
-  async infer(modelId: string, prompt: string): Promise<InferenceResult> {
+  /** Same synchronous-`requestId` convention as `load()`, off `completion()`'s own `CompletionRun.requestId`. */
+  infer(modelId: string, prompt: string): Promise<InferenceResult> & { requestId: string } {
     const run = completion({ modelId, history: [{ role: 'user', content: prompt }], stream: false });
-    const final = await run.final;
-    return { text: final.contentText };
+    const requestId = run.requestId;
+    const result = run.final
+      .then((final) => ({ text: final.contentText }))
+      .catch((err: unknown) => {
+        throw toDomainError(requestId, err);
+      });
+    return Object.assign(result, { requestId });
   }
 
   async chatComplete(modelId: string, request: ChatCompletionRequest): Promise<ChatCompletionResult> {
@@ -92,6 +122,18 @@ export class QvacRuntimeAdapter implements ModelProvisioningPort, ModelRuntimePo
 
   async close(): Promise<void> {
     await close();
+  }
+
+  /**
+   * Cancels by `requestId` (the primary path since SDK 0.11.0) - works for
+   * both an in-flight `load()` and an in-flight `infer()`, since both are
+   * registered against the same request registry server-side. Confirmed
+   * against the real SDK (see `qvac-local-lifecycle-lab`) that this
+   * resolves rather than rejecting for an unknown, already-settled, or
+   * already-cancelled `requestId`, so no pre-check is needed here.
+   */
+  async cancel(requestId: string): Promise<void> {
+    await cancel({ requestId });
   }
 }
 
@@ -129,6 +171,11 @@ function toRegistryModelSummary(entry: {
  * catalog (`dist/server/rpc/handlers/load-model/resolve.js`). Shared by
  * `load()` and `provision()` so the scheme is defined in exactly one place.
  */
+/** Translates the SDK's `InferenceCancelledError` (thrown for a cancelled load or inference alike) into the domain-level `OperationCancelledError`; passes any other error through unchanged. */
+function toDomainError(requestId: string, err: unknown): unknown {
+  return err instanceof InferenceCancelledError ? new OperationCancelledError(requestId) : err;
+}
+
 function toModelSrc(source: ModelSource): string {
   if (source.kind === 'url') return source.url;
   return `registry://${source.registrySource}/${source.registryPath}`;

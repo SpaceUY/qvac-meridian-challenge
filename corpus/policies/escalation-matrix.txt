@@ -1,0 +1,31 @@
+Meridian Components Inc. — Support Escalation Matrix
+Document ID: SUP-ESC-2026-002
+Effective: 1 June 2026
+Owner: Diego Morales, Head of Technical Support
+
+Priority definitions and contractual first-response SLAs
+(enterprise ControLink Suite / ServoDrive X4):
+
+  P1  Production down / safety interlock     First response: 4 hours
+  P2  Major feature impaired                 First response: 8 hours
+  P3  Minor defect / question                First response: 1 business day
+
+Internal escalation clocks (clock starts at ticket create / severity confirm):
+
+  P1  L1 -> L2 within 30 minutes
+      L2 -> Engineering within 2 hours
+      Page on-call if no L2 ack in 15 minutes
+
+  P2  L1 -> L2 within 2 hours
+      L2 -> Engineering within 8 hours
+
+  P3  Best effort; L2 review within 1 business day
+
+Regional notes:
+  - APAC follow-the-sun roster gap closed 15 June 2026
+    (addresses May P1 breaches on 3 May and 19 May).
+  - Q2 actual P1 mean first response: 2.6 hours (within SLA).
+
+Do not quote different SLA numbers in customer conversations.
+Source of truth for contractual SLA remains the enterprise MSA
+and the 8 June 2026 SLA reminder email.

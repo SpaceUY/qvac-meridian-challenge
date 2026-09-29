@@ -16,7 +16,11 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* Rutas cortas: '@/components/x' en vez de '../../components/x' */
+    "paths": { "@/*": ["./src/*"] },
+
     /* Linting */
+    "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,

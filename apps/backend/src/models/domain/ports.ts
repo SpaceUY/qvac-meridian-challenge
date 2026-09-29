@@ -33,14 +33,28 @@ export interface ModelProvisioningPort {
 export interface ModelRuntimePort {
   searchRegistry(query: RegistrySearchQuery): Promise<RegistryModelSummary[]>;
   listRegistry(): Promise<RegistryModelSummary[]>;
+  /**
+   * The returned promise carries a `requestId`, available synchronously
+   * before the load settles, so a caller can cancel it (`cancel()` below)
+   * while it's still in flight - mirrors the QVAC SDK's own
+   * `Promise<T> & { requestId: string }` convention for long-running calls.
+   */
   load(
     source: ModelSource,
     options?: LoadModelOptions,
     onProgress?: (progress: ModelDownloadProgress) => void
-  ): Promise<LoadedModel>;
-  infer(modelId: string, prompt: string): Promise<InferenceResult>;
+  ): Promise<LoadedModel> & { requestId: string };
+  /** Same `requestId`-carrying convention as `load()`, for cancelling an in-flight inference. */
+  infer(modelId: string, prompt: string): Promise<InferenceResult> & { requestId: string };
   /** Multi-turn chat completion with optional tool-calling, for chat-model consumers (e.g. `ChatQVAC`). */
   chatComplete(modelId: string, request: ChatCompletionRequest): Promise<ChatCompletionResult>;
   unload(modelId: string): Promise<void>;
   close(): Promise<void>;
+  /**
+   * Cancels the in-flight load or inference identified by `requestId`
+   * (as exposed by `load()`/`infer()`). Safe to call with a `requestId`
+   * that is unknown, already settled, or already cancelled - it resolves
+   * without throwing in all of those cases, same as the underlying SDK.
+   */
+  cancel(requestId: string): Promise<void>;
 }

@@ -1,0 +1,49 @@
+{
+  "documentId": "CS-HLTH-2026-Q2-007",
+  "asOf": "2026-06-30",
+  "watchlistThreshold": 40,
+  "accounts": [
+    {
+      "name": "Atlas Manufacturing",
+      "arrUsd": 2350000,
+      "healthScore": 72,
+      "region": "Americas",
+      "namedCsm": "Priya Nair",
+      "notes": "Kickoff 24 Jun 2026; Cincinnati go-live target 8 Aug 2026"
+    },
+    {
+      "name": "Pinnacle Foods",
+      "arrUsd": 620000,
+      "healthScore": 68,
+      "region": "Americas",
+      "namedCsm": "Jordan Blake (AE) / CS pool",
+      "notes": "Expansion +480000 ARR effective 1 Aug 2026; total ARR becomes 1100000"
+    },
+    {
+      "name": "Riverton Motors",
+      "arrUsd": 210000,
+      "healthScore": 38,
+      "region": "Americas",
+      "namedCsm": "Priya Nair",
+      "notes": "Watchlist; EBR scheduled 11 Jul 2026; adoption 2 of 5 lines"
+    },
+    {
+      "name": "Kelso Plastics",
+      "arrUsd": 165000,
+      "healthScore": 35,
+      "region": "EMEA",
+      "namedCsm": "CS pool",
+      "notes": "Watchlist; executive sponsor departed 8 Jun 2026"
+    },
+    {
+      "name": "Helix Robotics",
+      "arrUsd": 0,
+      "healthScore": null,
+      "region": "EMEA",
+      "namedCsm": null,
+      "notes": "Open pipeline OPP-90112; 910000 ARR; Stage 3; decision expected by 10 Jul 2026"
+    }
+  ],
+  "q2LogoChurnPercent": 3.1,
+  "companyNps": 47
+}

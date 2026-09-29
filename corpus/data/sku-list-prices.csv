@@ -1,0 +1,6 @@
+sku,product_name,revision,list_price_usd,unit,status_note
+SD-X4-001,ServoDrive X4,A,48500,per unit,Top Q2 line at 7.6M revenue; defect rate 0.4%
+CL-SUITE-SEAT,ControLink Suite,,1200,per seat / year,Q2 revenue 5.9M; multi-site package 8%
+CL-GW-REV-B,ControLink Gateway,B,6800,per unit,Preferred for July 2026 commits
+CL-GW-REV-C,ControLink Gateway,C,7200,per unit,CAPA-441; 1.9% defect; no ship promise before 15 Aug 2026 without Ops
+CL-PDM-SITE,Predictive maintenance module,,18000,per site / year,ControLink Suite add-on

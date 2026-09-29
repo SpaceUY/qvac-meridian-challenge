@@ -4,7 +4,15 @@
  * distinct from `inference`/`unload` actually failing on a loaded model -
  * the HTTP layer maps it to 404 instead of the other stages' 502.
  */
-export type ModelManagementStage = 'discovery' | 'download' | 'load' | 'inference' | 'unload' | 'close' | 'not-found';
+export type ModelManagementStage =
+  | 'discovery'
+  | 'download'
+  | 'load'
+  | 'inference'
+  | 'unload'
+  | 'close'
+  | 'cancel'
+  | 'not-found';
 
 /**
  * Single error type for the whole feature so callers (the HTTP layer, the
@@ -30,4 +38,21 @@ export function toModelManagementError(stage: ModelManagementStage, err: unknown
   if (err instanceof ModelManagementError) return err;
   const message = err instanceof Error ? err.message : String(err);
   return new ModelManagementError(stage, message, err);
+}
+
+/**
+ * Thrown by a `ModelRuntimePort` implementation when a load or inference
+ * settles because `cancel(requestId)` was called, as opposed to genuinely
+ * failing. Domain-level (not `@qvac/sdk`'s `InferenceCancelledError`) so
+ * `ModelManagementService` can tell "cancelled" apart from "failed" - see
+ * `getRequestStatus()` - without importing the SDK.
+ */
+export class OperationCancelledError extends Error {
+  readonly requestId: string;
+
+  constructor(requestId: string) {
+    super(`Operation "${requestId}" was cancelled`);
+    this.name = 'OperationCancelledError';
+    this.requestId = requestId;
+  }
 }

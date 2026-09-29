@@ -88,16 +88,16 @@ function toChatTool(tool: BindToolsInput): ChatTool {
 function toChatMessage(message: BaseMessage): ChatMessage {
   const role = QVAC_ROLE_BY_MESSAGE_TYPE[message.type] ?? "user";
 
-  // Tool-call turns carry no text content; serialize the calls so the model
-  // can see its own prior turn when the history is replayed.
-  if (
-    AIMessage.isInstance(message) &&
-    !message.text &&
-    message.tool_calls?.length
-  ) {
+  // Tool-call turns carry no dedicated field in `ChatMessage`; serialize
+  // them (alongside any accompanying text) so the model can see its own
+  // prior turn when the history is replayed.
+  if (AIMessage.isInstance(message) && message.tool_calls?.length) {
     return {
       role,
-      content: JSON.stringify({ tool_calls: message.tool_calls }),
+      content: JSON.stringify({
+        ...(message.text ? { text: message.text } : {}),
+        tool_calls: message.tool_calls,
+      }),
     };
   }
 
@@ -146,7 +146,7 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
     } as Partial<ChatQVACCallOptions>);
   }
 
-  private ensureModel(): Promise<string> {
+  async ensureModel(): Promise<string> {
     if (!this.modelIdPromise) {
       this.modelIdPromise = this.service
         .loadModel(this.modelSource, {
@@ -157,7 +157,11 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
           // latter, so this can't be deferred to bindTools()/_generate().
           tools: true,
         })
-        .then((loaded) => loaded.modelId);
+        .then((loaded) => loaded.modelId)
+        .catch((error: unknown) => {
+          this.modelIdPromise = undefined;
+          throw error;
+        });
     }
     return this.modelIdPromise;
   }

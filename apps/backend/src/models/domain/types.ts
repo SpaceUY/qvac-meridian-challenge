@@ -50,11 +50,32 @@ export interface InferenceResult {
   text: string;
 }
 
+export type ModelRequestState = 'pending' | 'succeeded' | 'failed' | 'cancelled';
+
+/**
+ * Observability for a load/inference started via `loadModel()`/`infer()`.
+ * Those return as soon as a `requestId` exists, without waiting for the
+ * operation to settle - `ModelManagementService.getRequestStatus()` (and
+ * `GET /requests/:requestId`) is how a caller later learns whether it
+ * succeeded, failed, or was cancelled.
+ */
+export interface ModelRequestStatus {
+  requestId: string;
+  kind: 'load' | 'inference';
+  state: ModelRequestState;
+  /** Present once a `load` succeeds, or always for `inference` (its input modelId, known upfront). */
+  modelId?: string;
+  /** Present once an `inference` succeeds. */
+  text?: string;
+}
+
 /** Extra load-time engine config. Kept separate from `ModelSource` because it configures the runtime, not where weights come from. */
 export interface LoadModelOptions {
   ctxSize?: number;
   /** Enables tool-call parsing for this model; some engines require opting in at load time regardless of whether a given request carries tools. */
   tools?: boolean;
+  /** Opaque per-engine load config (e.g. whisper's `language`/`detect_language`), merged as-is into the SDK's `modelConfig`. */
+  engineConfig?: Record<string, unknown>;
 }
 
 /** One turn of chat history, engine-agnostic. */

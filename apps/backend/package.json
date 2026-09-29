@@ -4,11 +4,14 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.ts",
     "basic-prompt": "OPENAI_API_KEY=\"aa\" tsx src/ai/demo.ts",
-    "model-lifecycle-demo": "tsx src/models/demo.ts"
+    "rag-demo": "tsx src/ai/ragDemo.ts",
+    "model-lifecycle-demo": "tsx src/models/demo.ts",
+    "speech-demo": "tsx src/speech/demo.ts"
   },
   "keywords": [],
   "author": "",
@@ -19,7 +22,8 @@
     "@types/express": "^5.0.6",
     "@types/node": "^24.13.6",
     "tsx": "^4.23.15",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.1"
   },
   "dependencies": {
     "@langchain/core": "^1.2.12",
