@@ -61,7 +61,17 @@ describe('readVoiceDeltas', () => {
     for await (const delta of readVoiceDeltas(sseBody([{ type: 'done', transcript: 'warranty?', citations }]))) {
       deltas.push(delta)
     }
-    expect(deltas).toEqual([{ type: 'done', transcript: 'warranty?', citations }])
+    expect(deltas).toEqual([{ type: 'done', transcript: 'warranty?', tools: [], citations }])
+  })
+
+  it('yields a done delta with the tools the agent used', async () => {
+    const deltas: VoiceDelta[] = []
+    for await (const delta of readVoiceDeltas(
+      sseBody([{ type: 'done', transcript: 'how many in stock?', tools: ['lookup_stock'], citations: [] }]),
+    )) {
+      deltas.push(delta)
+    }
+    expect(deltas).toEqual([{ type: 'done', transcript: 'how many in stock?', tools: ['lookup_stock'], citations: [] }])
   })
 
   it('yields an error delta', async () => {
@@ -79,6 +89,6 @@ describe('readVoiceDeltas', () => {
     )) {
       deltas.push(delta)
     }
-    expect(deltas).toEqual([{ type: 'done', transcript: 'hi', citations: [] }])
+    expect(deltas).toEqual([{ type: 'done', transcript: 'hi', tools: [], citations: [] }])
   })
 })

@@ -11,6 +11,7 @@ import {
   toRoleChunk,
   toTextChunk,
   toCitationsChunk,
+  toToolsChunk,
   toDoneChunk,
 } from "./chat.router.helpers.js";
 import { MAX_IMAGE_BYTES, MAX_IMAGES_PER_MESSAGE } from "./chat.router.const.js";
@@ -286,8 +287,8 @@ describe("wantsStream", () => {
 });
 
 describe("toCompletionResponse", () => {
-  it("builds a full chat.completion with citations on the message", () => {
-    expect(toCompletionResponse(ENVELOPE, "Q2 revenue was $18.4M.", CITATIONS)).toEqual({
+  it("builds a full chat.completion with citations and tools on the message", () => {
+    expect(toCompletionResponse(ENVELOPE, "Q2 revenue was $18.4M.", CITATIONS, ["lookup_stock"])).toEqual({
       id: "chatcmpl-test",
       created: 1790000000,
       model: "meridian-assistant",
@@ -295,7 +296,13 @@ describe("toCompletionResponse", () => {
       choices: [
         {
           index: 0,
-          message: { role: "assistant", content: "Q2 revenue was $18.4M.", refusal: null, citations: CITATIONS },
+          message: {
+            role: "assistant",
+            content: "Q2 revenue was $18.4M.",
+            refusal: null,
+            citations: CITATIONS,
+            tools: ["lookup_stock"],
+          },
           logprobs: null,
           finish_reason: "stop",
         },
@@ -306,7 +313,12 @@ describe("toCompletionResponse", () => {
 
 describe("stream chunks", () => {
   it("wraps every delta in a chat.completion.chunk that shares the envelope", () => {
-    for (const event of [toRoleChunk(ENVELOPE), toTextChunk(ENVELOPE, "Hi"), toCitationsChunk(ENVELOPE, CITATIONS)]) {
+    for (const event of [
+      toRoleChunk(ENVELOPE),
+      toTextChunk(ENVELOPE, "Hi"),
+      toToolsChunk(ENVELOPE, ["lookup_stock"]),
+      toCitationsChunk(ENVELOPE, CITATIONS),
+    ]) {
       expect(event.startsWith("data: ")).toBe(true);
       expect(event.endsWith("\n\n")).toBe(true);
       const chunk = parseEvent(event);
@@ -315,9 +327,12 @@ describe("stream chunks", () => {
     }
   });
 
-  it("carries the role first, then content, then citations", () => {
+  it("carries the role first, then content, then tools, then citations", () => {
     expect(parseEvent(toRoleChunk(ENVELOPE)).choices[0].delta).toEqual({ role: "assistant", content: "" });
     expect(parseEvent(toTextChunk(ENVELOPE, "Hi")).choices[0].delta).toEqual({ content: "Hi" });
+    expect(parseEvent(toToolsChunk(ENVELOPE, ["lookup_stock"])).choices[0].delta).toEqual({
+      tools: ["lookup_stock"],
+    });
     expect(parseEvent(toCitationsChunk(ENVELOPE, CITATIONS)).choices[0].delta).toEqual({ citations: CITATIONS });
   });
 

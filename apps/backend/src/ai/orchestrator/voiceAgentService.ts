@@ -20,6 +20,8 @@ export interface VoiceInvokeResult {
   thinkingText?: string;
   /** RAG chunks retrieved for this turn and passed to the model as grounding context. */
   chunks: RetrievedChunk[];
+  /** Same tool-usage list AgentService computed for this turn. */
+  toolsUsed: string[];
   /** Same citations AgentService computed for this turn - voice and text answers cite identically. */
   citations: Citation[];
   /** Undefined when TTS synthesis fails — the turn still succeeds as text-only. */
@@ -40,6 +42,7 @@ export interface VoiceStreamResult {
   answer: string;
   thinkingText?: string;
   chunks: RetrievedChunk[];
+  toolsUsed: string[];
   citations: Citation[];
 }
 
@@ -92,6 +95,7 @@ export class VoiceAgentService {
       answer,
       thinkingText: result.thinkingText,
       chunks: result.chunks,
+      toolsUsed: result.toolsUsed,
       citations: result.citations,
       ...synthesis,
     };
@@ -146,6 +150,7 @@ export class VoiceAgentService {
       answer,
       thinkingText: result.thinkingText,
       chunks: result.chunks,
+      toolsUsed: result.toolsUsed,
       citations: result.citations,
     };
   }

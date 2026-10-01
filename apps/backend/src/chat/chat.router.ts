@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import type { AgentService } from "../ai/orchestrator/agentService.js";
 import { EmptyTranscriptError, type VoiceAgentService } from "../ai/orchestrator/voiceAgentService.js";
+import type { ReadinessService } from "../health/readinessService.js";
 import {
   parseMessages,
   parseHistory,
@@ -13,6 +14,7 @@ import {
   toRoleChunk,
   toTextChunk,
   toCitationsChunk,
+  toToolsChunk,
   toDoneChunk,
   toVoiceAudioChunk,
   toVoiceDoneChunk,
@@ -31,12 +33,15 @@ import {
   SESSION_ID_PATTERN,
 } from "./chat.router.const.js";
 
-/** `GET /status` + `POST /preload` + `POST /preload/cancel` + `DELETE /sessions/:sessionId/cache`, mounted at `/api/chat` in server.ts. */
-export function createChatStatusRouter(agentService: AgentService): Router {
+/** `GET /status` + `POST /preload` + `POST /preload/cancel` + `DELETE /sessions/:sessionId/cache`, mounted at `/api/chat` in server.ts. `readiness` is narrowed to just `check()` so a test can pass a plain fake instead of a real ReadinessService. */
+export function createChatStatusRouter(
+  agentService: AgentService,
+  readiness: Pick<ReadinessService, "check">,
+): Router {
   const router = Router();
 
   router.get("/status", (_req: Request, res: Response) => {
-    res.json(agentService.getStatus());
+    res.json({ ...agentService.getStatus(), embeddingReady: readiness.check().embeddingReady });
   });
 
   // Fire-and-forget: the caller polls /status for progress instead of
@@ -106,7 +111,7 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
       try {
         const options = { ...parseGenerationOptions(req.body), sessionId: req.header("X-Meridian-Session") };
         const result = await agent.invoke(messages, options);
-        res.json(toCompletionResponse(envelope, result.answer, result.citations));
+        res.json(toCompletionResponse(envelope, result.answer, result.citations, result.toolsUsed));
       } catch (err) {
         console.error("[chat:completions]", err);
         res.status(500).json({ error: COMPLETION_ERROR });
@@ -144,6 +149,10 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
 
     try {
       const result = await pending;
+      // Tools before citations: both are "final metadata", tools names WHY
+      // (what ran) while citations names WHAT (which sources), in the same
+      // order a person would want to read them.
+      res.write(toToolsChunk(envelope, result.toolsUsed));
       // Last, once the answer is final: whether to cite at all depends on
       // what the model said (see selectCitations).
       res.write(toCitationsChunk(envelope, result.citations));
@@ -197,6 +206,7 @@ export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatu
         res.json({
           transcript: result.transcript,
           answer: result.answer,
+          tools: result.toolsUsed,
           citations: result.citations,
           ...(result.audio ? { audioBase64: result.audio.toString("base64"), sampleRate: result.sampleRate } : {}),
         });
@@ -228,7 +238,7 @@ export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatu
           }),
         );
       });
-      res.write(toVoiceDoneChunk(envelope, { transcript: result.transcript, citations: result.citations }));
+      res.write(toVoiceDoneChunk(envelope, { transcript: result.transcript, toolsUsed: result.toolsUsed, citations: result.citations }));
     } catch (err) {
       if (err instanceof EmptyTranscriptError) {
         res.write(toVoiceErrorChunk(envelope, EMPTY_TRANSCRIPT_ERROR));

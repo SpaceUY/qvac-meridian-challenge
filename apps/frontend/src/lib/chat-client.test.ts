@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { deleteSessionCache, EngineError, parseCitations, readDeltas, type ChatDelta } from '@/lib/chat-client'
+import { deleteSessionCache, EngineError, parseCitations, parseTools, readDeltas, type ChatDelta } from '@/lib/chat-client'
 
 /** A body shaped like the backend's stream: strict chat.completion.chunk events, then [DONE]. */
 function sseBody(deltas: object[]): ReadableStream<Uint8Array> {
@@ -17,13 +17,31 @@ function sseBody(deltas: object[]): ReadableStream<Uint8Array> {
 }
 
 describe('readDeltas', () => {
-  it('reads the text and the final citations chunk, skipping the role-only chunk', async () => {
+  it('reads the text, tools, and final citations chunk, skipping the role-only chunk', async () => {
     const citations = [{ file: 'reports/q2.md', score: 0.83 }]
+    const tools = ['lookup_stock']
     const deltas: ChatDelta[] = []
-    for await (const delta of readDeltas(sseBody([{ role: 'assistant', content: '' }, { content: 'Hi' }, { citations }, {}]))) {
+    for await (const delta of readDeltas(
+      sseBody([{ role: 'assistant', content: '' }, { content: 'Hi' }, { tools }, { citations }, {}]),
+    )) {
       deltas.push(delta)
     }
-    expect(deltas).toEqual([{ text: 'Hi', citations: undefined }, { text: undefined, citations }])
+    expect(deltas).toEqual([
+      { text: 'Hi', tools: undefined, citations: undefined },
+      { text: undefined, tools, citations: undefined },
+      { text: undefined, tools: undefined, citations },
+    ])
+  })
+})
+
+describe('parseTools', () => {
+  it('keeps only string entries', () => {
+    expect(parseTools(['lookup_stock', 42, 'list_documents', null])).toEqual(['lookup_stock', 'list_documents'])
+  })
+
+  it('returns an empty array for anything that is not an array', () => {
+    expect(parseTools(undefined)).toEqual([])
+    expect(parseTools('lookup_stock')).toEqual([])
   })
 })
 

@@ -10,6 +10,11 @@ export type CorpusDocument = {
   /** Backend DocumentType ("POLICIES", "EMAIL", …). A string on purpose: a type added later must not break the parser. */
   type: string
   format: string
+  /** Backend DocumentStatus ("ACTIVE", "ARCHIVED"). */
+  status: string
+  tags: string[]
+  /** ISO 8601. */
+  updatedAt: string
 }
 
 export async function fetchDocuments(): Promise<CorpusDocument[]> {
@@ -19,7 +24,9 @@ export async function fetchDocuments(): Promise<CorpusDocument[]> {
   const documents = isObject(body) && Array.isArray(body.documents) ? body.documents : []
   // Keeps only well-formed entries (same policy as parseCitations), and only
   // the fields the UI shows.
-  return documents.filter(isCorpusDocument).map(({ id, title, type, format }) => ({ id, title, type, format }))
+  return documents
+    .filter(isCorpusDocument)
+    .map(({ id, title, type, format, status, tags, updatedAt }) => ({ id, title, type, format, status, tags, updatedAt }))
 }
 
 function isCorpusDocument(v: unknown): v is CorpusDocument {
@@ -29,6 +36,10 @@ function isCorpusDocument(v: unknown): v is CorpusDocument {
     typeof v.title === 'string' &&
     v.title !== '' &&
     typeof v.type === 'string' &&
-    typeof v.format === 'string'
+    typeof v.format === 'string' &&
+    typeof v.status === 'string' &&
+    Array.isArray(v.tags) &&
+    v.tags.every((tag) => typeof tag === 'string') &&
+    typeof v.updatedAt === 'string'
   )
 }

@@ -21,7 +21,7 @@ import { EMPTY_TRANSCRIPT_ERROR } from "./chat.router.const.js";
  * request open long enough to abort it client-side and observe the
  * server's reaction, without a real model/graph.
  */
-const FAKE_INVOKE_RESULT: InvokeResult = { answer: "ok", chunks: [], citations: [] };
+const FAKE_INVOKE_RESULT: InvokeResult = { answer: "ok", chunks: [], toolsUsed: [], citations: [] };
 
 class FakeAgentService {
   readonly cancelledRequestIds: string[] = [];
@@ -32,7 +32,14 @@ class FakeAgentService {
   resolveWith?: InvokeResult;
 
   getStatus(): AgentStatusPayload {
-    return { status: "ready", model: { name: "fake", quantization: "q4" }, hardwareTier: "low", recovering: false };
+    return {
+      status: "ready",
+      model: { name: "fake", quantization: "q4" },
+      hardwareTier: "low",
+      recovering: false,
+      sttModel: "fake-stt",
+      ttsModel: "fake-tts",
+    };
   }
 
   invoke(
@@ -134,6 +141,51 @@ describe("POST /completions - client disconnect", () => {
   });
 });
 
+/** Always-ready readiness fake, reused by every `createChatStatusRouter()` call site in this file that isn't testing readiness itself. */
+const fakeReadiness = { check: () => ({ ready: true, chatStatus: "ready" as const, embeddingReady: true }) };
+
+describe("GET /status", () => {
+  let server: http.Server | undefined;
+
+  afterEach(() => {
+    server?.close();
+    server = undefined;
+  });
+
+  it("merges embeddingReady from the readiness source into the agent's own status", async () => {
+    const fakeAgentService = new FakeAgentService();
+    const readiness = { check: () => ({ ready: true, chatStatus: "ready" as const, embeddingReady: true }) };
+    const app = express();
+    app.use("/api/chat", createChatStatusRouter(fakeAgentService as unknown as AgentService, readiness));
+
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/chat/status`);
+    const body = (await response.json()) as { status: string; embeddingReady: boolean };
+
+    expect(body.status).toBe("ready");
+    expect(body.embeddingReady).toBe(true);
+  });
+
+  it("reports embeddingReady: false while the embedding model is still warming up", async () => {
+    const fakeAgentService = new FakeAgentService();
+    const readiness = { check: () => ({ ready: false, chatStatus: "ready" as const, embeddingReady: false }) };
+    const app = express();
+    app.use("/api/chat", createChatStatusRouter(fakeAgentService as unknown as AgentService, readiness));
+
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/chat/status`);
+    const body = (await response.json()) as { embeddingReady: boolean };
+
+    expect(body.embeddingReady).toBe(false);
+  });
+});
+
 describe("POST /preload/cancel", () => {
   let server: http.Server | undefined;
 
@@ -145,7 +197,7 @@ describe("POST /preload/cancel", () => {
   it("cancels the model load in progress", async () => {
     const fakeAgentService = new FakeAgentService();
     const app = express();
-    app.use("/api/chat", createChatStatusRouter(fakeAgentService as unknown as AgentService));
+    app.use("/api/chat", createChatStatusRouter(fakeAgentService as unknown as AgentService, fakeReadiness));
 
     server = app.listen(0);
     await new Promise<void>((resolve) => server!.once("listening", resolve));
@@ -161,7 +213,7 @@ describe("POST /preload/cancel", () => {
     const fakeAgentService = new FakeAgentService();
     fakeAgentService.cancelPreloadShouldFail = true;
     const app = express();
-    app.use("/api/chat", createChatStatusRouter(fakeAgentService as unknown as AgentService));
+    app.use("/api/chat", createChatStatusRouter(fakeAgentService as unknown as AgentService, fakeReadiness));
 
     server = app.listen(0);
     await new Promise<void>((resolve) => server!.once("listening", resolve));
@@ -184,7 +236,7 @@ describe("DELETE /sessions/:sessionId/cache", () => {
 
   async function startServer(fakeAgentService: FakeAgentService): Promise<number> {
     const app = express();
-    app.use("/api/chat", createChatStatusRouter(fakeAgentService as unknown as AgentService));
+    app.use("/api/chat", createChatStatusRouter(fakeAgentService as unknown as AgentService, fakeReadiness));
     server = app.listen(0);
     await new Promise<void>((resolve) => server!.once("listening", resolve));
     return (server.address() as AddressInfo).port;
@@ -228,12 +280,12 @@ const QUESTION = [{ role: "user" as const, content: "What was Q2 2026 revenue?" 
 
 /** Orchestrator stand-in: streams the answer in two deltas, like the real one streams tokens. */
 const fakeAgent: CompletionAgent = {
-  getStatus: () => ({ status: "ready", model: { name: "fake", quantization: "none" }, hardwareTier: "low", recovering: false }),
+  getStatus: () => ({ status: "ready", model: { name: "fake", quantization: "none" }, hardwareTier: "low", recovering: false, sttModel: "fake-stt", ttsModel: "fake-tts" }),
   invoke: (_messages, _options, onToken) => {
     const promise = (async () => {
       onToken?.("Q2 2026 total revenue ");
       onToken?.("was $18.4M.");
-      return { answer: ANSWER, chunks: [], citations: CITATIONS };
+      return { answer: ANSWER, chunks: [], toolsUsed: [], citations: CITATIONS };
     })();
     return Object.assign(promise, { requestId: "req-fake" });
   },
@@ -241,10 +293,10 @@ const fakeAgent: CompletionAgent = {
 };
 
 const fakeVoiceAgent: VoiceAgent = {
-  invoke: async () => ({ transcript: "What was Q2 revenue?", answer: ANSWER, chunks: [], citations: CITATIONS }),
+  invoke: async () => ({ transcript: "What was Q2 revenue?", answer: ANSWER, chunks: [], toolsUsed: [], citations: CITATIONS }),
   invokeStreaming: async (_history, _audio, onChunk) => {
     await onChunk({ text: ANSWER });
-    return { transcript: "What was Q2 revenue?", answer: ANSWER, chunks: [], citations: CITATIONS };
+    return { transcript: "What was Q2 revenue?", answer: ANSWER, chunks: [], toolsUsed: [], citations: CITATIONS };
   },
 };
 
@@ -309,6 +361,37 @@ describe("POST /v1/chat/completions - contract with the stock OpenAI SDK", () =>
   });
 });
 
+describe("POST /v1/chat/completions - tools", () => {
+  it("carries which tools the agent used on the final message, when the fake agent reports one", async () => {
+    const toolAgent: CompletionAgent = {
+      ...fakeAgent,
+      invoke: (_messages, _options, onToken) => {
+        const promise = (async () => {
+          onToken?.(ANSWER);
+          return { answer: ANSWER, chunks: [], toolsUsed: ["lookup_stock"], citations: CITATIONS };
+        })();
+        return Object.assign(promise, { requestId: "req-tools" });
+      },
+    };
+    const app = express();
+    app.use(express.json());
+    app.use("/v1/chat", createCompletionsRouter(toolAgent));
+    const server = app.listen(0);
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const res = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: QUESTION, stream: false }),
+    });
+    const body = (await res.json()) as { choices: [{ message: { tools?: unknown } }] };
+
+    expect(body.choices[0].message.tools).toEqual(["lookup_stock"]);
+    server.close();
+  });
+});
+
 describe("POST /v1/chat/voice-completions", () => {
   it("returns the same citations array as the text endpoint", async () => {
     const res = await fetch(`${client.baseURL}/chat/voice-completions`, {
@@ -321,6 +404,35 @@ describe("POST /v1/chat/voice-completions", () => {
     // Node's fetch types `json()` as `Promise<unknown>`: narrow before reading a field, or `tsc` fails.
     const body = (await res.json()) as { citations?: unknown };
     expect(body.citations).toEqual(CITATIONS);
+  });
+
+  it("carries which tools the agent used, when the voice agent reports one", async () => {
+    const toolVoiceAgent: VoiceAgent = {
+      invoke: async () => ({
+        transcript: "How many SD-X4-001 in stock?",
+        answer: ANSWER,
+        chunks: [],
+        toolsUsed: ["lookup_stock"],
+        citations: CITATIONS,
+      }),
+      invokeStreaming: fakeVoiceAgent.invokeStreaming,
+    };
+    const app = express();
+    app.use(express.json());
+    app.use("/v1/chat", createVoiceCompletionsRouter(fakeAgent, toolVoiceAgent));
+    const server = app.listen(0);
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const res = await fetch(`http://127.0.0.1:${port}/v1/chat/voice-completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [], audioBase64: Buffer.from("fake-wav").toString("base64") }),
+    });
+    const body = (await res.json()) as { tools?: unknown };
+
+    expect(body.tools).toEqual(["lookup_stock"]);
+    server.close();
   });
 });
 
@@ -356,7 +468,7 @@ describe("POST /v1/chat/voice-completions - stream: true", () => {
       invokeStreaming: async (_history, _audio, onChunk) => {
         await onChunk({ text: "Q2 2026 total revenue ", audio: Buffer.from("chunk1"), sampleRate: 24000 });
         await onChunk({ text: "was $18.4M." });
-        return { transcript: "What was Q2 revenue?", answer: ANSWER, chunks: [], citations: CITATIONS };
+        return { transcript: "What was Q2 revenue?", answer: ANSWER, chunks: [], toolsUsed: [], citations: CITATIONS };
       },
     });
 
@@ -383,6 +495,7 @@ describe("POST /v1/chat/voice-completions - stream: true", () => {
     expect(events[2]).toMatchObject({
       type: "done",
       transcript: "What was Q2 revenue?",
+      tools: [],
       citations: CITATIONS,
     });
   });

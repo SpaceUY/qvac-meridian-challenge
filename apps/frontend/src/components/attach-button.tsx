@@ -29,7 +29,6 @@ export function AttachButton({ disabled = false, onFilesSelected }: Props) {
         ref={inputRef}
         type="file"
         accept={ACCEPTED_FILE_INPUT_ACCEPT}
-        multiple
         hidden
         onChange={(e) => {
           const files = Array.from(e.target.files ?? [])

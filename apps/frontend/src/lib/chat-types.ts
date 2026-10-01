@@ -27,6 +27,8 @@ export type Message = {
   role: Role
   text: string
   citations: Citation[]
+  /** Names of tools (e.g. "lookup_stock") the agent used to produce this reply. Empty for a user message and for an assistant reply that used none. */
+  tools: string[]
   status: MessageStatus
   /** Present only on assistant messages from a voice turn - one entry per synthesized sentence, appended as they stream in. A sentence whose synthesis failed server-side contributes no entry, but doesn't stop the others. */
   audioChunks?: { dataUrl: string }[]

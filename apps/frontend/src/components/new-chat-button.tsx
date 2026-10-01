@@ -19,7 +19,7 @@ export function NewChatButton() {
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button variant="ghost" className="w-full justify-start gap-2 px-2" disabled={isEmpty}>
+        <Button variant="outline" className="h-10 w-full justify-start gap-2.5 px-3" disabled={isEmpty}>
           <SquarePen className="size-4" />
           New chat
         </Button>

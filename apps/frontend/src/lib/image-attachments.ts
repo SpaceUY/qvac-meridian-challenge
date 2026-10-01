@@ -48,13 +48,16 @@ export function buildImageAttachments(files: File[], existing: ImageAttachment[]
   if (files.length === 0) return { attachments: [] }
 
   const unsupported = files.find((file) => !ACCEPTED_MIME_TYPES.has(file.type))
-  if (unsupported) return { attachments: [], error: 'Only JPEG or PNG images are supported' }
+  if (unsupported) return { attachments: [], error: 'Unsupported image format' }
 
   const oversized = files.find((file) => file.size > MAX_IMAGE_BYTES)
   if (oversized) return { attachments: [], error: `Image is too large (max ${MAX_IMAGE_BYTES / (1024 * 1024)}MB)` }
 
   if (existing.length + files.length > MAX_IMAGES_PER_MESSAGE) {
-    return { attachments: [], error: `You can attach up to ${MAX_IMAGES_PER_MESSAGE} images` }
+    return {
+      attachments: [],
+      error: `Only ${MAX_IMAGES_PER_MESSAGE} image${MAX_IMAGES_PER_MESSAGE === 1 ? '' : 's'} per message is supported`,
+    }
   }
 
   const existingBytes = existing.reduce((sum, a) => sum + a.file.size, 0)

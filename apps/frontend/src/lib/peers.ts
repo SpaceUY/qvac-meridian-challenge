@@ -1,4 +1,4 @@
-import type { DelegationInfo } from '@/lib/model-status-client'
+import type { DelegationInfo, ProviderHealth } from '@/lib/model-status-client'
 
 /** A comparable snapshot of delegation state at one point in time - what `classifyDelegationTransition` diffs against the previous one. */
 export type DelegationSnapshot = { isDelegated: boolean; recovering: boolean }
@@ -29,4 +29,30 @@ export function classifyDelegationTransition(
     return current.isDelegated ? 'reconnected' : 'fell-back-to-local'
   }
   return null
+}
+
+/** What the sidebar's Peers section says. Built on countAvailablePeers so the number and the words can never disagree. */
+export type PeersView = { count: number; title: string; detail: string }
+
+export function describePeers(delegation: DelegationInfo | undefined): PeersView {
+  const count = countAvailablePeers(delegation)
+  if (count === 0) return { count, title: 'No peers connected', detail: 'Running on this device only' }
+  return { count, title: `${count} ${count === 1 ? 'peer' : 'peers'} connected`, detail: 'Inference is delegated over P2P' }
+}
+
+/** The heartbeat line under Peers: short label on screen, the detail in a native tooltip. */
+export type ProviderHealthView = { up: boolean; label: string; tooltip: string }
+
+export function describeProviderHealth(health: ProviderHealth): ProviderHealthView {
+  if (health.state === 'down') {
+    const n = health.consecutiveFailures
+    return { up: false, label: 'Down', tooltip: `${n} consecutive failed heartbeat${n === 1 ? '' : 's'}` }
+  }
+  const latency = health.lastLatencyMs !== undefined ? `${health.lastLatencyMs}ms` : undefined
+  const at = health.lastSuccessAt ? ` at ${new Date(health.lastSuccessAt).toLocaleTimeString()}` : ''
+  return {
+    up: true,
+    label: latency ? `Healthy — ${latency}` : 'Healthy',
+    tooltip: `Last heartbeat ${latency ?? 'succeeded'}${at}`,
+  }
 }

@@ -241,15 +241,20 @@ export function wantsStream(body: unknown): boolean {
   return isRecord(body) && body.stream === true;
 }
 
-/** The `stream: false` response: a whole `chat.completion`. `citations` sits on the message - where the evaluator reads it. */
-export function toCompletionResponse(envelope: CompletionEnvelope, answer: string, citations: Citation[]) {
+/** The `stream: false` response: a whole `chat.completion`. `citations` sits on the message - where the evaluator reads it. `tools` is a separate, additive field (not part of the evaluator's contract) naming which tools the agent used this turn. */
+export function toCompletionResponse(
+  envelope: CompletionEnvelope,
+  answer: string,
+  citations: Citation[],
+  tools: string[],
+) {
   return {
     ...envelope,
     object: "chat.completion",
     choices: [
       {
         index: 0,
-        message: { role: "assistant", content: answer, refusal: null, citations },
+        message: { role: "assistant", content: answer, refusal: null, citations, tools },
         logprobs: null,
         finish_reason: "stop",
       },
@@ -257,7 +262,7 @@ export function toCompletionResponse(envelope: CompletionEnvelope, answer: strin
   };
 }
 
-type StreamDelta = { role?: "assistant"; content?: string; citations?: Citation[] };
+type StreamDelta = { role?: "assistant"; content?: string; tools?: string[]; citations?: Citation[] };
 
 /** One `chat.completion.chunk` as an SSE event. */
 function toChunkEvent(envelope: CompletionEnvelope, delta: StreamDelta, finishReason: "stop" | null = null): string {
@@ -276,6 +281,11 @@ export function toRoleChunk(envelope: CompletionEnvelope): string {
 
 export function toTextChunk(envelope: CompletionEnvelope, text: string): string {
   return toChunkEvent(envelope, { content: text });
+}
+
+/** One extra content chunk naming which tools the agent used this turn, sent once the answer is final (right before the citations chunk) - empty array when none were used, so "none" is explicit, same convention as toCitationsChunk. */
+export function toToolsChunk(envelope: CompletionEnvelope, tools: string[]): string {
+  return toChunkEvent(envelope, { tools });
 }
 
 /** The last content chunk, sent once the answer is final (what to cite depends on it). Sent even when empty, so "none" is explicit. */
@@ -301,12 +311,12 @@ export function toVoiceAudioChunk(
   return toVoiceEvent(envelope, { type: "audio", ...chunk });
 }
 
-/** The closing event on a successful turn: full transcript + citations, then the SSE terminator. */
+/** The closing event on a successful turn: full transcript + tools + citations, then the SSE terminator. */
 export function toVoiceDoneChunk(
   envelope: CompletionEnvelope,
-  payload: { transcript: string; citations: Citation[] },
+  payload: { transcript: string; toolsUsed: string[]; citations: Citation[] },
 ): string {
-  return `${toVoiceEvent(envelope, { type: "done", ...payload })}data: [DONE]\n\n`;
+  return `${toVoiceEvent(envelope, { type: "done", transcript: payload.transcript, tools: payload.toolsUsed, citations: payload.citations })}data: [DONE]\n\n`;
 }
 
 /** Sent instead of `toVoiceDoneChunk` when the turn fails after SSE headers are already committed (so a JSON 4xx/5xx is no longer possible) - includes the SSE terminator. */
