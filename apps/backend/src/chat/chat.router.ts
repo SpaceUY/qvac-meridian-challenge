@@ -48,18 +48,44 @@ export function createCompletionsRouter(agentService: AgentService): Router {
     }
 
     res.writeHead(200, SSE_HEADERS);
-    try {
-      // NOTE: chunks (the RAG citations) aren't wired into the SSE response
-      // yet — pending, see the team doc on the citations format.
-      await agentService.invoke(messages, (textDelta) => {
-        res.write(toTextChunk(textDelta));
+    // `writeHead()` alone doesn't put headers on the wire - Node buffers
+    // them until the first `write()`. Flush now so the client's connection
+    // is actually established (and abortable) before the first token,
+    // which may be seconds away.
+    res.flushHeaders();
+    // NOTE: chunks (the RAG citations) aren't wired into the SSE response
+    // yet — pending, see the team doc on the citations format.
+    const pending = agentService.invoke(messages, (textDelta) => {
+      res.write(toTextChunk(textDelta));
+    });
+
+    // OpenAI's API has no dedicated cancel endpoint for chat completions -
+    // a client cancels a streaming request by closing the connection, and
+    // the server is expected to stop generating rather than keep running
+    // for a response nobody reads. `res`'s `close` event fires both on a
+    // normal completion and on the client hanging up early; `writableEnded`
+    // tells them apart (it's only true once this handler's own `res.end()`
+    // below has run), so a normal completion never calls cancel() on its
+    // own already-settled requestId.
+    const cancelOnDisconnect = () => {
+      if (res.writableEnded) return;
+      agentService.cancel(pending.requestId).catch((err: unknown) => {
+        console.error("[chat:completions:cancel]", err);
       });
+    };
+    res.on("close", cancelOnDisconnect);
+
+    try {
+      await pending;
     } catch (err) {
       console.error("[chat:completions]", err);
-      res.write(toTextChunk(COMPLETION_ERROR));
+      if (!res.writableEnded && !res.destroyed) res.write(toTextChunk(COMPLETION_ERROR));
     } finally {
-      res.write(toDoneChunk());
-      res.end();
+      res.off("close", cancelOnDisconnect);
+      if (!res.writableEnded && !res.destroyed) {
+        res.write(toDoneChunk());
+        res.end();
+      }
     }
   });
 
