@@ -51,6 +51,10 @@ class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
     return { text: "ok", toolCalls: [] };
   }
 
+  async embed(_modelId: string, texts: string[]): Promise<number[][]> {
+    return texts.map(() => [1]);
+  }
+
   async unload() {}
 
   async close() {}

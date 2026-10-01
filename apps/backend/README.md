@@ -33,8 +33,7 @@ src/
       ports.ts
       errors.ts
     infra/
-      qvacRuntimeAdapter.ts    The ONLY file that imports @qvac/sdk
-      qvacRuntimeAdapter.const.ts
+      qvacRuntimeAdapter.ts    The ONLY file that imports @qvac/sdk for runtime calls
     service/
       models.service.ts        Orchestrates the lifecycle, owns "what's loaded" state
       models.service.const.ts
@@ -124,8 +123,53 @@ export default { cacheDirectory: path.join(repoRoot, '.qvac-cache') };
 
 Nothing to edit per developer/machine/OS — it resolves correctly wherever the repo is cloned. The directory itself is gitignored; weights are never committed.
 
+## Local Text-to-Speech (TTS)
+
+### Architecture
+
+Same layering as [Local Model Management](#local-model-management):
+
+```
+router/   HTTP concerns only: read req, validate/parse, call the service, map errors to status codes
+service/  Business logic: a single "current synthesis" slot (no queue), reuses ModelManagementService for the model lifecycle
+domain/   Types + interfaces (ports) — framework/SDK-agnostic
+infra/    QVAC-specific: the only layer that knows @qvac/sdk exists
+```
+
+`TtsService` reuses the existing `ModelManagementService` to load the
+Supertonic2 model (`SUPERTONIC2_TTS_MODEL_SOURCE` in
+`src/config/models.config.ts`), exactly like `TranscriptionService` does for
+whisper. Unlike the models/speech features, there's no `requestId`-keyed
+map here: `@qvac/sdk`'s `textToSpeech()` doesn't expose a per-call
+`requestId` the way `loadModel()`/`completion()` do, so `TtsService` keeps a
+single synthesis slot instead — a second `POST /api/tts` while one is
+pending gets a `409`, and cancellation goes through the SDK's broad-cancel
+escape hatch (`cancel({ modelId, kind: 'tts' })`) rather than a
+per-request cancel.
+
+### Endpoints
+
+Base path: `/api/tts`
+
+| Method | Path | Body | Does |
+|---|---|---|---|
+| `POST` | `/` | `{ text }` | Starts synthesizing `text` in the background; `202` once the model is loaded and synthesis has started |
+| `POST` | `/cancel` | — | Cancels the in-flight synthesis, if any (no-op otherwise) |
+| `GET` | `/status` | — | `{ state: 'idle' \| 'pending' \| 'succeeded' \| 'failed' \| 'cancelled' }` |
+| `GET` | `/audio` | — | The synthesized WAV bytes (`audio/wav`), once `state` is `'succeeded'`; `404` otherwise |
+
+### Demo script
+
+`apps/backend/src/tts/demo.ts` (`npm run tts-demo --workspace=apps/backend`)
+exercises the real `TtsService`/`QvacTtsAdapter` end to end, no HTTP
+involved: synthesizes a short sentence, writes + plays the resulting WAV
+locally, then starts a longer synthesis and cancels it mid-flight to prove
+the stop control actually interrupts local synthesis — no cloud service
+involved anywhere in the path. Same "only one QVAC-backed process at a
+time" constraint as the other demo scripts applies.
+
 ## Conventions
 
 - **Only `infra/qvacRuntimeAdapter.ts` imports `@qvac/sdk`.** Everything else works against `domain/ports.ts`. If you need a new SDK call, it goes in that file.
-- **Constants live in `<name>.const.ts` next to the file that owns them**, not inline in classes/functions.
+- **Constants live in `<name>.const.ts` next to the file that owns them**, not inline in classes/functions — except constants that identify a concrete model (registry entry, source, model type). Those live centrally in `src/config/models.config.ts`, grouped by capability, so every pipeline (`models`, `ai/orchestrator`, `speech`, ...) reads from one place instead of hardcoding its own.
 - **The router never decides business logic or guesses model state** (e.g. it doesn't pre-check "is this loaded?" — it lets the service throw and translates the error).

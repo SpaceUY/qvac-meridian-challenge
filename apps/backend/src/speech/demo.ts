@@ -136,7 +136,10 @@ async function main(): Promise<void> {
       "\n▸ Reusing the streamed transcript as a normal assistant query (AgentService.invoke)...",
     );
     const reply = await agent.invoke([{ role: "user", message: streamedText }]);
-    console.log(`  Assistant: ${reply}`);
+    console.log(`  Assistant: ${reply.answer}`);
+    if (reply.thinkingText) {
+      console.log(`  Thinking: ${reply.thinkingText}`);
+    }
 
     console.log(
       "\n▸ Done: transcribe() and transcribeStream() both validated for English and Spanish.",

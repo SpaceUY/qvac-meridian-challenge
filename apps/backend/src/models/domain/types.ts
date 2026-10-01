@@ -31,8 +31,13 @@ export interface RegistrySearchQuery {
  * touches this union and the adapter's `load()` — nothing else.
  */
 export type ModelSource =
-  | { kind: 'registry'; registryPath: string; registrySource: string; modelType?: string }
-  | { kind: 'url'; url: string; modelType?: string };
+  | {
+      kind: "registry";
+      registryPath: string;
+      registrySource: string;
+      modelType?: string;
+    }
+  | { kind: "url"; url: string; modelType?: string };
 
 export interface ModelDownloadProgress {
   percentage: number;
@@ -50,7 +55,11 @@ export interface InferenceResult {
   text: string;
 }
 
-export type ModelRequestState = 'pending' | 'succeeded' | 'failed' | 'cancelled';
+export type ModelRequestState =
+  | "pending"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
 
 /**
  * Observability for a load/inference started via `loadModel()`/`infer()`.
@@ -61,7 +70,7 @@ export type ModelRequestState = 'pending' | 'succeeded' | 'failed' | 'cancelled'
  */
 export interface ModelRequestStatus {
   requestId: string;
-  kind: 'load' | 'inference';
+  kind: "load" | "inference";
   state: ModelRequestState;
   /** Present once a `load` succeeds, or always for `inference` (its input modelId, known upfront). */
   modelId?: string;
@@ -85,18 +94,18 @@ export interface ChatMessage {
 }
 
 export interface ChatToolProperty {
-  type: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'integer';
+  type: "string" | "number" | "boolean" | "object" | "array" | "integer";
   description?: string;
   enum?: (string | number | boolean | null)[];
 }
 
 /** A tool definition offered to the model, in the flat/primitive-only shape local completion engines accept. */
 export interface ChatTool {
-  type: 'function';
+  type: "function";
   name: string;
   description: string;
   parameters: {
-    type: 'object';
+    type: "object";
     properties: Record<string, ChatToolProperty>;
     required?: string[];
   };
@@ -123,6 +132,7 @@ export interface ChatCompletionRequest {
 
 export interface ChatCompletionResult {
   text: string;
+  thinkingText?: string;
   toolCalls: ChatToolCall[];
   stats?: ChatCompletionStats;
 }

@@ -23,7 +23,8 @@ import { ModelManagementService } from './service/models.service.js';
 import { QvacRuntimeAdapter } from './infra/qvacRuntimeAdapter.js';
 import { ModelManagementError } from './domain/errors.js';
 import type { ModelSource } from './domain/types.js';
-import { HTTP_MODEL_URL, PROMPT, REGISTRY_MODEL_NAME } from './demo.const.js';
+import { PROMPT } from './demo.const.js';
+import { HTTP_MODEL_URL, REGISTRY_MODEL_NAME } from '../config/models.config.js';
 
 function logProgress(label: string, phase: string): (progress: { percentage: number }) => void {
   return (progress) => process.stderr.write(`\r▸ [${label}] ${phase}: ${progress.percentage.toFixed(0)}%`);

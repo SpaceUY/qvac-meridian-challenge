@@ -14,7 +14,7 @@ import type {
 import type { SpeechTranscriptionPort } from '../domain/ports.js';
 import type { AudioInput, StreamTranscriptSession } from '../domain/types.js';
 import { TranscriptionService } from './transcription.service.js';
-import { DEFAULT_WHISPER_ENGINE_CONFIG } from './transcription.service.const.js';
+import { DEFAULT_WHISPER_ENGINE_CONFIG } from '../../config/models.config.js';
 
 /** Resolves every load() immediately with a fresh modelId - no cancellation support needed for these tests. */
 class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
@@ -44,6 +44,10 @@ class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
   }
 
   async chatComplete(_modelId: string, _request: ChatCompletionRequest): Promise<ChatCompletionResult> {
+    throw new Error('not used by TranscriptionService');
+  }
+
+  async embed(_modelId: string, _texts: string[]): Promise<number[][]> {
     throw new Error('not used by TranscriptionService');
   }
 

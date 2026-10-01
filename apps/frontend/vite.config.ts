@@ -17,7 +17,7 @@ const MOTOR = {
   backend: 'http://127.0.0.1:3001',
 }
 
-const DESTINO = MOTOR.lmStudio
+const DESTINO = MOTOR.backend
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -29,6 +29,10 @@ export default defineConfig({
     // Reenvia /v1/* al motor para que el navegador vea un solo origen (evita CORS).
     proxy: {
       '/v1': { target: DESTINO, changeOrigin: true },
+      // /api/chat/* solo existe en TU backend — nunca en LM Studio, así
+      // que no sigue el switch de arriba. Se adelanta acá (en vez de en
+      // la Tarea 7) porque la Tarea 5 ya necesita pegarle a /api/chat/status.
+      '/api': { target: MOTOR.backend, changeOrigin: true },
     },
   },
 })

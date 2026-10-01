@@ -2,15 +2,20 @@ import {
   cancel,
   close,
   completion,
+  CompletionFinal,
   downloadAsset,
+  embed as sdkEmbed,
   InferenceCancelledError,
   loadModel,
   modelRegistryList,
   modelRegistrySearch,
-  unloadModel
-} from '@qvac/sdk';
-import { OperationCancelledError } from '../domain/errors.js';
-import type { ModelProvisioningPort, ModelRuntimePort } from '../domain/ports.js';
+  unloadModel,
+} from "@qvac/sdk";
+import { OperationCancelledError } from "../domain/errors.js";
+import type {
+  ModelProvisioningPort,
+  ModelRuntimePort,
+} from "../domain/ports.js";
 import type {
   ChatCompletionRequest,
   ChatCompletionResult,
@@ -22,7 +27,7 @@ import type {
   RegistryModelSummary,
   RegistrySearchQuery
 } from '../domain/types.js';
-import { DEFAULT_MODEL_TYPE } from './qvacRuntimeAdapter.const.js';
+import { DEFAULT_MODEL_TYPE } from '../../config/models.config.js';
 import { toSdkModelConfig } from './loadModelConfig.js';
 
 /**
@@ -34,8 +39,12 @@ import { toSdkModelConfig } from './loadModelConfig.js';
  * narrow contracts, so a consumer that only needs one doesn't depend on
  * the other.
  */
-export class QvacRuntimeAdapter implements ModelProvisioningPort, ModelRuntimePort {
-  async searchRegistry(query: RegistrySearchQuery): Promise<RegistryModelSummary[]> {
+export class QvacRuntimeAdapter
+  implements ModelProvisioningPort, ModelRuntimePort
+{
+  async searchRegistry(
+    query: RegistrySearchQuery,
+  ): Promise<RegistryModelSummary[]> {
     const entries = await modelRegistrySearch(query);
     return entries.map(toRegistryModelSummary);
   }
@@ -55,10 +64,13 @@ export class QvacRuntimeAdapter implements ModelProvisioningPort, ModelRuntimePo
    * (`validateCachedFile` in `dist/server/rpc/handlers/load-model/http.js`
    * and `registry.js`).
    */
-  async provision(source: ModelSource, onProgress?: (progress: ModelDownloadProgress) => void): Promise<void> {
+  async provision(
+    source: ModelSource,
+    onProgress?: (progress: ModelDownloadProgress) => void,
+  ): Promise<void> {
     await downloadAsset({
       assetSrc: toModelSrc(source),
-      onProgress: toSdkProgressCallback(onProgress)
+      onProgress: toSdkProgressCallback(onProgress),
     });
   }
 
@@ -71,13 +83,13 @@ export class QvacRuntimeAdapter implements ModelProvisioningPort, ModelRuntimePo
   load(
     source: ModelSource,
     options?: LoadModelOptions,
-    onProgress?: (progress: ModelDownloadProgress) => void
+    onProgress?: (progress: ModelDownloadProgress) => void,
   ): Promise<LoadedModel> & { requestId: string } {
     const call = loadModel({
       modelSrc: toModelSrc(source),
       modelType: source.modelType ?? DEFAULT_MODEL_TYPE,
       modelConfig: toSdkModelConfig(options),
-      onProgress: toSdkProgressCallback(onProgress)
+      onProgress: toSdkProgressCallback(onProgress),
     });
     const requestId = call.requestId;
     const result = call
@@ -89,8 +101,15 @@ export class QvacRuntimeAdapter implements ModelProvisioningPort, ModelRuntimePo
   }
 
   /** Same synchronous-`requestId` convention as `load()`, off `completion()`'s own `CompletionRun.requestId`. */
-  infer(modelId: string, prompt: string): Promise<InferenceResult> & { requestId: string } {
-    const run = completion({ modelId, history: [{ role: 'user', content: prompt }], stream: false });
+  infer(
+    modelId: string,
+    prompt: string,
+  ): Promise<InferenceResult> & { requestId: string } {
+    const run = completion({
+      modelId,
+      history: [{ role: "user", content: prompt }],
+      stream: false,
+    });
     const requestId = run.requestId;
     const result = run.final
       .then((final) => ({ text: final.contentText }))
@@ -100,20 +119,41 @@ export class QvacRuntimeAdapter implements ModelProvisioningPort, ModelRuntimePo
     return Object.assign(result, { requestId });
   }
 
-  async chatComplete(modelId: string, request: ChatCompletionRequest): Promise<ChatCompletionResult> {
+  async chatComplete(
+    modelId: string,
+    request: ChatCompletionRequest,
+  ): Promise<ChatCompletionResult> {
     const run = completion({
       modelId,
       history: request.history,
       tools: request.tools,
+      captureThinking: true,
       stream: false,
-      generationParams: request.temperature !== undefined ? { temp: request.temperature } : undefined
+      generationParams:
+        request.temperature !== undefined
+          ? { temp: request.temperature }
+          : undefined,
     });
-    const final = await run.final;
+    const final: CompletionFinal = await run.final;
     return {
       text: final.contentText,
-      toolCalls: final.toolCalls.map((call) => ({ id: call.id, name: call.name, arguments: call.arguments })),
-      stats: final.stats
+      toolCalls: final.toolCalls.map((call) => ({
+        id: call.id,
+        name: call.name,
+        arguments: call.arguments,
+      })),
+      thinkingText: final.thinkingText,
+      stats: final.stats,
     };
+  }
+
+  async embed(modelId: string, texts: string[]): Promise<number[][]> {
+    // Without this, `[]` comes back as a default `[]` embedding, which
+    // `toVectorBatch` reads as ONE flat vector and rejects with a confusing
+    // "returned 1 vectors for 0 inputs".
+    if (texts.length === 0) return [];
+    const { embedding } = await sdkEmbed({ modelId, text: texts });
+    return toVectorBatch(embedding, texts.length);
   }
 
   async unload(modelId: string): Promise<void> {
@@ -137,6 +177,28 @@ export class QvacRuntimeAdapter implements ModelProvisioningPort, ModelRuntimePo
   }
 }
 
+/**
+ * `embed()`'s response is typed `number[] | number[][]` (see
+ * `dist/schemas/embed.d.ts`): the SDK returns one flat vector when `text` is
+ * a string and one vector per input when it's an array. We always pass an
+ * array, but a one-element array is exactly where the two shapes are easiest
+ * to confuse, so the shape is checked at runtime instead of assumed. The
+ * length check turns a silent misalignment - vectors landing on the wrong
+ * chunks, which would only surface much later as nonsense citations - into
+ * an immediate, loud failure.
+ */
+function toVectorBatch(embedding: number[] | number[][], expected: number): number[][] {
+  const vectors: number[][] = Array.isArray(embedding[0])
+    ? (embedding as number[][])
+    : [embedding as number[]];
+
+  if (vectors.length !== expected) {
+    throw new Error(`embed() returned ${vectors.length} vectors for ${expected} inputs`);
+  }
+
+  return vectors;
+}
+
 function toRegistryModelSummary(entry: {
   name: string;
   registryPath: string;
@@ -155,7 +217,7 @@ function toRegistryModelSummary(entry: {
     addon: entry.addon,
     quantization: entry.quantization,
     params: entry.params,
-    expectedSizeBytes: entry.expectedSize
+    expectedSizeBytes: entry.expectedSize,
   };
 }
 
@@ -173,11 +235,13 @@ function toRegistryModelSummary(entry: {
  */
 /** Translates the SDK's `InferenceCancelledError` (thrown for a cancelled load or inference alike) into the domain-level `OperationCancelledError`; passes any other error through unchanged. */
 function toDomainError(requestId: string, err: unknown): unknown {
-  return err instanceof InferenceCancelledError ? new OperationCancelledError(requestId) : err;
+  return err instanceof InferenceCancelledError
+    ? new OperationCancelledError(requestId)
+    : err;
 }
 
 function toModelSrc(source: ModelSource): string {
-  if (source.kind === 'url') return source.url;
+  if (source.kind === "url") return source.url;
   return `registry://${source.registrySource}/${source.registryPath}`;
 }
 
@@ -189,8 +253,13 @@ interface SdkDownloadProgress {
 
 /** Shared by `load()` and `provision()` so the progress-field mapping lives in one place. */
 function toSdkProgressCallback(
-  onProgress?: (progress: ModelDownloadProgress) => void
+  onProgress?: (progress: ModelDownloadProgress) => void,
 ): ((progress: SdkDownloadProgress) => void) | undefined {
   if (!onProgress) return undefined;
-  return (p) => onProgress({ percentage: p.percentage, downloadedBytes: p.downloaded, totalBytes: p.total });
+  return (p) =>
+    onProgress({
+      percentage: p.percentage,
+      downloadedBytes: p.downloaded,
+      totalBytes: p.total,
+    });
 }

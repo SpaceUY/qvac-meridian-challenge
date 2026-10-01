@@ -1,3 +1,5 @@
+import { Markdown } from '@/components/markdown'
+import { parseThinking } from '@/lib/parse-thinking'
 import type { Citation, History, Message } from '@/lib/chat-types'
 
 type Props = { history: History }
@@ -15,9 +17,10 @@ export function MessageList({ history }: Props) {
 
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === 'user'
-  // Status 'streaming' + no text yet = the model hasn't sent a single
-  // word. It's not a separate prop: it is deduced from this same message.
-  const isThinking = message.status.type === 'streaming' && message.text === ''
+  const parsed = parseThinking(message.text)
+  // Waiting for the very first token, OR still inside an unclosed <think>
+  // block: either way, there is nothing worth showing yet but the dots.
+  const isThinking = message.status.type === 'streaming' && (message.text === '' || parsed.isThinking)
 
   return (
     <div className={isUser ? 'ml-auto max-w-[75%]' : 'max-w-[85%]'}>
@@ -28,7 +31,7 @@ function MessageBubble({ message }: { message: Message }) {
             : 'text-sm leading-relaxed'
         }
       >
-        {isThinking ? <ThinkingDots /> : message.text}
+        {isThinking ? <ThinkingDots /> : isUser ? message.text : <Markdown text={parsed.answer} />}
         {message.status.type === 'streaming' && !isThinking && <Cursor />}
       </div>
 

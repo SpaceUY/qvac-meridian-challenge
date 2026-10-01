@@ -48,6 +48,15 @@ export interface ModelRuntimePort {
   infer(modelId: string, prompt: string): Promise<InferenceResult> & { requestId: string };
   /** Multi-turn chat completion with optional tool-calling, for chat-model consumers (e.g. `ChatQVAC`). */
   chatComplete(modelId: string, request: ChatCompletionRequest): Promise<ChatCompletionResult>;
+  /**
+   * Embeds a batch of texts with an already-loaded embeddings model,
+   * returning one vector per input **in input order**. Always a batch, never
+   * a single string: the underlying SDK returns a different shape for each
+   * (`number[]` vs `number[][]`), and collapsing that difference here keeps
+   * every consumer from having to branch on it. One call is one RPC round
+   * trip, so callers should batch rather than loop.
+   */
+  embed(modelId: string, texts: string[]): Promise<number[][]>;
   unload(modelId: string): Promise<void>;
   close(): Promise<void>;
   /**

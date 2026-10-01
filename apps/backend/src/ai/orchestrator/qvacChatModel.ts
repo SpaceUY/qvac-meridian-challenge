@@ -17,6 +17,8 @@ import type { ChatResult } from "@langchain/core/outputs";
 import type { Runnable } from "@langchain/core/runnables";
 import type { ModelManagementService } from "../../models/service/models.service.js";
 import type {
+  ChatCompletionRequest,
+  ChatCompletionResult,
   ChatMessage,
   ChatTool,
   ChatToolCall,
@@ -45,6 +47,8 @@ export interface QVACChatModelInput extends BaseChatModelParams {
   modelSource: ModelSource;
   ctxSize?: number;
   temperature?: number;
+  /** Opaque per-engine load config (e.g. a multimodal model's `projectionModelSrc`), merged as-is into the SDK's `modelConfig` alongside `ctxSize`/`tools`. */
+  engineConfig?: Record<string, unknown>;
 }
 
 export interface ChatQVACCallOptions extends BaseChatModelCallOptions {
@@ -118,6 +122,7 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
   private readonly modelSource: ModelSource;
   private readonly ctxSize: number;
   private readonly temperature?: number;
+  private readonly engineConfig?: Record<string, unknown>;
   private modelIdPromise?: Promise<string>;
 
   constructor(fields: QVACChatModelInput) {
@@ -126,6 +131,7 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
     this.modelSource = fields.modelSource;
     this.ctxSize = fields.ctxSize ?? 4096;
     this.temperature = fields.temperature;
+    this.engineConfig = fields.engineConfig;
   }
 
   static lc_name(): string {
@@ -156,6 +162,7 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
           // load-time opt-in is required even though it's a no-op without the
           // latter, so this can't be deferred to bindTools()/_generate().
           tools: true,
+          engineConfig: this.engineConfig,
         })
         .then((loaded) => loaded.modelId)
         .catch((error: unknown) => {
@@ -173,15 +180,21 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
   ): Promise<ChatResult> {
     const modelId = await this.ensureModel();
 
-    const result = await this.service.chatComplete(modelId, {
-      history: messages.map(toChatMessage),
-      tools: options.tools,
-      temperature: this.temperature,
-    });
+    const result: ChatCompletionResult = await this.service.chatComplete(
+      modelId,
+      {
+        history: messages.map(toChatMessage),
+        tools: options.tools,
+        temperature: this.temperature,
+      },
+    );
 
     const aiMessage = new AIMessage({
       content: result.text,
       tool_calls: toLangChainToolCalls(result.toolCalls),
+      additional_kwargs: result.thinkingText
+        ? { thinkingText: result.thinkingText }
+        : undefined,
     });
 
     return {

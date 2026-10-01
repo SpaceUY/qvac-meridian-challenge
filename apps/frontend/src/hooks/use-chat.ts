@@ -8,6 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import { useCallback, useRef } from 'react'
+import { useMutation } from '@tanstack/react-query'
 import { useMirrorRef } from '@/hooks/use-mirror-ref'
 import {
   toOpenAIMessages,
@@ -33,6 +34,11 @@ export function useChat() {
   // new question while the previous one is still arriving.
   const abortRef = useRef<AbortController | null>(null)
 
+  const turnMutation = useMutation({
+    mutationFn: (args: { openAIMessages: OpenAIMessage[]; assistantMessageId: string; signal: AbortSignal }) =>
+      runTurn({ ...args, sessionId }),
+  })
+
   const sendMessage = useCallback((rawText: string) => {
     const text = rawText.trim()
     if (!text || abortRef.current) return
@@ -49,10 +55,11 @@ export function useChat() {
     const controller = new AbortController()
     abortRef.current = controller
 
-    runTurn({ openAIMessages, sessionId, assistantMessageId, signal: controller.signal }).finally(() => {
-      abortRef.current = null
-    })
-  }, []) // no dependencies: reads everything it needs from refs, never gets stale
+    turnMutation.mutate(
+      { openAIMessages, assistantMessageId, signal: controller.signal },
+      { onSettled: () => { abortRef.current = null } },
+    )
+  }, []) // sin dependencias: lee todo de refs, igual que antes
 
   const stop = useCallback(() => abortRef.current?.abort(), [])
 

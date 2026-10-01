@@ -1,6 +1,5 @@
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
 import { FileText } from 'lucide-react'
 import type { CorpusDocument } from '@/lib/fake-data'
 
@@ -8,8 +7,6 @@ type Props = { documents: CorpusDocument[] }
 
 /** Left panel: "what does" the assistant know. Req. [3.1.1] (list_documents). */
 export function CorpusPanel({ documents }: Props) {
-  const totalChunks = documents.reduce((sum, d) => sum + d.chunks, 0)
-
   return (
     <div className="flex h-full flex-col gap-2">
       <div className="flex items-center justify-between px-1">
@@ -31,9 +28,6 @@ export function CorpusPanel({ documents }: Props) {
           ))}
         </ul>
       </ScrollArea>
-
-      <Separator />
-      <p className="px-1 text-xs text-muted-foreground">{totalChunks} chunks indexed · LanceDB local</p>
     </div>
   )
 }

@@ -1,4 +1,7 @@
-import { AgentService } from "./orchestrator/agentService.js";
+import {
+  AgentService,
+  type InvokeResult,
+} from "./orchestrator/agentService.js";
 import { ModelManagementService } from "../models/service/models.service.js";
 import { QvacRuntimeAdapter } from "../models/infra/qvacRuntimeAdapter.js";
 import { FakeEmbeddingPort } from "../rag/infra/fakeEmbedding.adapter.js";
@@ -34,7 +37,7 @@ async function main(): Promise<void> {
 
   const agentService = new AgentService(service, ragService);
 
-  let result: string | undefined;
+  let result: InvokeResult | undefined;
   let executionError: unknown;
 
   try {
@@ -42,9 +45,9 @@ async function main(): Promise<void> {
       {
         role: "user",
         message:
-          "Can you give me all the stock information about SKU: SD-X4-HT?",
-        // message: "Do we have an agreement with **Atlas Manufacturing** ? If this is the case when it started ?.",
-        // message: "What is the enterprise P1 first-response SLA?",
+          //"Can you give me all the stock information about SKU: SD-X4-HT?",
+          // message: "Do we have an agreement with **Atlas Manufacturing** ? If this is the case when it started ?.",
+          "What is the enterprise P1 first-response SLA?",
       },
     ]);
   } catch (err) {
@@ -66,7 +69,14 @@ async function main(): Promise<void> {
     throw executionError;
   }
 
-  console.log(result);
+  console.log(result?.answer);
+  if (result?.thinkingText) {
+    console.log(`\nThinking:\n${result.thinkingText}`);
+  }
+  if (result?.chunks) {
+    console.log(`\nCitations:`);
+    console.log(result.chunks);
+  }
 }
 
 main().catch((err) => {

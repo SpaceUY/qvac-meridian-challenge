@@ -7,6 +7,10 @@ class FakeEmbedding implements EmbeddingPort {
   async embed(_text: string): Promise<number[]> {
     return [1];
   }
+
+  async embedBatch(texts: string[]): Promise<number[][]> {
+    return texts.map(() => [1]);
+  }
 }
 
 class FakeVectorStore implements VectorStorePort {

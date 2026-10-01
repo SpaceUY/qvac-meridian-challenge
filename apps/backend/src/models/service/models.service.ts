@@ -137,6 +137,21 @@ export class ModelManagementService {
     }
   }
 
+  /**
+   * Embeds a batch of texts with an already-loaded embeddings model. Same
+   * `assertLoaded` + error-translation contract as `chatComplete()`: one
+   * `ModelManagementError` for callers to handle, tagged with the stage that
+   * failed.
+   */
+  async embed(modelId: string, texts: string[]): Promise<number[][]> {
+    this.assertLoaded(modelId);
+    try {
+      return await this.runtime.embed(modelId, texts);
+    } catch (err) {
+      throw toModelManagementError('inference', err);
+    }
+  }
+
   async unloadModel(modelId: string): Promise<void> {
     this.assertLoaded(modelId);
     try {

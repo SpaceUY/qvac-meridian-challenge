@@ -9,8 +9,11 @@ import { Button } from '@/components/ui/button'
 import { useChat } from '@/hooks/use-chat'
 import { useElementHeight } from '@/hooks/use-element-height'
 import { useStickToBottom } from '@/hooks/use-stick-to-bottom'
+import type { ModelStatus } from '@/lib/model-status-client'
 
-export function ChatPanel() {
+type Props = { modelStatus: ModelStatus }
+
+export function ChatPanel({ modelStatus }: Props) {
   const { history, isStreaming, sendMessage, stop } = useChat()
   // The composer is out of the normal flow, so it takes up no room. The spacer
   // at the end of the list gives that room back, exactly as much as it needs.
@@ -50,7 +53,7 @@ export function ChatPanel() {
       <div ref={overlayRef} className="pointer-events-none absolute inset-x-0 bottom-0">
         <div className="h-8 bg-linear-to-t from-background to-background/0" />
         <div className="pointer-events-auto bg-background px-3 pb-3">
-          <Composer isStreaming={isStreaming} onSend={handleSend} onStop={stop} />
+          <Composer isStreaming={isStreaming} disabled={modelStatus !== 'ready'} onSend={handleSend} onStop={stop} />
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import { ChatQVAC } from "./orchestrator/qvacChatModel.js";
 import { createRagGraph } from "./orchestrator/ragGraph.js";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
-import { QWEN3_600M_INST_Q4 } from "@qvac/sdk";
+import { QWEN3_600M_MODEL_SOURCE } from "../config/models.config.js";
 import { ModelManagementService } from "../models/service/models.service.js";
 import { QvacRuntimeAdapter } from "../models/infra/qvacRuntimeAdapter.js";
 import { RagRetrievalService } from "../rag/service/rag.service.js";
@@ -43,11 +43,7 @@ async function main(): Promise<void> {
 
   const qvacModel = new ChatQVAC({
     service,
-    modelSource: {
-      kind: "registry",
-      registryPath: QWEN3_600M_INST_Q4.registryPath,
-      registrySource: QWEN3_600M_INST_Q4.registrySource,
-    },
+    modelSource: QWEN3_600M_MODEL_SOURCE,
     temperature: 0,
   });
 

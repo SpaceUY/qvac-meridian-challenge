@@ -1,18 +1,34 @@
 # QVAC Meridian Challenge
 
-Monorepo (npm workspaces) containing an Express API, a React + Vite frontend, and a QVAC model-serving config (qvac.config.json).
+Monorepo (npm workspaces) containing an Express API with QVAC-backed local model management, a React + Vite frontend, a deterministic stock-lookup tool, and a QVAC model-serving config (`qvac.config.json`). This is a work-in-progress draft toward the Meridian Components exercise — not all mandatory requirements are implemented yet.
+
+## Release
+
+1. Download the latest release `.zip`.
+2. Extract the zip into a folder.
+3. Open a terminal inside the extracted folder.
+4. Follow **Prerequisites**, **Setup**, and **Development** below to install dependencies and run the app.
 
 ## Structure
 
-- `apps/backend` — Express API (`GET /api/ping`), port 3001
+- `apps/backend` — Express API (`src/server.ts`), local QVAC model lifecycle service, LangGraph orchestrator, port 3001
 - `apps/frontend` — Vite + React app, port 5173
-- `qvac.config.json` — model config for the QVAC-backed OpenAI-compatible server
+- `stock-tool` — workspace package with the deterministic Meridian inventory data used by the stock-lookup tool
+- `corpus/` — the provided Meridian document corpus (not yet ingested by an automated pipeline)
+- `qvac.config.json` — model config for the QVAC-backed OpenAI-compatible server (repo root, not under a `qvac/` subfolder)
+
+## Prerequisites
+
+- Node.js 22.x and npm 10.x (tested with Node v22.22.2 / npm 10.9.7)
+- Internet access for the first run of any model-loading command — QVAC downloads model weights on demand and caches them in `.qvac-cache/` (gitignored) so subsequent runs are offline
 
 ## Setup
 
 ```bash
 npm ci
 ```
+
+Installs all workspaces (`apps/backend`, `apps/frontend`, `stock-tool`). First install takes a few minutes because a couple of QVAC's dependencies (Bare/Hyperswarm) compile native addons — this is expected, not a hang.
 
 ## Development
 
@@ -29,20 +45,3 @@ npm run build:client   # frontend (tsc -b && vite build)
 
 There is no build step for the backend yet.
 
-## QVAC model server
-
-Starts a qvac openapi http server with basic loaded models. There are basic models for queries, TTS (text-to-speech), ASR (automate speech recognition) and text embeddings (RAG).
-
-```bash
-npm run qvac-server
-```
-
-Starts an OpenAI-compatible API (via the `qvac` CLI) backed by the models declared in `qvac/qvac.config.json`. Note: the `qvac-server` script currently passes the config path via a `QVAC_CONFIG_PATH` env var, which this CLI version doesn't read — use `qvac serve openai --config ./qvac/qvac.config.json` directly until the script is fixed.
-
-## Run basic dummy time prompt
-
-Requires previously run `qvac-server`
-
-```
-npm run basic-prompt
-```

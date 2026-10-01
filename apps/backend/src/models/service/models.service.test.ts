@@ -63,6 +63,13 @@ class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
     return { text: '', toolCalls: [] };
   }
 
+  /** One-hot vectors: input i gets a 1 in position i. Deterministic and trivially assertable. */
+  async embed(_modelId: string, texts: string[]): Promise<number[][]> {
+    return texts.map((_text, index) =>
+      Array.from({ length: 3 }, (_zero, position) => (position === index ? 1 : 0))
+    );
+  }
+
   async unload(_modelId: string): Promise<void> {}
 
   async close(): Promise<void> {}
@@ -200,5 +207,21 @@ describe('ModelManagementService cancellation', () => {
     await expect(failingService.cancel('any-id')).rejects.toMatchObject({
       stage: 'cancel'
     });
+  });
+
+  it('embeds texts with a loaded model, one vector per input', async () => {
+    const load = service.loadModel(SOURCE);
+    runtime.settle(load.requestId);
+    const { modelId } = await load;
+
+    const vectors = await service.embed(modelId, ['hola', 'chau']);
+
+    expect(vectors).toHaveLength(2);
+    expect(vectors[0]).toEqual([1, 0, 0]);
+    expect(vectors[1]).toEqual([0, 1, 0]);
+  });
+
+  it('refuses to embed with a model that is not loaded', async () => {
+    await expect(service.embed('never-loaded', ['hola'])).rejects.toBeInstanceOf(ModelManagementError);
   });
 });

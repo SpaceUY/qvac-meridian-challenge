@@ -5,18 +5,19 @@ import { Textarea } from '@/components/ui/textarea'
 
 type Props = {
   isStreaming: boolean
+  disabled?: boolean
   onSend: (text: string) => void
   onStop: () => void
 }
 
 /** The bottom bar: write, send, or stop a response in progress (req. [1.4]). */
-export function Composer({ isStreaming, onSend, onStop }: Props) {
+export function Composer({ isStreaming, disabled = false, onSend, onStop }: Props) {
   // What is being written, still not sent. It is pure UI - it does not matter
   // to anyone outside this component - that's why useState and not the chat reducer.
   const [text, setText] = useState('')
 
   function send() {
-    if (!text.trim() || isStreaming) return
+    if (!text.trim() || isStreaming || disabled) return
     onSend(text)
     setText('') // empty it now: no need to wait for the server to reply
   }
@@ -35,7 +36,8 @@ export function Composer({ isStreaming, onSend, onStop }: Props) {
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Pregunta lo que quieras"
+        disabled={disabled}
+        placeholder={disabled ? 'Loading the model…' : 'Pregunta lo que quieras'}
         rows={1}
         className="max-h-40 min-h-9 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
       />
@@ -44,7 +46,7 @@ export function Composer({ isStreaming, onSend, onStop }: Props) {
           <Square className="size-4" />
         </Button>
       ) : (
-        <Button size="icon" className="shrink-0 rounded-full" disabled={!text.trim()} onClick={send}>
+        <Button size="icon" className="shrink-0 rounded-full" disabled={!text.trim() || disabled} onClick={send}>
           <Send className="size-4" />
         </Button>
       )}

@@ -44,4 +44,8 @@ export class FakeEmbeddingPort implements EmbeddingPort {
 
     return vector.map((value) => value / norm);
   }
+
+  async embedBatch(texts: string[]): Promise<number[][]> {
+    return Promise.all(texts.map((text) => this.embed(text)));
+  }
 }

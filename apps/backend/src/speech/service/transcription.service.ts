@@ -1,7 +1,7 @@
 import type { ModelManagementService } from '../../models/service/models.service.js';
 import type { SpeechTranscriptionPort } from '../domain/ports.js';
 import type { StreamTranscriptSession } from '../domain/types.js';
-import { DEFAULT_WHISPER_ENGINE_CONFIG, DEFAULT_WHISPER_MODEL_SOURCE } from './transcription.service.const.js';
+import { DEFAULT_WHISPER_ENGINE_CONFIG, DEFAULT_WHISPER_MODEL_SOURCE } from '../../config/models.config.js';
 
 /**
  * Orchestrates local speech-to-text: reuses the existing
