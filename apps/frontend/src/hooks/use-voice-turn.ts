@@ -1,15 +1,20 @@
 // apps/frontend/src/hooks/use-voice-turn.ts
 //
-// Orchestrates a voice turn: record -> stop -> send -> resolve into the
-// chat store. Sibling of use-chat.ts in shape (only state + refs +
-// lifecycle - the real logic lives in mic-recorder.ts and voice-client.ts),
-// but here the request/response is a single round trip, not a stream.
+// Orchestrates a voice turn: record -> stop -> send -> stream into the chat
+// store. Sibling of use-chat.ts in shape (only state + refs + lifecycle -
+// the real logic lives in mic-recorder.ts and voice-client.ts) - and, once
+// the request is under way, IS effectively a text turn: 'processing' only
+// covers encoding the recording and starting the request, exactly as long
+// as it takes for the response headers to arrive. From there the answer
+// streams into the same `history`/`isStreaming` machinery useChat uses, so
+// MessageList's thinking-dots/cursor and the Composer's Stop button work
+// for a voice turn with no changes there.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { EngineError, toOpenAIMessages } from '@/lib/chat-client'
 import { useChatStore } from '@/lib/chat-store'
 import { blobToBase64, MicRecorder } from '@/lib/mic-recorder'
-import { requestVoiceCompletion } from '@/lib/voice-client'
+import { readVoiceDeltas, requestVoiceCompletion } from '@/lib/voice-client'
 
 export type VoicePhase =
   | { type: 'idle' }
@@ -90,6 +95,14 @@ export function useVoiceTurn() {
 
     const controller = new AbortController()
     abortRef.current = controller
+    const userMessageId = crypto.randomUUID()
+    const assistantMessageId = crypto.randomUUID()
+    // Only true once a message pair actually exists in history - before
+    // that, a failure is a pre-flight problem (bad audio, model not ready)
+    // shown in the composer's own error banner, same as today. After that
+    // point, a failure belongs to the message itself (responseFailed),
+    // exactly like a text turn's.
+    let turnStarted = false
 
     try {
       // stop() inside the same try: if resampling or WAV encoding throws
@@ -104,32 +117,55 @@ export function useVoiceTurn() {
 
       const audioBase64 = await blobToBase64(blob)
       const messages = await toOpenAIMessages(useChatStore.getState().history)
-      const result = await requestVoiceCompletion({ messages, audioBase64, signal: controller.signal })
+      const body = await requestVoiceCompletion({ messages, audioBase64, signal: controller.signal })
 
       if (useChatStore.getState().sessionId !== sessionId) {
         if (mountedRef.current) setPhase({ type: 'idle' })
         return
       }
 
-      useChatStore.getState().voiceTurnAdded({
-        userMessageId: crypto.randomUUID(),
-        transcript: result.transcript,
-        assistantMessageId: crypto.randomUUID(),
-        answer: result.answer,
-        citations: result.citations,
-        audio: result.audioDataUrl ? { dataUrl: result.audioDataUrl } : undefined,
-      })
+      turnStarted = true
+      useChatStore.getState().voiceTurnStarted(userMessageId, assistantMessageId)
+      useChatStore.getState().activeTurnStarted(controller)
+      // From here the turn shows through the shared history/isStreaming
+      // state (MessageList's own cursor/thinking-dots), same as a text
+      // turn - 'processing' has done its job.
       if (mountedRef.current) setPhase({ type: 'idle' })
+
+      for await (const delta of readVoiceDeltas(body)) {
+        if (useChatStore.getState().sessionId !== sessionId) return // New chat mid-stream: this turn's messages are already gone
+
+        if (delta.type === 'audio') {
+          useChatStore.getState().chunkReceived(assistantMessageId, delta.text)
+          if (delta.audioDataUrl !== undefined) {
+            useChatStore.getState().voiceAudioChunkReceived(assistantMessageId, delta.audioDataUrl)
+          }
+        } else if (delta.type === 'done') {
+          useChatStore.getState().voiceTranscriptReceived(userMessageId, delta.transcript)
+          useChatStore.getState().citationsReceived(assistantMessageId, delta.citations)
+        } else {
+          useChatStore.getState().responseFailed(assistantMessageId, delta.error)
+          return
+        }
+      }
+      useChatStore.getState().responseFinished(assistantMessageId)
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
-        // Aborted on purpose (unmount or New chat) - not an error. Without
-        // this, a New chat mid-request would leave the phase stuck on 'processing'.
+        // Aborted on purpose (unmount, New chat, or the composer's Stop
+        // button) - not an error, same as a cancelled text turn.
+        if (turnStarted) useChatStore.getState().responseFinished(assistantMessageId)
         if (mountedRef.current) setPhase({ type: 'idle' })
         return
       }
-      if (mountedRef.current) setPhase({ type: 'error', message: voiceErrorMessage(err) })
+      if (turnStarted) {
+        useChatStore.getState().responseFailed(assistantMessageId, voiceErrorMessage(err))
+        if (mountedRef.current) setPhase({ type: 'idle' })
+      } else if (mountedRef.current) {
+        setPhase({ type: 'error', message: voiceErrorMessage(err) })
+      }
     } finally {
       abortRef.current = null
+      if (turnStarted) useChatStore.getState().activeTurnSettled(controller)
     }
   }, [])
 
@@ -165,9 +201,15 @@ export function useVoiceTurn() {
   return { phase, start, send: stopAndSend, discard, setLevelListener }
 }
 
+/**
+ * Only used for pre-flight failures (before `turnStarted`): bad audio/model
+ * not ready. "No speech detected" is no longer one of these - once
+ * streaming, headers are already committed by the time that's known, so it
+ * arrives as a `type: 'error'` SSE delta instead (see stopAndSend's loop),
+ * carrying its own human-readable reason straight from the backend.
+ */
 function voiceErrorMessage(err: unknown): string {
   if (err instanceof EngineError && err.status === 503) return 'The model is not ready yet.'
-  if (err instanceof EngineError && err.status === 400) return 'No speech detected. Try again.'
   if (err instanceof EngineError) return err.message
   return 'Could not send the audio.'
 }

@@ -156,4 +156,19 @@ describe("AgentService delegate wiring", () => {
     // not the stale "still delegated" snapshot cached at preload time.
     expect(agentService.getStatus().delegation).toEqual({ isDelegated: false });
   });
+
+  it("reports recovering:false once the model has settled (not stuck mid-recovery)", async () => {
+    const runtime = new RecordingModelRuntime();
+    runtime.delegationInfoResult = { isDelegated: true, providerPublicKey: "pk-abc" };
+    const agentService = await buildAgentService(runtime);
+    await agentService.preload();
+
+    expect(agentService.getStatus().recovering).toBe(false);
+
+    runtime.chatCompleteOutcomes = ["provider-unreachable"];
+    runtime.delegationInfoResult = { isDelegated: false };
+    await agentService.invoke([{ role: "user", message: "hi" }]);
+
+    expect(agentService.getStatus().recovering).toBe(false);
+  });
 });

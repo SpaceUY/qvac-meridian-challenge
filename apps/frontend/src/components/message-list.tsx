@@ -57,7 +57,9 @@ function MessageBubble({ message }: { message: Message }) {
       )}
 
       {message.status.type === 'error' && <p className="mt-1 text-xs text-destructive">{message.status.reason}</p>}
-      {message.audio && <AudioPlayback audio={message.audio} autoPlay />}
+      {message.audioChunks && message.audioChunks.length > 0 && (
+        <AudioPlayback chunks={message.audioChunks} autoPlay />
+      )}
       <CitationSources citations={message.citations} />
       <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>

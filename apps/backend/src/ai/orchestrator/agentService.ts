@@ -28,6 +28,8 @@ export interface AgentStatusPayload {
   model: { name: string; quantization: string };
   /** Present once known (after a successful `preload()`) - whether the chat model is running on a remote provider or locally. Absent while idle/loading/error, or if delegation status couldn't be confirmed. */
   delegation?: LoadedModelDelegationInfo;
+  /** Whether a delegation-recovery reload is in flight right now (see `ChatQVAC.isRecovering()`). Always present (never `undefined`) - simpler for the frontend to read than a third "unknown" state, and it's meaningfully `false` even when no delegate is configured at all. */
+  recovering: boolean;
 }
 
 export interface ConversationMessage {
@@ -117,6 +119,7 @@ export class AgentService {
       ...(this.statusError ? { error: this.statusError } : {}),
       model: this.modelInfo,
       ...(delegation ? { delegation } : {}),
+      recovering: this.chatModel.isRecovering(),
     };
   }
 
@@ -154,10 +157,9 @@ export class AgentService {
   /**
    * Sends a conversation history through the graph, returns the assistant's
    * reply text and thinking trace. `options` overrides this turn's
-   * `temperature`/`seed` (Req 6.1.3) and carries the KV-cache session key,
-   * falling back to `ChatQVAC`'s own constructor default when omitted. Pass
-   * `onToken` to receive the final reply's text as it's generated, rather
-   * than only once this resolves.
+   * `temperature`/`seed` (Req 6.1.3), falling back to `ChatQVAC`'s own
+   * constructor default when omitted. Pass `onToken` to receive the final
+   * reply's text as it's generated, rather than only once this resolves.
    *
    * Not `async`: the returned promise carries `requestId` synchronously so
    * a caller can pass it to `cancel()` while the invoke is still running -

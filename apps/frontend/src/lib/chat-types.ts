@@ -28,8 +28,8 @@ export type Message = {
   text: string
   citations: Citation[]
   status: MessageStatus
-  /** Present only on assistant messages that came from a voice turn with a successful TTS synthesis. */
-  audio?: { dataUrl: string }
+  /** Present only on assistant messages from a voice turn - one entry per synthesized sentence, appended as they stream in. A sentence whose synthesis failed server-side contributes no entry, but doesn't stop the others. */
+  audioChunks?: { dataUrl: string }[]
   /** Images attached to this turn (user messages only). Set once at creation and never mutated afterwards - see chat-store.ts's turnStarted. */
   images?: ImageAttachment[]
 }

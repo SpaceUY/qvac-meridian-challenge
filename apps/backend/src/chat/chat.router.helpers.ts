@@ -287,3 +287,29 @@ export function toCitationsChunk(envelope: CompletionEnvelope, citations: Citati
 export function toDoneChunk(envelope: CompletionEnvelope): string {
   return `${toChunkEvent(envelope, {}, "stop")}data: [DONE]\n\n`;
 }
+
+/** One SSE event for `/voice-completions`'s streaming shape - not OpenAI-shaped (there's no `object`/`choices` convention for audio), just this envelope plus a `type` discriminant. */
+function toVoiceEvent(envelope: CompletionEnvelope, payload: Record<string, unknown>): string {
+  return `data: ${JSON.stringify({ ...envelope, ...payload })}\n\n`;
+}
+
+/** One synthesized sentence: `audioBase64`/`sampleRate` are omitted when that sentence's TTS synthesis failed - the chunk still carries its text. */
+export function toVoiceAudioChunk(
+  envelope: CompletionEnvelope,
+  chunk: { text: string; audioBase64?: string; sampleRate?: number },
+): string {
+  return toVoiceEvent(envelope, { type: "audio", ...chunk });
+}
+
+/** The closing event on a successful turn: full transcript + citations, then the SSE terminator. */
+export function toVoiceDoneChunk(
+  envelope: CompletionEnvelope,
+  payload: { transcript: string; citations: Citation[] },
+): string {
+  return `${toVoiceEvent(envelope, { type: "done", ...payload })}data: [DONE]\n\n`;
+}
+
+/** Sent instead of `toVoiceDoneChunk` when the turn fails after SSE headers are already committed (so a JSON 4xx/5xx is no longer possible) - includes the SSE terminator. */
+export function toVoiceErrorChunk(envelope: CompletionEnvelope, error: string): string {
+  return `${toVoiceEvent(envelope, { type: "error", error })}data: [DONE]\n\n`;
+}

@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import OpenAI from "openai";
 import type { AgentService, AgentStatusPayload, ConversationMessage, InvokeResult } from "../ai/orchestrator/agentService.js";
 import type { GenerationOptions } from "../ai/orchestrator/domain.js";
+import { EmptyTranscriptError } from "../ai/orchestrator/voiceAgentService.js";
 import {
   createChatStatusRouter,
   createCompletionsRouter,
@@ -12,6 +13,7 @@ import {
   type CompletionAgent,
   type VoiceAgent,
 } from "./chat.router.js";
+import { EMPTY_TRANSCRIPT_ERROR } from "./chat.router.const.js";
 
 /**
  * Stands in for `AgentService` for router-level tests: `invoke()` never
@@ -30,7 +32,7 @@ class FakeAgentService {
   resolveWith?: InvokeResult;
 
   getStatus(): AgentStatusPayload {
-    return { status: "ready", model: { name: "fake", quantization: "q4" } };
+    return { status: "ready", model: { name: "fake", quantization: "q4" }, recovering: false };
   }
 
   invoke(
@@ -169,7 +171,7 @@ const QUESTION = [{ role: "user" as const, content: "What was Q2 2026 revenue?" 
 
 /** Orchestrator stand-in: streams the answer in two deltas, like the real one streams tokens. */
 const fakeAgent: CompletionAgent = {
-  getStatus: () => ({ status: "ready", model: { name: "fake", quantization: "none" } }),
+  getStatus: () => ({ status: "ready", model: { name: "fake", quantization: "none" }, recovering: false }),
   invoke: (_messages, _options, onToken) => {
     const promise = (async () => {
       onToken?.("Q2 2026 total revenue ");
@@ -183,6 +185,10 @@ const fakeAgent: CompletionAgent = {
 
 const fakeVoiceAgent: VoiceAgent = {
   invoke: async () => ({ transcript: "What was Q2 revenue?", answer: ANSWER, chunks: [], citations: CITATIONS }),
+  invokeStreaming: async (_history, _audio, onChunk) => {
+    await onChunk({ text: ANSWER });
+    return { transcript: "What was Q2 revenue?", answer: ANSWER, chunks: [], citations: CITATIONS };
+  },
 };
 
 /** `citations` is our extension to the OpenAI shape, so the SDK's types don't declare it. */
@@ -258,5 +264,97 @@ describe("POST /v1/chat/voice-completions", () => {
     // Node's fetch types `json()` as `Promise<unknown>`: narrow before reading a field, or `tsc` fails.
     const body = (await res.json()) as { citations?: unknown };
     expect(body.citations).toEqual(CITATIONS);
+  });
+});
+
+describe("POST /v1/chat/voice-completions - stream: true", () => {
+  let server: http.Server | undefined;
+
+  afterEach(() => {
+    server?.close();
+    server = undefined;
+  });
+
+  /** Extracts each SSE event's JSON payload, in order, excluding the `[DONE]` terminator. */
+  function parseSseEvents(body: string): Record<string, unknown>[] {
+    return body
+      .split("\n\n")
+      .filter((event) => event.startsWith("data: ") && event !== "data: [DONE]")
+      .map((event) => JSON.parse(event.slice("data: ".length)) as Record<string, unknown>);
+  }
+
+  async function startServer(voiceAgent: VoiceAgent): Promise<string> {
+    const app = express();
+    app.use(express.json());
+    app.use("/v1/chat", createVoiceCompletionsRouter(fakeAgent, voiceAgent));
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+    return `http://127.0.0.1:${port}/v1/chat/voice-completions`;
+  }
+
+  it("emits one SSE event per synthesized sentence, then a final event with transcript and citations", async () => {
+    const url = await startServer({
+      invoke: fakeVoiceAgent.invoke,
+      invokeStreaming: async (_history, _audio, onChunk) => {
+        await onChunk({ text: "Q2 2026 total revenue ", audio: Buffer.from("chunk1"), sampleRate: 24000 });
+        await onChunk({ text: "was $18.4M." });
+        return { transcript: "What was Q2 revenue?", answer: ANSWER, chunks: [], citations: CITATIONS };
+      },
+    });
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [],
+        audioBase64: Buffer.from("fake-wav").toString("base64"),
+        stream: true,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain("data: [DONE]");
+
+    const events = parseSseEvents(body);
+    expect(events[0]).toMatchObject({ type: "audio", text: "Q2 2026 total revenue " });
+    expect(events[0].audioBase64).toBe(Buffer.from("chunk1").toString("base64"));
+    expect(events[0].sampleRate).toBe(24000);
+    expect(events[1]).toMatchObject({ type: "audio", text: "was $18.4M." });
+    expect(events[1].audioBase64).toBeUndefined();
+    expect(events[2]).toMatchObject({
+      type: "done",
+      transcript: "What was Q2 revenue?",
+      citations: CITATIONS,
+    });
+  });
+
+  it("emits an SSE error event instead of a JSON 400 when transcription yields no text", async () => {
+    const url = await startServer({
+      invoke: fakeVoiceAgent.invoke,
+      invokeStreaming: async () => {
+        throw new EmptyTranscriptError();
+      },
+    });
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [],
+        audioBase64: Buffer.from("fake-wav").toString("base64"),
+        stream: true,
+      }),
+    });
+
+    // Headers are already committed to text/event-stream by the time the
+    // empty-transcript case is known, so this can't become a 400 - the
+    // error surfaces as a stream event instead (same as any other
+    // generation error).
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain("data: [DONE]");
+    expect(parseSseEvents(body)[0]).toMatchObject({ type: "error", error: EMPTY_TRANSCRIPT_ERROR });
   });
 });

@@ -2,7 +2,13 @@ export type ModelStatus = 'idle' | 'loading' | 'ready' | 'error'
 export type ModelInfo = { name: string; quantization: string }
 /** Present once known (after the model has loaded) - whether the chat model is running on a remote provider or locally. */
 export type DelegationInfo = { isDelegated: boolean; providerPublicKey?: string }
-export type ModelStatusResponse = { status: ModelStatus; error?: string; model: ModelInfo; delegation?: DelegationInfo }
+export type ModelStatusResponse = {
+  status: ModelStatus
+  error?: string
+  model: ModelInfo
+  delegation?: DelegationInfo
+  recovering: boolean
+}
 
 export async function fetchModelStatus(): Promise<ModelStatusResponse> {
   const res = await fetch('/api/chat/status')

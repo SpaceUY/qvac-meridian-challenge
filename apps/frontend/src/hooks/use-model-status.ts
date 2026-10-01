@@ -22,6 +22,8 @@ export function useModelStatus(): {
   error?: string
   model?: ModelInfo
   delegation?: DelegationInfo
+  /** Whether a delegation-recovery reload is in flight right now (see `AgentStatusPayload.recovering` on the backend). `false` until the first poll resolves. */
+  recovering: boolean
   /** True once the user has cancelled a load and hasn't asked to retry yet - lets the UI say "cancelled" instead of "starting". */
   cancelled: boolean
   cancelLoad: () => void
@@ -79,6 +81,7 @@ export function useModelStatus(): {
     return {
       status: 'error',
       error: 'could not reach the server',
+      recovering: false,
       cancelled,
       cancelLoad: () => cancelLoadMutation.mutate(),
       retryLoad,
@@ -90,6 +93,7 @@ export function useModelStatus(): {
     error: query.data?.error,
     model: query.data?.model,
     delegation: query.data?.delegation,
+    recovering: query.data?.recovering ?? false,
     cancelled,
     cancelLoad: () => cancelLoadMutation.mutate(),
     retryLoad,
