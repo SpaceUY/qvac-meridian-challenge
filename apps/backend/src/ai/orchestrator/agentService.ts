@@ -4,7 +4,9 @@ import type { RagRetrievalService } from "../../rag/service/rag.service.js";
 import type { RetrievedChunk } from "../../rag/domain/types.js";
 import { ChatQVAC } from "./qvacChatModel.js";
 import { createGraph } from "./graph.js";
+import { State } from "./domain.js";
 import { loadCorpusContext } from "../context/fullCorpusContext.js";
+import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
 import type { ModelManagementService } from "../../models/service/models.service.js";
 import {
   RESOURCE_THRESHOLDS,
@@ -53,6 +55,7 @@ export class AgentService {
   constructor(
     service: ModelManagementService,
     ragService: RagRetrievalService,
+    documentRepository: DocumentRepository,
   ) {
     const { modelSource, modelName, quantization, temperature, ctxSize, engineConfig } =
       this.selectModelConfig();
@@ -64,7 +67,7 @@ export class AgentService {
       ctxSize,
       engineConfig,
     });
-    this.graph = createGraph(this.chatModel, ragService);
+    this.graph = createGraph(this.chatModel, ragService, documentRepository);
     //this.corpusContext = loadCorpusContext();
   }
 
@@ -107,32 +110,63 @@ export class AgentService {
     }
   }
 
-  /** Sends a conversation history through the graph, returns the assistant's reply text and thinking trace. */
-  async invoke(messages: ConversationMessage[]): Promise<InvokeResult> {
+  /**
+   * Sends a conversation history through the graph, returns the assistant's
+   * reply text and thinking trace. Pass `onToken` to receive the final
+   * reply's text as it's generated, rather than only once this resolves.
+   */
+  async invoke(
+    messages: ConversationMessage[],
+    onToken?: (textDelta: string) => void,
+  ): Promise<InvokeResult> {
     //const corpusContext = await this.corpusContext;
 
     const langchainMessages = messages.map(({ role, message }) =>
       role === "user" ? new HumanMessage(message) : new AIMessage(message),
     );
 
-    const result = await this.graph.invoke({
-      // new SystemMessage(
-      //   `Reference documents. Use them to answer questions and cite the source path when relevant:\n\n${corpusContext}`,
-      // ),
-      messages: langchainMessages,
-    });
+    const stream = await this.graph.stream(
+      {
+        // new SystemMessage(
+        //   `Reference documents. Use them to answer questions and cite the source path when relevant:\n\n${corpusContext}`,
+        // ),
+        messages: langchainMessages,
+      },
+      { streamMode: ["messages", "values"] },
+    );
 
-    const lastAIMessage = [...result.messages]
+    let finalState: typeof State.State | undefined;
+    let streamedAnyToken = false;
+    for await (const [mode, payload] of stream) {
+      if (mode === "messages") {
+        const [chunk] = payload;
+        if (AIMessage.isInstance(chunk) && chunk.text) {
+          streamedAnyToken = true;
+          onToken?.(chunk.text);
+        }
+      } else {
+        finalState = payload;
+      }
+    }
+
+    const lastAIMessage = [...(finalState?.messages ?? [])]
       .reverse()
       .find((message): message is AIMessage => AIMessage.isInstance(message));
+
+    const answer = lastAIMessage?.text ?? "";
+    // The insufficient-context fallback (graph.ts's buildLlmNode) is a fixed
+    // string, not model-generated, so it never streams through "messages" -
+    // forward it as a single chunk here, the only path onToken wouldn't
+    // otherwise see.
+    if (!streamedAnyToken && answer) onToken?.(answer);
 
     const thinkingText = lastAIMessage?.additional_kwargs.thinkingText;
 
     return {
-      answer: lastAIMessage?.text ?? "",
+      answer,
       thinkingText:
         typeof thinkingText === "string" ? thinkingText : undefined,
-      chunks: result.chunks,
+      chunks: finalState?.chunks ?? [],
     };
   }
 }

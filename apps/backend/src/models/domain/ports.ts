@@ -46,17 +46,20 @@ export interface ModelRuntimePort {
   ): Promise<LoadedModel> & { requestId: string };
   /** Same `requestId`-carrying convention as `load()`, for cancelling an in-flight inference. */
   infer(modelId: string, prompt: string): Promise<InferenceResult> & { requestId: string };
-  /** Multi-turn chat completion with optional tool-calling, for chat-model consumers (e.g. `ChatQVAC`). */
-  chatComplete(modelId: string, request: ChatCompletionRequest): Promise<ChatCompletionResult>;
   /**
-   * Embeds a batch of texts with an already-loaded embeddings model,
-   * returning one vector per input **in input order**. Always a batch, never
-   * a single string: the underlying SDK returns a different shape for each
-   * (`number[]` vs `number[][]`), and collapsing that difference here keeps
-   * every consumer from having to branch on it. One call is one RPC round
-   * trip, so callers should batch rather than loop.
+   * Multi-turn chat completion with optional tool-calling, for chat-model
+   * consumers (e.g. `ChatQVAC`). Pass `onToken` to receive incremental
+   * assistant-text segments as generation proceeds; omit it for a single
+   * resolved result. Either way the returned promise resolves to the same
+   * aggregated result, and carries `requestId` synchronously (same
+   * cancellation convention as `load()`/`infer()`) so a caller can cancel
+   * a long-running (especially streaming) generation while it's in flight.
    */
-  embed(modelId: string, texts: string[]): Promise<number[][]>;
+  chatComplete(
+    modelId: string,
+    request: ChatCompletionRequest,
+    onToken?: (textDelta: string) => void
+  ): Promise<ChatCompletionResult> & { requestId: string };
   unload(modelId: string): Promise<void>;
   close(): Promise<void>;
   /**

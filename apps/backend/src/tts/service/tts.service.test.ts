@@ -44,11 +44,11 @@ class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
     throw new Error('not used by TtsService');
   }
 
-  async chatComplete(_modelId: string, _request: ChatCompletionRequest): Promise<ChatCompletionResult> {
-    throw new Error('not used by TtsService');
-  }
-
-  async embed(_modelId: string, _texts: string[]): Promise<number[][]> {
+  chatComplete(
+    _modelId: string,
+    _request: ChatCompletionRequest,
+    _onToken?: (textDelta: string) => void
+  ): Promise<ChatCompletionResult> & { requestId: string } {
     throw new Error('not used by TtsService');
   }
 

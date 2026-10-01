@@ -9,7 +9,7 @@ class FakeEmbedding implements EmbeddingPort {
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
-    return texts.map(() => [1]);
+    return Promise.all(texts.map(() => this.embed('')));
   }
 }
 

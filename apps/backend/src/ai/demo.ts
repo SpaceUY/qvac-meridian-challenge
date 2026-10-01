@@ -8,6 +8,7 @@ import { FakeEmbeddingPort } from "../rag/infra/fakeEmbedding.adapter.js";
 import { buildFixtureVectorStore } from "../rag/infra/fixtures/corpus-chunks.fixture.js";
 import { RagRetrievalService } from "../rag/service/rag.service.js";
 import type { RagRetrievalConfig } from "../rag/domain/types.js";
+import { CorpusDocumentRepository } from "../document/infra/corpusDocumentRepository.js";
 
 /**
  * The FakeEmbeddingPort's raw hashed-bag-of-words cosine scores run lower
@@ -35,7 +36,8 @@ async function main(): Promise<void> {
     DEMO_RAG_CONFIG,
   );
 
-  const agentService = new AgentService(service, ragService);
+  const documentRepository = new CorpusDocumentRepository();
+  const agentService = new AgentService(service, ragService, documentRepository);
 
   let result: InvokeResult | undefined;
   let executionError: unknown;

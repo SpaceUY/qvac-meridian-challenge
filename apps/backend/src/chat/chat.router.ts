@@ -40,10 +40,11 @@ export function createCompletionsRouter(agentService: AgentService): Router {
 
     res.writeHead(200, SSE_HEADERS);
     try {
-      // NOTE: result.chunks (the RAG citations) aren't wired into the SSE
-      // response yet — pending, see the team doc on the citations format.
-      const result = await agentService.invoke(messages);
-      res.write(toTextChunk(result.answer));
+      // NOTE: chunks (the RAG citations) aren't wired into the SSE response
+      // yet — pending, see the team doc on the citations format.
+      await agentService.invoke(messages, (textDelta) => {
+        res.write(toTextChunk(textDelta));
+      });
     } catch (err) {
       console.error("[chat:completions]", err);
       res.write(toTextChunk(COMPLETION_ERROR));

@@ -8,10 +8,16 @@ import { createChatStatusRouter, createCompletionsRouter } from "./chat/chat.rou
 import { createTtsRouter } from "./tts/router/tts.router.js";
 import { TtsService } from "./tts/service/tts.service.js";
 import { QvacTtsAdapter } from "./tts/infra/qvacTtsAdapter.js";
-import { FakeEmbeddingPort } from "./rag/infra/fakeEmbedding.adapter.js";
+import { QvacEmbeddingAdapter } from "./rag/infra/qvacEmbeddingAdapter.js";
 import { buildFixtureVectorStore } from "./rag/infra/fixtures/corpus-chunks.fixture.js";
 import { RagRetrievalService } from "./rag/service/rag.service.js";
+import { QvacEmbeddingService } from "./rag/service/qvacEmbeddingService.js";
 import type { RagRetrievalConfig } from "./rag/domain/types.js";
+import { CorpusDocumentRepository } from "./document/infra/corpusDocumentRepository.js";
+import {
+  DEFAULT_EMBEDDING_BATCH_SIZE,
+  NOMIC_EMBED_TEXT_V1_5_MODEL_SOURCE,
+} from "./config/models.config.js";
 
 const app = express();
 
@@ -27,12 +33,13 @@ const modelManagementService = new ModelManagementService(qvacRuntimeAdapter, qv
 app.use("/api/models", createModelsRouter(modelManagementService));
 
 /**
- * PLACEHOLDER: FakeEmbeddingPort + a handful of fixture chunks "inspired by"
- * corpus/ (not the real files) — same wiring `ai/demo.ts` uses, not yet the
- * persisted, real-corpus vector store [2.3] needs (Lucas's next ticket).
- * minScore is tuned down from `DEFAULT_RAG_CONFIG`'s 0.65 because
- * FakeEmbeddingPort's hashed-bag-of-words cosine scores run lower than a
- * real embedding model's — raise it back once a real adapter is in.
+ * PLACEHOLDER: real embeddings (nomic-embed-text-v1.5 via QVAC) over a
+ * handful of fixture chunks "inspired by" corpus/ (not the real files) —
+ * not yet the persisted, real-corpus vector store [2.3] needs (Lucas's next
+ * ticket). minScore is still tuned down from `DEFAULT_RAG_CONFIG`'s 0.65;
+ * re-tune once retrieval has been exercised against the real model at
+ * runtime (no local inference happens in this environment to calibrate it
+ * against).
  */
 const RAG_CONFIG: RagRetrievalConfig = {
   topK: 3,
@@ -40,11 +47,21 @@ const RAG_CONFIG: RagRetrievalConfig = {
   maxContextChunks: 2,
   dedupeExactContent: true,
 };
-const embeddingPort = new FakeEmbeddingPort();
+const embeddingPort = new QvacEmbeddingService(
+  modelManagementService,
+  new QvacEmbeddingAdapter(),
+  NOMIC_EMBED_TEXT_V1_5_MODEL_SOURCE,
+  DEFAULT_EMBEDDING_BATCH_SIZE,
+);
 const vectorStore = await buildFixtureVectorStore(embeddingPort);
 const ragService = new RagRetrievalService(embeddingPort, vectorStore, RAG_CONFIG);
 
-const agentService = new AgentService(modelManagementService, ragService);
+const documentRepository = new CorpusDocumentRepository();
+const agentService = new AgentService(
+  modelManagementService,
+  ragService,
+  documentRepository,
+);
 app.use("/api/chat", createChatStatusRouter(agentService));
 app.use("/v1/chat", createCompletionsRouter(agentService));
 

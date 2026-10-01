@@ -11,6 +11,7 @@ import {
   ToolMessage,
 } from "@langchain/core/messages";
 import { lookupStockTool } from "./stockTool.js";
+import { createListDocumentsTool } from "./listDocumentsTool.js";
 import { ChatQVAC } from "./qvacChatModel.js";
 import { buildGroundedContext } from "../../rag/service/contextBuilder.js";
 import { State } from "./domain.js";
@@ -21,35 +22,57 @@ import {
 import type { RagRetrievalService } from "../../rag/service/rag.service.js";
 import { buildRetrieveNode } from "./ragGraph.js";
 import { BindToolsInput } from "@langchain/core/language_models/chat_models";
+import type { AIMessageChunk } from "@langchain/core/messages";
+import type { StructuredToolInterface } from "@langchain/core/tools";
+import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
 
-const SYSTEM_PROMPT =
-  "You are a helpful company inventory and stock records assistant tasked to report stock information by name or product line and from different geographical regions. Use the provided lookup_stock tool if the user ask about stock information. There are stock items identifiers named as SKU, and they have a specific format, e.g. SD-X4-001, use specific sku lookup_stock tool's field when a specific SKU inquire is recognized in the user's query. Never answer stock related queries without calling lookup_stock.";
+const SYSTEM_PROMPT = `You are Meridian's internal assistant. You handle two kinds of questions:
+
+1. Stock and inventory questions (SKU, stock levels, price, lead time, region availability). Always call the lookup_stock tool for these instead of answering from memory. SKUs follow a specific format, e.g. SD-X4-001 — use the tool's sku field when one is recognized in the user's query. Never answer stock related queries without calling lookup_stock.
+2. Questions about company documents (deals, warranty terms, SLAs, policies, reports, etc). Answer these using only the Context section below.
+
+${GROUNDING_INSTRUCTIONS}`;
 
 export function buildLlmNode(
   tools: BindToolsInput[],
   model: ChatQVAC,
 ): GraphNode<typeof State> {
   return async (state) => {
-    const systemMessagePrompt = new SystemMessage(`${SYSTEM_PROMPT}`);
-
     const context = buildGroundedContext(state.chunks);
-    const systemContextMessage = new SystemMessage(
-      `${GROUNDING_INSTRUCTIONS}\n\nContext:\n${context}`,
+    const systemMessage = new SystemMessage(
+      `${SYSTEM_PROMPT}\n\nContext:\n${context}`,
     );
 
     const modelWithTools = model.bindTools(tools);
 
-    const response = await modelWithTools.invoke([
-      systemMessagePrompt,
-      systemContextMessage,
+    const stream = await modelWithTools.stream([
+      systemMessage,
       ...state.messages,
     ]);
+    let response: AIMessageChunk | undefined;
+    for await (const chunk of stream) {
+      response = response ? response.concat(chunk) : chunk;
+    }
+    if (!response) {
+      throw new Error("model stream produced no chunks");
+    }
+
+    // Guard against hallucinated/refused answers: if this turn never called a
+    // tool and retrieval found no supporting evidence, don't trust freeform
+    // model text — fall back to the fixed insufficient-context message.
+    const usedTool = state.messages.some((message) =>
+      ToolMessage.isInstance(message),
+    );
+    if (!response.tool_calls?.length && !state.hasEvidence && !usedTool) {
+      return { messages: [new AIMessage(INSUFFICIENT_CONTEXT_MESSAGE)] };
+    }
+
     return { messages: [response] };
   };
 }
 
 export function buildToolNode(
-  toolsByName: Record<string, typeof lookupStockTool>,
+  toolsByName: Record<string, StructuredToolInterface>,
 ): GraphNode<typeof State> {
   return async (state) => {
     const lastMessage = state.messages[state.messages.length - 1];
@@ -84,10 +107,16 @@ export function buildToolNode(
 }
 
 /** Builds the compiled stock-assistant graph around the given chat model. */
-export function createGraph(model: ChatQVAC, ragService: RagRetrievalService) {
+export function createGraph(
+  model: ChatQVAC,
+  ragService: RagRetrievalService,
+  documentRepository: DocumentRepository,
+) {
   // Augment the LLM with tools
-  const toolsByName: Record<string, typeof lookupStockTool> = {
+  const listDocumentsTool = createListDocumentsTool(documentRepository);
+  const toolsByName: Record<string, StructuredToolInterface> = {
     [lookupStockTool.name]: lookupStockTool,
+    [listDocumentsTool.name]: listDocumentsTool,
   };
 
   const shouldContinue: ConditionalEdgeRouter<{

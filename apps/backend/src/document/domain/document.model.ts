@@ -22,6 +22,7 @@ export const DocumentFormat = {
   JSON: "JSON",
   CSV: "CSV",
   HTML: "HTML",
+  TEXT: "TEXT",
 };
 
 export type DocumentFormat =

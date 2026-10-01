@@ -2,14 +2,14 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const CORPUS_DIR = path.resolve(
+export const CORPUS_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../../../../corpus",
 );
 
-const TEXT_EXTENSIONS = new Set([".md", ".txt", ".csv", ".json", ".html"]);
+export const TEXT_EXTENSIONS = new Set([".md", ".txt", ".csv", ".json", ".html"]);
 
-async function listFilesRecursively(dir: string): Promise<string[]> {
+export async function listFilesRecursively(dir: string): Promise<string[]> {
   const entries = await fs.readdir(dir, { withFileTypes: true });
   const files: string[] = [];
 

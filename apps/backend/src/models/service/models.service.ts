@@ -127,26 +127,19 @@ export class ModelManagementService {
     return Object.assign(result, { requestId });
   }
 
-  /** Multi-turn chat completion with optional tool-calling, for chat-model consumers (e.g. `ChatQVAC`). */
-  async chatComplete(modelId: string, request: ChatCompletionRequest): Promise<ChatCompletionResult> {
-    this.assertLoaded(modelId);
-    try {
-      return await this.runtime.chatComplete(modelId, request);
-    } catch (err) {
-      throw toModelManagementError('inference', err);
-    }
-  }
-
   /**
-   * Embeds a batch of texts with an already-loaded embeddings model. Same
-   * `assertLoaded` + error-translation contract as `chatComplete()`: one
-   * `ModelManagementError` for callers to handle, tagged with the stage that
-   * failed.
+   * Multi-turn chat completion with optional tool-calling, for chat-model
+   * consumers (e.g. `ChatQVAC`). Pass `onToken` to receive incremental
+   * assistant-text segments as generation proceeds - see `ModelRuntimePort`.
    */
-  async embed(modelId: string, texts: string[]): Promise<number[][]> {
+  async chatComplete(
+    modelId: string,
+    request: ChatCompletionRequest,
+    onToken?: (textDelta: string) => void
+  ): Promise<ChatCompletionResult> {
     this.assertLoaded(modelId);
     try {
-      return await this.runtime.embed(modelId, texts);
+      return await this.runtime.chatComplete(modelId, request, onToken);
     } catch (err) {
       throw toModelManagementError('inference', err);
     }

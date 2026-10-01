@@ -28,6 +28,7 @@ import { FakeEmbeddingPort } from "./../rag/infra/fakeEmbedding.adapter.js";
 import { buildFixtureVectorStore } from "../rag/infra/fixtures/corpus-chunks.fixture.js";
 import { RagRetrievalService } from "../rag/service/rag.service.js";
 import type { RagRetrievalConfig } from "../rag/domain/types.js";
+import { CorpusDocumentRepository } from "../document/infra/corpusDocumentRepository.js";
 
 // Safety net for this CLI script only (not the adapter/service): the SDK's
 // internal RPC stream can emit an unlistened 'error' event during
@@ -113,7 +114,8 @@ async function main(): Promise<void> {
     DEMO_RAG_CONFIG,
   );
 
-  const agent = new AgentService(models, ragService);
+  const documentRepository = new CorpusDocumentRepository();
+  const agent = new AgentService(models, ragService, documentRepository);
 
   let executionError: unknown;
 

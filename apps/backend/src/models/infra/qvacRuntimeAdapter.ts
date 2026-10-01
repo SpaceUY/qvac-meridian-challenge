@@ -4,7 +4,6 @@ import {
   completion,
   CompletionFinal,
   downloadAsset,
-  embed as sdkEmbed,
   InferenceCancelledError,
   loadModel,
   modelRegistryList,
@@ -119,41 +118,59 @@ export class QvacRuntimeAdapter
     return Object.assign(result, { requestId });
   }
 
-  async chatComplete(
+  /**
+   * `onToken`'s presence selects streaming: it drives `completion()`'s own
+   * `stream` flag, and the returned promise carries `requestId`
+   * synchronously - same convention as `load()`/`infer()` - so a caller can
+   * cancel a long-running (especially streaming) generation in flight.
+   */
+  chatComplete(
     modelId: string,
     request: ChatCompletionRequest,
-  ): Promise<ChatCompletionResult> {
+    onToken?: (textDelta: string) => void,
+  ): Promise<ChatCompletionResult> & { requestId: string } {
     const run = completion({
       modelId,
       history: request.history,
       tools: request.tools,
       captureThinking: true,
-      stream: false,
+      stream: Boolean(onToken),
       generationParams:
         request.temperature !== undefined
           ? { temp: request.temperature }
           : undefined,
     });
-    const final: CompletionFinal = await run.final;
-    return {
-      text: final.contentText,
-      toolCalls: final.toolCalls.map((call) => ({
-        id: call.id,
-        name: call.name,
-        arguments: call.arguments,
-      })),
-      thinkingText: final.thinkingText,
-      stats: final.stats,
-    };
-  }
+    const requestId = run.requestId;
 
-  async embed(modelId: string, texts: string[]): Promise<number[][]> {
-    // Without this, `[]` comes back as a default `[]` embedding, which
-    // `toVectorBatch` reads as ONE flat vector and rejects with a confusing
-    // "returned 1 vectors for 0 inputs".
-    if (texts.length === 0) return [];
-    const { embedding } = await sdkEmbed({ modelId, text: texts });
-    return toVectorBatch(embedding, texts.length);
+    if (onToken) {
+      void (async () => {
+        try {
+          for await (const event of run.events) {
+            if (event.type === "contentDelta") onToken(event.text);
+          }
+        } catch {
+          // Surfaced via `run.final` -> `result` below; avoids reporting
+          // the same failure twice (and an unhandled-rejection here).
+        }
+      })();
+    }
+
+    const result = run.final
+      .then((final: CompletionFinal) => ({
+        text: final.contentText,
+        toolCalls: final.toolCalls.map((call) => ({
+          id: call.id,
+          name: call.name,
+          arguments: call.arguments,
+        })),
+        thinkingText: final.thinkingText,
+        stats: final.stats,
+      }))
+      .catch((err: unknown) => {
+        throw toDomainError(requestId, err);
+      });
+
+    return Object.assign(result, { requestId });
   }
 
   async unload(modelId: string): Promise<void> {
@@ -175,28 +192,6 @@ export class QvacRuntimeAdapter
   async cancel(requestId: string): Promise<void> {
     await cancel({ requestId });
   }
-}
-
-/**
- * `embed()`'s response is typed `number[] | number[][]` (see
- * `dist/schemas/embed.d.ts`): the SDK returns one flat vector when `text` is
- * a string and one vector per input when it's an array. We always pass an
- * array, but a one-element array is exactly where the two shapes are easiest
- * to confuse, so the shape is checked at runtime instead of assumed. The
- * length check turns a silent misalignment - vectors landing on the wrong
- * chunks, which would only surface much later as nonsense citations - into
- * an immediate, loud failure.
- */
-function toVectorBatch(embedding: number[] | number[][], expected: number): number[][] {
-  const vectors: number[][] = Array.isArray(embedding[0])
-    ? (embedding as number[][])
-    : [embedding as number[]];
-
-  if (vectors.length !== expected) {
-    throw new Error(`embed() returned ${vectors.length} vectors for ${expected} inputs`);
-  }
-
-  return vectors;
 }
 
 function toRegistryModelSummary(entry: {

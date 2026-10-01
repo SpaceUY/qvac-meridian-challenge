@@ -7,13 +7,13 @@ import {
 import type { BaseLanguageModelInput } from "@langchain/core/language_models/base";
 import {
   AIMessage,
-  type AIMessageChunk,
+  AIMessageChunk,
   type BaseMessage,
 } from "@langchain/core/messages";
 import type { ToolCall } from "@langchain/core/messages/tool";
 import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 import type { CallbackManagerForLLMRun } from "@langchain/core/callbacks/manager";
-import type { ChatResult } from "@langchain/core/outputs";
+import { ChatGenerationChunk, type ChatResult } from "@langchain/core/outputs";
 import type { Runnable } from "@langchain/core/runnables";
 import type { ModelManagementService } from "../../models/service/models.service.js";
 import type {
@@ -201,5 +201,85 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
       generations: [{ text: result.text, message: aiMessage }],
       llmOutput: result.stats ? { stats: result.stats } : undefined,
     };
+  }
+
+  /**
+   * Bridges `service.chatComplete`'s callback-based streaming into an async
+   * generator: each `onToken` call is queued and yielded as a
+   * `ChatGenerationChunk` carrying just its text delta, then one final
+   * content-empty chunk carries `tool_calls`/`thinkingText`/`stats` once
+   * `chatComplete`'s promise resolves - the same result `_generate` returns,
+   * split into deltas plus a trailer.
+   */
+  async *_streamResponseChunks(
+    messages: BaseMessage[],
+    options: this["ParsedCallOptions"],
+    runManager?: CallbackManagerForLLMRun,
+  ): AsyncGenerator<ChatGenerationChunk> {
+    const modelId = await this.ensureModel();
+
+    type QueueItem =
+      | { kind: "token"; textDelta: string }
+      | { kind: "done"; result: ChatCompletionResult }
+      | { kind: "error"; error: unknown };
+
+    const queue: QueueItem[] = [];
+    let notify: (() => void) | undefined;
+    const push = (item: QueueItem) => {
+      queue.push(item);
+      notify?.();
+      notify = undefined;
+    };
+
+    this.service
+      .chatComplete(
+        modelId,
+        {
+          history: messages.map(toChatMessage),
+          tools: options.tools,
+          temperature: this.temperature,
+        },
+        (textDelta) => push({ kind: "token", textDelta }),
+      )
+      .then((result) => push({ kind: "done", result }))
+      .catch((error: unknown) => push({ kind: "error", error }));
+
+    while (true) {
+      const item = queue.shift();
+      if (!item) {
+        await new Promise<void>((resolve) => {
+          notify = resolve;
+        });
+        continue;
+      }
+
+      if (item.kind === "token") {
+        await runManager?.handleLLMNewToken(item.textDelta);
+        yield new ChatGenerationChunk({
+          text: item.textDelta,
+          message: new AIMessageChunk({ content: item.textDelta }),
+        });
+        continue;
+      }
+
+      if (item.kind === "error") {
+        throw item.error;
+      }
+
+      yield new ChatGenerationChunk({
+        text: "",
+        message: new AIMessageChunk({
+          content: "",
+          tool_calls: toLangChainToolCalls(item.result.toolCalls),
+          additional_kwargs: item.result.thinkingText
+            ? { thinkingText: item.result.thinkingText }
+            : undefined,
+        }),
+        generationInfo: item.result.stats
+          ? { stats: item.result.stats }
+          : undefined,
+      });
+      return;
+    }
   }
 }
