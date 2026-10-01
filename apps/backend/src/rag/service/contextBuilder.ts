@@ -8,6 +8,12 @@ function formatHeader(chunk: RetrievedChunk): string {
   const title = chunk.metadata?.title;
   if (typeof title === 'string' && title.length > 0) parts.push(`title: ${title}`);
 
+  const authority = chunk.metadata?.authority;
+  if (typeof authority === 'string' && authority.length > 0) parts.push(`authority: ${authority}`);
+
+  const status = chunk.metadata?.status;
+  if (typeof status === 'string' && status.length > 0) parts.push(`status: ${status}`);
+
   return `[${parts.join(' | ')}]`;
 }
 

@@ -13,7 +13,7 @@ import { CorpusDocumentRepository } from "../document/infra/corpusDocumentReposi
 /**
  * The FakeEmbeddingPort's raw hashed-bag-of-words cosine scores run lower
  * than a real embedding model's, so this demo overrides `minScore` well
- * below `DEFAULT_RAG_CONFIG`'s 0.65 - tuned for `FakeEmbeddingPort`/the
+ * below `DEFAULT_RAG_CONFIG`'s 0.54 - tuned for `FakeEmbeddingPort`/the
  * bundled fixtures only, not a value to carry over to a real embedding
  * adapter.
  */

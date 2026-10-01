@@ -1,11 +1,12 @@
+import { DEFAULT_RAG_CONFIG } from '../../config/rag.config.js';
 import type { EmbeddingPort, VectorStorePort } from '../domain/ports.js';
 import type { RagRetrievalConfig, RagRetrievalResult, RetrievedChunk } from '../domain/types.js';
-import { DEFAULT_RAG_CONFIG } from './rag.service.const.js';
+import { metadataRerank } from './metadataRerank.js';
 
 /**
- * Runtime RAG retrieval: embed -> search -> dedupe -> cap. Knows nothing
- * about LangChain/LangGraph or how retrieved chunks get formatted into a
- * prompt - see `contextBuilder.ts` for that.
+ * Runtime RAG retrieval: embed -> search -> dedupe -> rerank -> cap. Knows
+ * nothing about LangChain/LangGraph or how retrieved chunks get formatted
+ * into a prompt - see `contextBuilder.ts` for that.
  */
 export class RagRetrievalService {
   constructor(
@@ -21,7 +22,8 @@ export class RagRetrievalService {
       minScore: this.config.minScore
     });
 
-    const chunks = this.dedupe(results).slice(0, this.config.maxContextChunks);
+    const deduped = this.dedupe(results);
+    const chunks = metadataRerank(deduped).slice(0, this.config.maxContextChunks);
 
     return { chunks, hasEvidence: chunks.length > 0 };
   }

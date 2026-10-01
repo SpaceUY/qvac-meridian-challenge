@@ -31,6 +31,21 @@ describe('buildGroundedContext', () => {
     );
   });
 
+  it('includes authority and status when the chunk went through metadataRerank', () => {
+    const chunk: RetrievedChunk = {
+      id: 'chunk-warranty-01',
+      content: 'Warranty covers 24 months.',
+      score: 0.8,
+      source: 'policies/warranty-terms.md',
+      metadata: { authority: 'official-policy', status: 'current' }
+    };
+
+    expect(buildGroundedContext([chunk])).toBe(
+      '[Source: policies/warranty-terms.md | id: chunk-warranty-01 | authority: official-policy | status: current]\n' +
+        'Warranty covers 24 months.'
+    );
+  });
+
   it('omits the source segment when source is unset', () => {
     const chunk: RetrievedChunk = {
       id: 'chunk-x',
