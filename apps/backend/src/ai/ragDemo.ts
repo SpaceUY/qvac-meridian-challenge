@@ -1,4 +1,4 @@
-import { ChatQVAC } from "qvac-langgraph";
+import { ChatQVAC } from "@space-uy/qvac-langgraph";
 import { QvacChatSession } from "./orchestrator/qvacChatSession.js";
 import { createRagGraph } from "./orchestrator/ragGraph.js";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
@@ -42,20 +42,38 @@ async function main(): Promise<void> {
   const adapter = new QvacRuntimeAdapter();
   const service = new ModelManagementService(adapter, adapter);
 
-  const chatSession = new QvacChatSession({ service, modelSource: QWEN3_600M_MODEL_SOURCE });
-  const qvacModel = new ChatQVAC({ complete: chatSession.complete, temperature: 0 });
+  const chatSession = new QvacChatSession({
+    service,
+    modelSource: QWEN3_600M_MODEL_SOURCE,
+  });
+  const qvacModel = new ChatQVAC({
+    complete: chatSession.complete,
+    temperature: 0,
+  });
 
   const embeddingPort = new FakeEmbeddingPort();
   const vectorStore = await buildFixtureVectorStore(embeddingPort);
-  const ragService = new RagRetrievalService(embeddingPort, vectorStore, DEMO_RAG_CONFIG);
+  const ragService = new RagRetrievalService(
+    embeddingPort,
+    vectorStore,
+    DEMO_RAG_CONFIG,
+  );
 
   let executionError: unknown;
 
   try {
     const graph = createRagGraph(qvacModel, ragService);
 
-    await askAndPrint(graph, "Grounded answer", "What is the enterprise P1 first-response SLA?");
-    await askAndPrint(graph, "Insufficient-context answer", "What is the weather on Mars?");
+    await askAndPrint(
+      graph,
+      "Grounded answer",
+      "What is the enterprise P1 first-response SLA?",
+    );
+    await askAndPrint(
+      graph,
+      "Insufficient-context answer",
+      "What is the weather on Mars?",
+    );
   } catch (err) {
     executionError = err;
   }

@@ -11,7 +11,7 @@ import {
   SystemMessage,
   type BaseMessage,
 } from "@langchain/core/messages";
-import type { ChatQVAC } from "qvac-langgraph";
+import type { ChatQVAC } from "@space-uy/qvac-langgraph";
 import type { RagRetrievalService } from "../../rag/service/rag.service.js";
 import { buildGroundedContext } from "../../rag/service/contextBuilder.js";
 import {
@@ -51,7 +51,11 @@ export function buildRetrieveNode(
     }
 
     const result = await ragService.retrieve(query);
-    return { chunks: result.chunks, hasEvidence: result.hasEvidence, hasVisualInput };
+    return {
+      chunks: result.chunks,
+      hasEvidence: result.hasEvidence,
+      hasVisualInput,
+    };
   };
 }
 
@@ -59,7 +63,8 @@ export function buildRetrieveNode(
 export const routeOnEvidence: ConditionalEdgeRouter<{
   InputSchema: typeof State;
   Nodes: "llm" | "insufficientContext";
-}> = (state) => (state.hasEvidence || state.hasVisualInput ? "llm" : "insufficientContext");
+}> = (state) =>
+  state.hasEvidence || state.hasVisualInput ? "llm" : "insufficientContext";
 
 export const insufficientContextNode: GraphNode<typeof State> = async () => ({
   messages: [new AIMessage(INSUFFICIENT_CONTEXT_MESSAGE)],

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { AIMessage, AIMessageChunk, HumanMessage } from "@langchain/core/messages";
-import type { ChatQVAC } from "qvac-langgraph";
+import {
+  AIMessage,
+  AIMessageChunk,
+  HumanMessage,
+} from "@langchain/core/messages";
+import { ChatQVAC } from "@space-uy/qvac-langgraph";
 import { buildLlmNode } from "./graph.js";
 import { INSUFFICIENT_CONTEXT_MESSAGE } from "./ragGraph.const.js";
 
@@ -16,7 +20,9 @@ function fakeModelWithResponse(chunk: AIMessageChunk): ChatQVAC {
 
 describe("buildLlmNode guard (graph.ts)", () => {
   it("returns the model's answer when the turn has an image but no RAG evidence", async () => {
-    const model = fakeModelWithResponse(new AIMessageChunk({ content: "It's a cracked mounting bracket." }));
+    const model = fakeModelWithResponse(
+      new AIMessageChunk({ content: "It's a cracked mounting bracket." }),
+    );
     const node = buildLlmNode([], model);
 
     const update = (await node(
@@ -26,7 +32,8 @@ describe("buildLlmNode guard (graph.ts)", () => {
         hasEvidence: false,
         hasVisualInput: true,
         temperature: undefined,
-        seed: undefined, sessionId: undefined,
+        seed: undefined,
+        sessionId: undefined,
       },
       {},
     )) as { messages: AIMessage[] };
@@ -36,17 +43,22 @@ describe("buildLlmNode guard (graph.ts)", () => {
   });
 
   it("uses the model's answer when there is both an image and RAG evidence", async () => {
-    const model = fakeModelWithResponse(new AIMessageChunk({ content: "Combined answer." }));
+    const model = fakeModelWithResponse(
+      new AIMessageChunk({ content: "Combined answer." }),
+    );
     const node = buildLlmNode([], model);
 
     const update = (await node(
       {
         messages: [new HumanMessage("does this match the warranty terms?")],
-        chunks: [{ id: "c1", content: "Warranty covers 24 months.", score: 0.9 }],
+        chunks: [
+          { id: "c1", content: "Warranty covers 24 months.", score: 0.9 },
+        ],
         hasEvidence: true,
         hasVisualInput: true,
         temperature: undefined,
-        seed: undefined, sessionId: undefined,
+        seed: undefined,
+        sessionId: undefined,
       },
       {},
     )) as { messages: AIMessage[] };
@@ -55,7 +67,9 @@ describe("buildLlmNode guard (graph.ts)", () => {
   });
 
   it("falls back to the fixed insufficient-context message when there is no evidence of any kind", async () => {
-    const model = fakeModelWithResponse(new AIMessageChunk({ content: "I'd guess it's fine." }));
+    const model = fakeModelWithResponse(
+      new AIMessageChunk({ content: "I'd guess it's fine." }),
+    );
     const node = buildLlmNode([], model);
 
     const update = (await node(
@@ -65,7 +79,8 @@ describe("buildLlmNode guard (graph.ts)", () => {
         hasEvidence: false,
         hasVisualInput: false,
         temperature: undefined,
-        seed: undefined, sessionId: undefined,
+        seed: undefined,
+        sessionId: undefined,
       },
       {},
     )) as { messages: AIMessage[] };
