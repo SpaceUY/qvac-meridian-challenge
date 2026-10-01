@@ -13,6 +13,8 @@ export const State = new StateSchema({
   seed: z.number().optional(),
   /** KV cache session key forwarded to the model call, from the `X-Meridian-Session` header - see `GenerationOptions` below. */
   sessionId: z.string().optional(),
+  /** `AgentService.invoke()`'s own requestId, forwarded to the model call so a concurrent completion can be tracked/cancelled independently of any other in flight - see `QvacChatSession`. */
+  requestId: z.string().optional(),
 });
 
 /**

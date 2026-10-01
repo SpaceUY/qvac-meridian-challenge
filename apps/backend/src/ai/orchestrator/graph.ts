@@ -64,13 +64,14 @@ function guardMayReplaceReply(state: typeof State.State): boolean {
 async function generateReply(
   model: ReturnType<ChatQVAC["bindTools"]>,
   messages: BaseMessage[],
-  { hidden, temperature, seed, sessionId }: { hidden: boolean; temperature?: number; seed?: number; sessionId?: string },
+  { hidden, temperature, seed, sessionId, requestId }: { hidden: boolean; temperature?: number; seed?: number; sessionId?: string; requestId?: string },
 ): Promise<AIMessageChunk> {
   const stream = await model.stream(messages, {
     ...(hidden ? { tags: [NO_STREAM_TAG] } : {}),
     temperature,
     seed,
     sessionId,
+    requestId,
   });
   let reply: AIMessageChunk | undefined;
   for await (const chunk of stream) {
@@ -98,7 +99,13 @@ export function buildLlmNode(
     const response = await generateReply(
       model.bindTools(tools),
       [systemMessage, ...state.messages],
-      { hidden: guardMayReplace, temperature: state.temperature, seed: state.seed, sessionId: state.sessionId },
+      {
+        hidden: guardMayReplace,
+        temperature: state.temperature,
+        seed: state.seed,
+        sessionId: state.sessionId,
+        requestId: state.requestId,
+      },
     );
 
     // Guard against hallucinated/refused answers: if this turn never called a

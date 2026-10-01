@@ -26,7 +26,7 @@ describe("buildLlmNode guard (graph.ts)", () => {
         hasEvidence: false,
         hasVisualInput: true,
         temperature: undefined,
-        seed: undefined, sessionId: undefined,
+        seed: undefined, sessionId: undefined, requestId: undefined,
       },
       {},
     )) as { messages: AIMessage[] };
@@ -46,7 +46,7 @@ describe("buildLlmNode guard (graph.ts)", () => {
         hasEvidence: true,
         hasVisualInput: true,
         temperature: undefined,
-        seed: undefined, sessionId: undefined,
+        seed: undefined, sessionId: undefined, requestId: undefined,
       },
       {},
     )) as { messages: AIMessage[] };
@@ -65,7 +65,7 @@ describe("buildLlmNode guard (graph.ts)", () => {
         hasEvidence: false,
         hasVisualInput: false,
         temperature: undefined,
-        seed: undefined, sessionId: undefined,
+        seed: undefined, sessionId: undefined, requestId: undefined,
       },
       {},
     )) as { messages: AIMessage[] };

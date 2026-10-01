@@ -104,7 +104,7 @@ export class AgentService {
     private readonly tier: ResourceTier = RESOURCE_TIER,
   ) {
     const selectedModel = LLM_MODELS_BY_TIER[this.tier];
-    const { modelSource, modelName, quantization, temperature, ctxSize, kvCacheEnabled } =
+    const { modelSource, modelName, quantization, temperature, ctxSize, kvCacheEnabled, maxConcurrency } =
       selectedModel;
     this.modelInfo = { name: modelName, quantization };
     this.sttModel = WHISPER_MODEL_NAMES_BY_TIER[this.tier];
@@ -116,6 +116,7 @@ export class AgentService {
       engineConfig: resolveEngineConfig(selectedModel),
       kvCacheEnabled,
       delegate: DELEGATE_CONFIG,
+      maxConcurrency,
     });
     this.chatModel = new ChatQVAC({ complete: this.chatSession.complete, temperature });
     this.graph = createGraph(this.chatModel, ragService, documentRepository);
@@ -288,28 +289,29 @@ export class AgentService {
     const requestId = randomUUID();
     this.pendingRequests.add(requestId);
 
-    const result = this.runInvoke(messages, options, onToken).finally(() => {
+    const result = this.runInvoke(messages, options, requestId, onToken).finally(() => {
       this.pendingRequests.delete(requestId);
     });
     return Object.assign(result, { requestId });
   }
 
   /**
-   * Cancels the chat completion currently in flight for `requestId`, if
-   * it's still pending - rejecting the `invoke()` promise it belongs to.
-   * Safe to call with an unknown or already-settled `requestId`, same
-   * no-op convention as `ModelManagementService.cancel()`.
+   * Cancels the chat completion currently in flight (or still queued behind
+   * the tier's concurrency limit) for `requestId`, if it's still pending -
+   * rejecting the `invoke()` promise it belongs to, without disturbing any
+   * other concurrently in-flight or queued `invoke()`. Safe to call with an
+   * unknown or already-settled `requestId`, same no-op convention as
+   * `ModelManagementService.cancel()`.
    *
-   * Only one LLM call is ever in flight on `this.chatSession` at a time in
-   * practice (`invoke()`'s tool loop awaits each turn before starting the
-   * next, and the underlying SDK connection isn't safe for concurrent use -
-   * see `ModelManagementService.unloadAll()`), so cancelling "whatever
-   * chat call is currently active" is unambiguous as long as `requestId`
-   * is still one of `pendingRequests`.
+   * `requestId` is threaded through the graph's state down to whatever
+   * `QvacChatSession.complete()` call this `invoke()` is currently making
+   * (see `runInvoke()`/`graph.ts`'s `generateReply()`), so `cancelActive()`
+   * can target exactly that call even while other tiers' concurrency allows
+   * several to run at once.
    */
   async cancel(requestId: string): Promise<void> {
     if (!this.pendingRequests.has(requestId)) return;
-    await this.chatSession.cancelActive();
+    await this.chatSession.cancelActive(requestId);
   }
 
   /** Deletes the KV cache of a chat session - `sessionId` doubles as the SDK's `kvCache` key (see `QvacRuntimeAdapter.chatComplete`). Safe for a session that has no cache. */
@@ -320,6 +322,7 @@ export class AgentService {
   private async runInvoke(
     messages: ConversationMessage[],
     options: GenerationOptions | undefined,
+    requestId: string,
     onToken?: (textDelta: string) => void,
   ): Promise<InvokeResult> {
     const langchainMessages = messages.map(toLangChainMessage);
@@ -330,6 +333,7 @@ export class AgentService {
         temperature: options?.temperature,
         seed: options?.seed,
         sessionId: options?.sessionId,
+        requestId,
       },
       { streamMode: ["messages", "values"] },
     );

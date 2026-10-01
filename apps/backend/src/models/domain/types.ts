@@ -166,6 +166,8 @@ export interface ChatCompletionRequest {
   sessionId?: string;
   /** Whether the SDK's KV cache is used for this request, sourced from the loaded model's `AgentModelConfig.kvCacheEnabled` (`config/models.config.ts`). `undefined` means enabled, same as `true`. */
   kvCacheEnabled?: boolean;
+  /** Caller-assigned id for this specific generation call - lets `QvacChatSession` track/cancel it independently of any other concurrently in flight. */
+  requestId?: string;
 }
 
 export interface ChatCompletionResult {
