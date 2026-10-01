@@ -20,6 +20,7 @@ import { VECTOR_DB_DIR } from "./config/rag.config.js";
 import { CorpusDocumentRepository } from "./document/infra/corpusDocumentRepository.js";
 import {
   DEFAULT_EMBEDDING_BATCH_SIZE,
+  EMBEDDING_MODEL_EXPECTED_SIZE,
   EMBEDDING_MODEL_SOURCE,
 } from "./config/models.config.js";
 import { ReadinessService } from "./health/readinessService.js";
@@ -42,9 +43,9 @@ app.use("/api/models", createModelsRouter(modelManagementService));
 
 /**
  * Retrieval over the persisted LanceDB table written by `npm run ingest`,
- * queried with EmbeddingGemma through the same `ModelManagementService` as
- * the chat model: one QVAC worker, one owner of `close()`, and `unloadAll()`
- * on shutdown releases both models. The server only READS the table - it
+ * queried with BGE-M3 through the same `ModelManagementService` as the chat
+ * model: one QVAC worker, one owner of `close()`, and `unloadAll()` on
+ * shutdown releases both models. The server only READS the table - it
  * never ingests - so a restart never re-embeds the corpus.
  */
 if (!(await LanceDbVectorStore.exists(VECTOR_DB_DIR))) {
@@ -53,12 +54,15 @@ if (!(await LanceDbVectorStore.exists(VECTOR_DB_DIR))) {
 // I.4: native @qvac/embed-llamacpp path primary, @qvac/sdk path as fallback
 // (init failure or a mid-session worker crash) - see
 // docs/i4-native-addon-results.md. Same constructor shape as the
-// QvacEmbeddingService it replaces.
+// QvacEmbeddingService it replaces, plus EMBEDDING_MODEL_EXPECTED_SIZE so
+// the native path can verify its cached download of whatever
+// EMBEDDING_MODEL_SOURCE currently points at.
 const embeddingPort = new ResilientEmbeddingService(
   modelManagementService,
   new QvacEmbeddingAdapter(),
   EMBEDDING_MODEL_SOURCE,
   DEFAULT_EMBEDDING_BATCH_SIZE,
+  EMBEDDING_MODEL_EXPECTED_SIZE,
 );
 const vectorStore = await LanceDbVectorStore.open(VECTOR_DB_DIR);
 // No config override: DEFAULT_RAG_CONFIG, the same tuning as ragDemo.

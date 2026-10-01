@@ -1,5 +1,4 @@
 import {
-  EMBEDDINGGEMMA_300M_Q4_0,
   MMPROJ_QWEN3VL_2B_MULTIMODAL_Q4_K,
   MMPROJ_QWEN3_5_9B_MULTIMODAL_F16,
   MMPROJ_QWEN3_6_35B_A3B_MULTIMODAL_F16,
@@ -224,24 +223,52 @@ export const LLAMA_TOOL_CALLING_1B_INST_Q4_K_MODEL_NAME =
 export const EMBEDDING_MODEL_TYPE = "llamacpp-embedding";
 
 /**
- * Embedding model backing the RAG pipeline: EmbeddingGemma 300M, Q4_0,
- * ~277MB on disk, 768-dimensional output (measured, see
- * `EMBEDDING_DIMENSIONS` in `rag.config.ts`). Not tiered by resource
- * profile - same model on every machine regardless of `ResourceTier`.
- * Previously preloaded via the SDK's model-serving config as
- * "embeddinggemma-300m-q4-0"; now loaded on-demand by
- * `QvacEmbeddingService.ensureModel()` instead. Passed to
- * `rag/service/qvacEmbeddingService.ts` by the ingest CLI and the server. Whatever queries
- * the table must use this same model: a different embedding model can emit
- * the same 768 dimensions, so a mismatch returns wrong chunks instead of
- * failing.
+ * Embedding model backing the RAG pipeline: BGE-M3, Q4_K_M GGUF (~438MB on
+ * disk), 1024-dimensional output (see `EMBEDDING_DIMENSIONS` in
+ * `rag.config.ts`). Not tiered by resource profile - same model on every
+ * machine regardless of `ResourceTier`.
+ *
+ * Not a `@qvac/sdk` catalog entry - checked both the pinned 0.18.2 and the
+ * latest published 1.1.0, neither lists a BGE-M3 entry (only
+ * EmbeddingGemma, GTE-Large, and Qwen3-Embedding-0.6B). Loaded via an HTTPS
+ * `url` source instead of `registry` - still goes through `@qvac/sdk`'s own
+ * `downloadAsset()`/`loadModel()`/`embed()`, same as a registry model, just
+ * resolved by URL instead of a catalog lookup. Confirmed with a real
+ * `loadModel()` + `embed()` smoke test against 0.18.2 before wiring this in:
+ * 1024-dim output, finite values, for both English and Spanish input.
+ *
+ * Source: `groonga/bge-m3-Q4_K_M-GGUF` on HuggingFace - a direct GGUF
+ * conversion of the original `BAAI/bge-m3` weights (not a third-party
+ * fine-tune or re-upload).
+ *
+ * Replaces EmbeddingGemma 300M per a retrieval benchmark on the real
+ * 30-document corpus (EN+ES, 13-question holdout never used to pick
+ * weights): BGE-M3 beat both EmbeddingGemma-300M and Qwen3-Embedding-0.6B on
+ * Recall@3/@5 and on separating real questions from plausible-but-invented
+ * ones via `minScore`.
+ *
+ * Whatever queries the table must use this same model: a different
+ * embedding model can emit the same 1024 dimensions, so a mismatch returns
+ * wrong chunks instead of failing. Changing this (or `EMBEDDING_DIMENSIONS`
+ * below) requires a full reindex - `rm -rf .lancedb && npm run ingest
+ * --workspace=apps/backend` - since the ingest state tracks document
+ * content only, not which model/dimension produced the stored vectors (see
+ * `apps/backend/README.md`'s RAG § Known limitations).
  */
 export const EMBEDDING_MODEL_SOURCE: ModelSource = {
-  kind: "registry",
-  registryPath: EMBEDDINGGEMMA_300M_Q4_0.registryPath,
-  registrySource: EMBEDDINGGEMMA_300M_Q4_0.registrySource,
+  kind: "url",
+  url: "https://huggingface.co/groonga/bge-m3-Q4_K_M-GGUF/resolve/main/bge-m3-q4_k_m.gguf",
   modelType: EMBEDDING_MODEL_TYPE,
 };
+
+/**
+ * Exact byte size of the GGUF at `EMBEDDING_MODEL_SOURCE`'s URL, confirmed
+ * via a HEAD request (`content-length`) before wiring this in. Threaded
+ * through to `NativeEmbeddingProvider`/`resolveNativeEmbeddingModelPath()`
+ * as the same corrupt-download integrity guard a registry model gets for
+ * free from its catalog's own `expectedSize` field.
+ */
+export const EMBEDDING_MODEL_EXPECTED_SIZE = 437_778_464;
 
 /**
  * Chunks per `embed()` call when embedding many texts at once (document
