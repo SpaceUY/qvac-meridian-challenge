@@ -220,10 +220,10 @@ class ControllableModelRuntime implements ModelProvisioningPort, ModelRuntimePor
  * Mimics a delegated load stuck in a connection phase that never registers
  * with the runtime's own cancellation registry: `cancel()` resolves
  * successfully but never actually interrupts the in-flight `load()` call.
- * Exercises the path `ChatQVAC.cancelLoad()`'s `createCancelledError` hook
+ * Exercises the path `QvacChatSession.cancelLoad()`'s abandon signal
  * exists for - unlike `ControllableModelRuntime` above, whose `cancel()`
- * genuinely rejects the pending load itself, this one proves the hook
- * wiring in `agentService.ts` actually runs.
+ * genuinely rejects the pending load itself, this one proves the session's
+ * own abandon signal actually rejects the load.
  */
 class HangingLoadModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
   async searchRegistry() {

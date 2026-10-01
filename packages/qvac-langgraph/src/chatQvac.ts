@@ -15,18 +15,13 @@ import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 import type { CallbackManagerForLLMRun } from "@langchain/core/callbacks/manager";
 import { ChatGenerationChunk, type ChatResult } from "@langchain/core/outputs";
 import type { Runnable } from "@langchain/core/runnables";
+import type { Tool, ToolCall as QvacToolCall } from "@qvac/sdk";
 import type {
+  QvacChatCompletionFn,
   QvacChatCompletionRequest,
   QvacChatCompletionResult,
   QvacChatImageAttachment,
   QvacChatMessage,
-  QvacChatTool,
-  QvacChatToolCall,
-  QvacChatToolProperty,
-  QvacDelegateOptions,
-  QvacLoadedModelDelegationInfo,
-  QvacModelPort,
-  QvacModelSource,
   QvacSupportedImageMimeType,
 } from "./types.js";
 
@@ -37,6 +32,8 @@ const QVAC_ROLE_BY_MESSAGE_TYPE: Record<string, string> = {
   tool: "tool",
 };
 
+type QvacToolProperty = Tool["parameters"]["properties"][string];
+
 interface JsonSchemaObject {
   properties?: Record<
     string,
@@ -46,58 +43,38 @@ interface JsonSchemaObject {
 }
 
 export interface QVACChatModelInput extends BaseChatModelParams {
-  service: QvacModelPort;
-  /** Where to load model weights from, via the injected `QvacModelPort`. */
-  modelSource: QvacModelSource;
-  ctxSize?: number;
+  /** Runs one chat completion - see `QvacChatCompletionFn`. */
+  complete: QvacChatCompletionFn;
   temperature?: number;
-  /** Opaque per-engine load config (e.g. a multimodal model's `projectionModelSrc`), merged as-is into the underlying engine's model config alongside `ctxSize`/`tools`. */
-  engineConfig?: Record<string, unknown>;
-  /** Whether `chatComplete()` calls made against this model use the SDK's KV cache. Defaults to enabled (`true`) when omitted. */
-  kvCacheEnabled?: boolean;
-  /** When set, routes this model's load (and the inference that follows it) to a remote provider instead of running locally. */
-  delegate?: QvacDelegateOptions;
-  /**
-   * True if `err` means the delegated model's remote provider died
-   * mid-session and recovery (reload + retry) should be attempted.
-   * Defaults to `() => false` (no recovery) when omitted.
-   */
-  isRetryableProviderError?: (err: unknown) => boolean;
-  /**
-   * Builds the error used to reject a caller waiting on `ensureModel()`
-   * when `cancelLoad()` abandons an in-flight load. Defaults to a plain
-   * `Error` when omitted.
-   */
-  createCancelledError?: (requestId: string) => unknown;
 }
 
 export interface ChatQVACCallOptions extends BaseChatModelCallOptions {
-  tools?: QvacChatTool[];
+  tools?: Tool[];
   /** Per-call override of the constructor's `temperature`/no `seed` default. */
   temperature?: number;
   seed?: number;
-  /** Per-call KV cache session key, forwarded to `QvacModelPort.chatComplete()`. */
+  /** Per-call KV cache session key, forwarded in the completion request. */
   sessionId?: string;
 }
 
 /**
- * Converts a LangChain tool definition into the port's flat `QvacChatTool`
- * shape. The underlying completion engine's tool schema only supports
+ * Converts a LangChain tool definition into the SDK's flat `Tool` shape.
+ * The underlying completion engine's tool schema only supports
  * primitive-typed properties (no nested object/array item schemas), so
  * only `type`/`description`/`enum` survive - that's all it accepts.
  */
-function toChatTool(tool: BindToolsInput): QvacChatTool {
+function toChatTool(tool: BindToolsInput): Tool {
   const { function: fn } = convertToOpenAITool(
     tool as Parameters<typeof convertToOpenAITool>[0],
   );
   const schema = (fn.parameters ?? {}) as JsonSchemaObject;
 
-  const properties: Record<string, QvacChatToolProperty> = {};
+  const properties: Record<string, QvacToolProperty> = {};
   for (const [key, value] of Object.entries(schema.properties ?? {})) {
     properties[key] = {
-      type: (value.type as QvacChatToolProperty["type"]) ?? "string",
+      type: (value.type as QvacToolProperty["type"]) ?? "string",
       description: value.description,
-      enum: value.enum as QvacChatToolProperty["enum"],
+      enum: value.enum as QvacToolProperty["enum"],
     };
   }
 
@@ -120,11 +97,6 @@ const SUPPORTED_IMAGE_MIME_TYPES: ReadonlySet<string> = new Set<QvacSupportedIma
 
 function isSupportedImageMimeType(mimeType: unknown): mimeType is QvacSupportedImageMimeType {
   return typeof mimeType === "string" && SUPPORTED_IMAGE_MIME_TYPES.has(mimeType);
-}
-
-/** Whether `message` carries at least one image content block - used by a consumer's graph nodes to compute e.g. `hasVisualInput`, and internally by `toChatMessage()` below. */
-export function hasImageContent(message: BaseMessage): boolean {
-  return message.contentBlocks.some((block) => block.type === "image");
 }
 
 /**
@@ -170,7 +142,7 @@ function toChatMessage(message: BaseMessage): QvacChatMessage {
   return { role, content: message.text, ...(images ? { images } : {}) };
 }
 
-function toLangChainToolCalls(toolCalls: QvacChatToolCall[]): ToolCall[] {
+function toLangChainToolCalls(toolCalls: QvacToolCall[]): ToolCall[] {
   return toolCalls.map((call) => ({
     type: "tool_call",
     id: call.id,
@@ -179,82 +151,19 @@ function toLangChainToolCalls(toolCalls: QvacChatToolCall[]): ToolCall[] {
   }));
 }
 
+/** LangChain chat model that delegates every generation to an injected `complete` function. */
 export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
-  private readonly service: QvacModelPort;
-  private readonly modelSource: QvacModelSource;
-  private readonly ctxSize: number;
+  private readonly completeFn: QvacChatCompletionFn;
   private readonly temperature?: number;
-  private readonly engineConfig?: Record<string, unknown>;
-  private readonly kvCacheEnabled?: boolean;
-  private readonly delegate?: QvacDelegateOptions;
-  private readonly isRetryableProviderError: (err: unknown) => boolean;
-  private readonly createCancelledError: (requestId: string) => unknown;
-  private modelIdPromise?: Promise<string>;
-  /** Cache backing `getCachedDelegationInfo()`, kept fresh by `getDelegationInfo()` and by `recoverFromDelegationFailure()`. */
-  private delegationInfo?: QvacLoadedModelDelegationInfo;
-  /** `true` for the duration of a `recoverFromDelegationFailure()` or `switchTo("local")` call - lets `AgentService.getStatus()` report "reconnecting" instead of the frontend inferring it 60s late from a state change that already finished. Not raised by `switchTo("delegated")`: a move back to the provider is not a reconnect after a failure. */
-  private recovering = false;
-  /** Number of `switchTo()` calls in flight, either direction - backs `isBusy()`, so overlapping switches keep it `true` until the last one settles. */
-  private switchesInFlight = 0;
-  /** The `requestId` of the `chatComplete` call currently in flight, if any - lets `cancelActive()` cancel it. */
-  private activeRequestId?: string;
-  /** The `requestId` of the `loadModel` call currently in flight, if any - lets `cancelLoad()` cancel it. */
-  private loadRequestId?: string;
-  /**
-   * Set while a load is in flight; `cancelLoad()` uses it to force
-   * `ensureModel()`'s pending promise to reject immediately. See
-   * `ensureModel()`'s doc comment for why this exists alongside the
-   * port-level `service.cancel()` call.
-   */
-  private loadAbandonSignal?: { reject: (err: unknown) => void };
 
   constructor(fields: QVACChatModelInput) {
     super(fields);
-    this.service = fields.service;
-    this.modelSource = fields.modelSource;
-    this.ctxSize = fields.ctxSize ?? 4096;
+    this.completeFn = fields.complete;
     this.temperature = fields.temperature;
-    this.engineConfig = fields.engineConfig;
-    this.kvCacheEnabled = fields.kvCacheEnabled;
-    this.delegate = fields.delegate;
-    this.isRetryableProviderError = fields.isRetryableProviderError ?? (() => false);
-    this.createCancelledError =
-      fields.createCancelledError ?? ((requestId) => new Error(`Operation "${requestId}" was cancelled`));
   }
 
   static lc_name(): string {
     return "ChatQVAC";
-  }
-
-  /**
-   * Cancels the `chatComplete` call currently in flight on this model, if
-   * any - used by a host's cancel endpoint to stop a running `invoke()`.
-   * No-op when nothing is in flight (e.g. it already settled).
-   */
-  async cancelActive(): Promise<void> {
-    if (!this.activeRequestId) return;
-    await this.service.cancel(this.activeRequestId);
-  }
-
-  /**
-   * Cancels the `loadModel` call currently in flight on this model, if
-   * any - used by a host's cancel-preload path to stop a running
-   * `preload()`. No-op when nothing is in flight.
-   *
-   * `service.cancel()` is best-effort here, not a guarantee: a delegated
-   * load's connection-establishment phase can fail to register with the
-   * underlying runtime's request-cancellation registry at all, so
-   * `cancel()` during that phase may just report success without
-   * interrupting anything - the connection attempt keeps running until it
-   * times out on its own (`QvacDelegateOptions.timeout`). Rejecting
-   * `loadAbandonSignal` guarantees the caller isn't stuck waiting that
-   * long regardless of whether the port-level cancel actually took effect.
-   */
-  async cancelLoad(): Promise<void> {
-    if (!this.loadRequestId) return;
-    const requestId = this.loadRequestId;
-    await this.service.cancel(requestId).catch(() => {});
-    this.loadAbandonSignal?.reject(this.createCancelledError(requestId));
   }
 
   _llmType(): string {
@@ -271,226 +180,17 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
     } as Partial<ChatQVACCallOptions>);
   }
 
-  /**
-   * Races the real load against a manually-triggered "abandon" signal
-   * (see `cancelLoad()`) so a caller is never stuck waiting on this
-   * promise longer than a cancel request, even when the underlying port
-   * can't actually interrupt the operation. The real load keeps running
-   * in the background either way - this only stops the caller from
-   * waiting on it.
-   */
-  async ensureModel(): Promise<string> {
-    if (!this.modelIdPromise) {
-      this.modelIdPromise = this.startLoad(this.delegate).catch((error: unknown) => {
-        this.modelIdPromise = undefined;
-        throw error;
-      });
-    }
-    return this.modelIdPromise;
-  }
-
-  /**
-   * The load itself, shared by `ensureModel()` and `switchTo()`: races the
-   * real load against `cancelLoad()`'s abandon signal and clears the
-   * in-flight bookkeeping when it settles. Deliberately does not touch
-   * `modelIdPromise` - each caller decides how the resulting promise is
-   * cached (and cleared on failure).
-   */
-  private startLoad(delegate: QvacDelegateOptions | undefined): Promise<string> {
-    const pending = this.service.loadModel(this.modelSource, {
-      ctxSize: this.ctxSize,
-      // The llamacpp-completion addon only parses tool calls when the model
-      // was loaded with `tools: true` *and* the request carries tools -
-      // load-time opt-in is required even though it's a no-op without the
-      // latter, so this can't be deferred to bindTools()/_generate().
-      tools: true,
-      engineConfig: this.engineConfig,
-      delegate,
-    });
-    this.loadRequestId = pending.requestId;
-    const abandoned = new Promise<never>((_, reject) => {
-      this.loadAbandonSignal = { reject };
-    });
-    return Promise.race([pending.then((loaded) => loaded.modelId), abandoned]).finally(() => {
-      this.loadRequestId = undefined;
-      this.loadAbandonSignal = undefined;
-    });
-  }
-
-  /**
-   * Whether the currently loaded model is running on a remote provider or
-   * locally - `undefined` until a model has loaded, or if no `delegate`
-   * was configured at all (a non-delegating load is always local, so
-   * there's nothing to query). Best-effort: if the introspection query
-   * itself fails, resolves `undefined` rather than throwing, so a caller
-   * never has its own success/failure hinge on this - the chat model is
-   * either loaded and usable or it isn't, independent of whether its
-   * delegation status could be confirmed.
-   *
-   * Caches its result (see `getCachedDelegationInfo()`) - also refreshed
-   * by `recoverFromDelegationFailure()` after a mid-session recovery, so
-   * the cache never goes stale after the model that was originally
-   * delegated falls back to running locally.
-   */
-  async getDelegationInfo(): Promise<QvacLoadedModelDelegationInfo | undefined> {
-    if (!this.delegate) {
-      this.delegationInfo = undefined;
-      return undefined;
-    }
-    const modelId = await this.ensureModel();
-    this.delegationInfo = await this.service.getLoadedModelInfo(modelId).catch(() => undefined);
-    return this.delegationInfo;
-  }
-
-  /**
-   * Synchronous snapshot of the last `getDelegationInfo()` result. Exists
-   * so a host's status endpoint - itself synchronous, if it's polled by a
-   * frontend every second - can report current delegation status without
-   * an async round-trip (and a port-level call) on every poll.
-   */
-  getCachedDelegationInfo(): QvacLoadedModelDelegationInfo | undefined {
-    return this.delegationInfo;
-  }
-
-  /** Synchronous snapshot of whether a delegation-recovery reload is currently in flight. See the `recovering` field's doc comment. */
-  isRecovering(): boolean {
-    return this.recovering;
-  }
-
-  /**
-   * `true` while a completion, a load, a recovery reload or a `switchTo()`
-   * is in flight. A host uses it to defer a proactive `switchTo()` until
-   * nothing would be interrupted.
-   */
-  isBusy(): boolean {
-    return (
-      this.activeRequestId !== undefined ||
-      this.loadRequestId !== undefined ||
-      this.recovering ||
-      this.switchesInFlight > 0
-    );
-  }
-
-  /**
-   * Proactively moves the chat model between running locally and running
-   * on the configured delegate - the health-check counterpart to the
-   * reactive `recoverFromDelegationFailure()`. Callers should check
-   * `isBusy()` first; this does not wait for an in-flight completion.
-   *
-   * `"local"` loads with no `delegate`, so it starts immediately instead
-   * of waiting out a connect timeout against a provider that is known to be
-   * down. `"delegated"` loads with the configured `delegate` (still
-   * `fallbackToLocal`); if that load rejects anyway (e.g. the provider
-   * answers but fails to load the model, which the port does not fall back
-   * from), it loads locally within the same call, so the old model is
-   * never left unloaded just because the provider could not serve it.
-   * Only `"local"` raises `isRecovering()`; both directions count towards
-   * `isBusy()`.
-   *
-   * `modelIdPromise` is set to the switch itself synchronously, before any
-   * `await`, so a chat request arriving mid-switch awaits this load
-   * instead of starting a second one. The old model is unloaded first for
-   * the same reason `recoverFromDelegationFailure()` does (see its doc
-   * comment). On failure the cached promise and delegation info are
-   * cleared: the old model is already gone, so the next `ensureModel()`
-   * must reload rather than reuse a stale id.
-   */
-  async switchTo(mode: "local" | "delegated"): Promise<string> {
-    if (mode === "delegated" && !this.delegate) {
-      throw new Error("Cannot switch to a delegated model: no delegate is configured");
-    }
-    const staleModelIdPromise = this.modelIdPromise;
-    this.switchesInFlight += 1;
-    if (mode === "local") this.recovering = true;
-    const switching = (async () => {
-      const staleModelId = await staleModelIdPromise?.catch(() => undefined);
-      if (staleModelId) {
-        await this.service.unloadModel(staleModelId).catch(() => {});
-      }
-      if (mode === "local") return this.startLoad(undefined);
-      return this.startLoad(this.delegate).catch(() => this.startLoad(undefined));
-    })();
-    this.modelIdPromise = switching;
-    try {
-      const modelId = await switching;
-      this.delegationInfo = await this.service.getLoadedModelInfo(modelId).catch(() => undefined);
-      return modelId;
-    } catch (error) {
-      if (this.modelIdPromise === switching) this.modelIdPromise = undefined;
-      this.delegationInfo = undefined;
-      throw error;
-    } finally {
-      this.switchesInFlight -= 1;
-      if (mode === "local") this.recovering = false;
-    }
-  }
-
-  /**
-   * Called when a chat completion fails because the delegated model's
-   * provider died mid-session (see the constructor's `isRetryableProviderError`
-   * hook). A typical port implementation's own fallback-to-local behavior
-   * only applies at load time, so an already-loaded delegated model has no
-   * port-level recovery of its own once its provider goes down.
-   *
-   * Unloading the stale model *before* reloading is required, not just
-   * cleanup: many local-load implementations only register a model when
-   * it isn't already registered under that same model id - a plain reload
-   * would find the id still registered (as delegated, pointing at the dead
-   * provider) and silently no-op, leaving the model delegated forever and
-   * turning every later request into another doomed connection attempt to
-   * the same dead provider. `unloadModel()` on a delegated model is
-   * expected to unregister it synchronously before even trying to notify
-   * the (unreachable) provider, so this is safe and fast even with the
-   * provider down. Best-effort: if the unload itself fails, still attempt
-   * the reload - the stale entry may cause another no-op fallback, but
-   * that's no worse than not trying.
-   *
-   * Also refreshes `getCachedDelegationInfo()`'s cache once the reload
-   * settles - without this, a host's status endpoint would keep reporting
-   * the pre-recovery "running on remote peer" snapshot from the original
-   * preload forever, even after the model is genuinely running locally
-   * again.
-   */
-  private async recoverFromDelegationFailure(): Promise<string> {
-    this.recovering = true;
-    try {
-      const staleModelId = await this.modelIdPromise;
-      this.modelIdPromise = undefined;
-      if (staleModelId) {
-        await this.service.unloadModel(staleModelId).catch(() => {});
-      }
-      const modelId = await this.ensureModel();
-      await this.getDelegationInfo();
-      return modelId;
-    } finally {
-      this.recovering = false;
-    }
-  }
-
-  /**
-   * Runs `service.chatComplete`, recovering once if it fails specifically
-   * because the delegated provider died mid-session - reloads (falling
-   * back to local) and retries against the new model. Any other failure,
-   * or a second failure after recovery, propagates as-is: this is a
-   * one-shot recovery, not a retry loop.
-   */
-  private async chatCompleteWithRecovery(
-    modelId: string,
-    request: QvacChatCompletionRequest,
-  ): Promise<QvacChatCompletionResult> {
-    const pending = this.service.chatComplete(modelId, request);
-    this.activeRequestId = pending.requestId;
-    try {
-      return await pending;
-    } catch (error) {
-      if (!this.isRetryableProviderError(error)) throw error;
-      const recoveredModelId = await this.recoverFromDelegationFailure();
-      const retryPending = this.service.chatComplete(recoveredModelId, request);
-      this.activeRequestId = retryPending.requestId;
-      return await retryPending;
-    } finally {
-      this.activeRequestId = undefined;
-    }
+  private buildRequest(
+    messages: BaseMessage[],
+    options: this["ParsedCallOptions"],
+  ): QvacChatCompletionRequest {
+    return {
+      history: messages.map(toChatMessage),
+      tools: options.tools,
+      temperature: options.temperature ?? this.temperature,
+      seed: options.seed,
+      sessionId: options.sessionId,
+    };
   }
 
   async _generate(
@@ -498,16 +198,7 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
     options: this["ParsedCallOptions"],
     _runManager?: CallbackManagerForLLMRun,
   ): Promise<ChatResult> {
-    const modelId = await this.ensureModel();
-
-    const result = await this.chatCompleteWithRecovery(modelId, {
-      history: messages.map(toChatMessage),
-      tools: options.tools,
-      temperature: options.temperature ?? this.temperature,
-      seed: options.seed,
-      sessionId: options.sessionId,
-      kvCacheEnabled: this.kvCacheEnabled,
-    });
+    const result = await this.completeFn(this.buildRequest(messages, options));
 
     const aiMessage = new AIMessage({
       content: result.text,
@@ -524,20 +215,17 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
   }
 
   /**
-   * Bridges `service.chatComplete`'s callback-based streaming into an async
-   * generator: each `onToken` call is queued and yielded as a
-   * `ChatGenerationChunk` carrying just its text delta, then one final
-   * content-empty chunk carries `tool_calls`/`thinkingText`/`stats` once
-   * `chatComplete`'s promise resolves - the same result `_generate` returns,
-   * split into deltas plus a trailer.
+   * Bridges `complete`'s callback-based streaming into an async generator:
+   * each `onToken` call is queued and yielded as a `ChatGenerationChunk`
+   * carrying just its text delta, then one final content-empty chunk carries
+   * `tool_calls`/`thinkingText`/`stats` once `complete`'s promise resolves -
+   * the same result `_generate` returns, split into deltas plus a trailer.
    */
   async *_streamResponseChunks(
     messages: BaseMessage[],
     options: this["ParsedCallOptions"],
     runManager?: CallbackManagerForLLMRun,
   ): AsyncGenerator<ChatGenerationChunk> {
-    const modelId = await this.ensureModel();
-
     type QueueItem =
       | { kind: "token"; textDelta: string }
       | { kind: "done"; result: QvacChatCompletionResult }
@@ -545,61 +233,18 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
 
     const queue: QueueItem[] = [];
     let notify: (() => void) | undefined;
-    // Recovery is only safe before the user has seen any output - a
-    // provider dying after tokens already streamed can't be silently
-    // retried without duplicating/garbling what's already shown, so that
-    // case surfaces the error as-is instead (see `startCompletion` below).
-    let anyTokenEmitted = false;
     const push = (item: QueueItem) => {
-      if (item.kind === "token") anyTokenEmitted = true;
       queue.push(item);
       notify?.();
       notify = undefined;
     };
 
-    const request: QvacChatCompletionRequest = {
-      history: messages.map(toChatMessage),
-      tools: options.tools,
-      temperature: options.temperature ?? this.temperature,
-      seed: options.seed,
-      sessionId: options.sessionId,
-      kvCacheEnabled: this.kvCacheEnabled,
-    };
-
-    // A named, re-callable function (rather than the inline
-    // `pending.then/catch` this replaced) so a provider-unreachable
-    // failure can transparently restart the whole call against a
-    // recovered (local) model id, without restructuring the queue-draining
-    // loop below. `activeRequestId` is set at the start of each attempt
-    // and only cleared right before a terminal ("done"/"error") item is
-    // pushed - never in a shared `.finally()`, which would otherwise let
-    // the original (now-superseded) attempt's cleanup clobber the retry's
-    // `activeRequestId` after it's already been reassigned.
-    const startCompletion = (id: string): void => {
-      const pending = this.service.chatComplete(
-        id,
-        request,
-        (textDelta) => push({ kind: "token", textDelta }),
-      );
-      this.activeRequestId = pending.requestId;
-      pending
-        .then((result) => {
-          this.activeRequestId = undefined;
-          push({ kind: "done", result });
-        })
-        .catch((error: unknown) => {
-          if (!anyTokenEmitted && this.isRetryableProviderError(error)) {
-            this.recoverFromDelegationFailure().then(startCompletion, () => {
-              this.activeRequestId = undefined;
-              push({ kind: "error", error });
-            });
-            return;
-          }
-          this.activeRequestId = undefined;
-          push({ kind: "error", error });
-        });
-    };
-    startCompletion(modelId);
+    this.completeFn(this.buildRequest(messages, options), (textDelta) =>
+      push({ kind: "token", textDelta }),
+    ).then(
+      (result) => push({ kind: "done", result }),
+      (error: unknown) => push({ kind: "error", error }),
+    );
 
     while (true) {
       const item = queue.shift();

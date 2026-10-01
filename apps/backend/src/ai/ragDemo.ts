@@ -1,4 +1,5 @@
 import { ChatQVAC } from "qvac-langgraph";
+import { QvacChatSession } from "./orchestrator/qvacChatSession.js";
 import { createRagGraph } from "./orchestrator/ragGraph.js";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import { QWEN3_600M_MODEL_SOURCE } from "../config/models.config.js";
@@ -41,11 +42,8 @@ async function main(): Promise<void> {
   const adapter = new QvacRuntimeAdapter();
   const service = new ModelManagementService(adapter, adapter);
 
-  const qvacModel = new ChatQVAC({
-    service,
-    modelSource: QWEN3_600M_MODEL_SOURCE,
-    temperature: 0,
-  });
+  const chatSession = new QvacChatSession({ service, modelSource: QWEN3_600M_MODEL_SOURCE });
+  const qvacModel = new ChatQVAC({ complete: chatSession.complete, temperature: 0 });
 
   const embeddingPort = new FakeEmbeddingPort();
   const vectorStore = await buildFixtureVectorStore(embeddingPort);

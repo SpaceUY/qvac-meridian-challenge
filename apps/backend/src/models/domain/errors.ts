@@ -74,7 +74,7 @@ export function isCancellationError(err: unknown): boolean {
  * for the same reason: `@qvac/sdk`'s `fallbackToLocal` only ever applies
  * at `loadModel()` time - once a model is loaded and registered as
  * delegated, a later completion against a now-dead provider just fails,
- * with no SDK-level recovery. `ChatQVAC` uses this to tell "the provider
+ * with no SDK-level recovery. `QvacChatSession` uses this to tell "the provider
  * died mid-session, reload (which will itself fall back to local) and
  * retry once" apart from any other inference failure, which it should
  * not blindly retry.

@@ -6,6 +6,7 @@ import type { RetrievedChunk } from "../../rag/domain/types.js";
 import {
   buildLlmNode,
   buildRetrieveNode,
+  hasImageContent,
   insufficientContextNode,
   routeOnEvidence,
 } from "./ragGraph.js";
@@ -179,5 +180,25 @@ describe("buildLlmNode", () => {
     expect(passedHuman).toBe(humanMessage);
 
     expect(update.messages).toHaveLength(1);
+  });
+});
+
+describe("hasImageContent", () => {
+  it("is false for a text-only message", () => {
+    expect(hasImageContent(new HumanMessage("hello"))).toBe(false);
+  });
+
+  it("is true when content includes an image block", () => {
+    const message = new HumanMessage({
+      content: [
+        { type: "text", text: "what's this?" },
+        {
+          type: "image",
+          mimeType: "image/jpeg",
+          data: new Uint8Array([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x01, 0x02, 0x03]),
+        },
+      ],
+    });
+    expect(hasImageContent(message)).toBe(true);
   });
 });
