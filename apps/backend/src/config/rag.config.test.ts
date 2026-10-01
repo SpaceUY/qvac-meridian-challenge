@@ -5,7 +5,7 @@ describe('DEFAULT_RAG_CONFIG', () => {
   it('documents the tuned defaults from the retrieval eval sweep', () => {
     expect(DEFAULT_RAG_CONFIG).toEqual({
       topK: 15,
-      minScore: 0.57,
+      minScore: 0.551,
       maxContextChunks: 3,
       dedupeExactContent: true
     });

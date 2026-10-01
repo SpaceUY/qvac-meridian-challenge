@@ -56,14 +56,16 @@ export const EMBEDDING_DIMENSIONS = 1024;
  * pool below). `topK` here is set equal to `RERANK_CANDIDATE_POOL` so the
  * reranker always sees every retrieved candidate - a lower `topK` would
  * starve `RERANK_CANDIDATE_POOL` of candidates it could otherwise rerank.
- * `minScore` is a flat 0.57 - the more conservative (higher) of the
- * benchmark's two "with a reranker downstream" thresholds (EN 0.57 / ES
- * 0.55), applied uniformly since this codebase has no EN/ES query-language
- * routing today.
+ * `minScore` is a flat 0.551 - the pooled Youden's J optimum across EN+ES,
+ * assuming a downstream LLM guardrail that can say "I don't know" rather
+ * than hallucinate on weak context. It strictly dominates the previously
+ * used 0.57: identical false-accept rate (16.7%) in both languages, but
+ * accepts ~7pp more valid questions in each. Applied uniformly since this
+ * codebase has no EN/ES query-language routing today.
  */
 export const DEFAULT_RAG_CONFIG: RagRetrievalConfig = {
   topK: 15,
-  minScore: 0.57,
+  minScore: 0.551,
   maxContextChunks: 3,
   dedupeExactContent: true
 };
