@@ -26,6 +26,8 @@ export interface AgentStatusPayload {
   status: AgentStatus;
   error?: string;
   model: { name: string; quantization: string };
+  /** The resource tier this process resolved at startup (`resourceTier.ts`) - the same value every tiered consumer (chat, TTS, STT) is using right now. */
+  hardwareTier: ResourceTier;
   /** Present once known (after a successful `preload()`) - whether the chat model is running on a remote provider or locally. Absent while idle/loading/error, or if delegation status couldn't be confirmed. */
   delegation?: LoadedModelDelegationInfo;
   /** Whether a delegation-recovery reload is in flight right now (see `ChatQVAC.isRecovering()`). Always present (never `undefined`) - simpler for the frontend to read than a third "unknown" state, and it's meaningfully `false` even when no delegate is configured at all. */
@@ -81,9 +83,9 @@ export class AgentService {
     private readonly service: ModelManagementService,
     ragService: RagRetrievalService,
     documentRepository: DocumentRepository,
-    tier: ResourceTier = RESOURCE_TIER,
+    private readonly tier: ResourceTier = RESOURCE_TIER,
   ) {
-    const selectedModel = LLM_MODELS_BY_TIER[tier];
+    const selectedModel = LLM_MODELS_BY_TIER[this.tier];
     const { modelSource, modelName, quantization, temperature, ctxSize, kvCacheEnabled } =
       selectedModel;
     this.modelInfo = { name: modelName, quantization };
@@ -118,6 +120,7 @@ export class AgentService {
       status: this.status,
       ...(this.statusError ? { error: this.statusError } : {}),
       model: this.modelInfo,
+      hardwareTier: this.tier,
       ...(delegation ? { delegation } : {}),
       recovering: this.chatModel.isRecovering(),
     };

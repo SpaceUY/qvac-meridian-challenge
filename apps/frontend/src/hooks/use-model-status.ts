@@ -7,6 +7,7 @@ import {
   type ModelStatus,
   type ModelInfo,
   type DelegationInfo,
+  type ResourceTier,
 } from '@/lib/model-status-client'
 
 const STATUS_QUERY_KEY = ['model-status']
@@ -21,6 +22,7 @@ export function useModelStatus(): {
   status: ModelStatus
   error?: string
   model?: ModelInfo
+  hardwareTier?: ResourceTier
   delegation?: DelegationInfo
   /** Whether a delegation-recovery reload is in flight right now (see `AgentStatusPayload.recovering` on the backend). `false` until the first poll resolves. */
   recovering: boolean
@@ -92,6 +94,7 @@ export function useModelStatus(): {
     status: query.data?.status ?? 'idle',
     error: query.data?.error,
     model: query.data?.model,
+    hardwareTier: query.data?.hardwareTier,
     delegation: query.data?.delegation,
     recovering: query.data?.recovering ?? false,
     cancelled,

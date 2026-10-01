@@ -32,7 +32,7 @@ class FakeAgentService {
   resolveWith?: InvokeResult;
 
   getStatus(): AgentStatusPayload {
-    return { status: "ready", model: { name: "fake", quantization: "q4" }, recovering: false };
+    return { status: "ready", model: { name: "fake", quantization: "q4" }, hardwareTier: "low", recovering: false };
   }
 
   invoke(
@@ -228,7 +228,7 @@ const QUESTION = [{ role: "user" as const, content: "What was Q2 2026 revenue?" 
 
 /** Orchestrator stand-in: streams the answer in two deltas, like the real one streams tokens. */
 const fakeAgent: CompletionAgent = {
-  getStatus: () => ({ status: "ready", model: { name: "fake", quantization: "none" }, recovering: false }),
+  getStatus: () => ({ status: "ready", model: { name: "fake", quantization: "none" }, hardwareTier: "low", recovering: false }),
   invoke: (_messages, _options, onToken) => {
     const promise = (async () => {
       onToken?.("Q2 2026 total revenue ");
