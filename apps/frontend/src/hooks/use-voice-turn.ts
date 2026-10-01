@@ -83,6 +83,9 @@ export function useVoiceTurn() {
     const recorder = recorderRef.current
     if (!recorder) return
     recorderRef.current = null
+    // Stamped now: if New chat happens while this is in flight, the answer
+    // belongs to a conversation that no longer exists.
+    const sessionId = useChatStore.getState().sessionId
     setPhase({ type: 'processing' })
 
     const controller = new AbortController()
@@ -103,6 +106,11 @@ export function useVoiceTurn() {
       const messages = await toOpenAIMessages(useChatStore.getState().history)
       const result = await requestVoiceCompletion({ messages, audioBase64, signal: controller.signal })
 
+      if (useChatStore.getState().sessionId !== sessionId) {
+        if (mountedRef.current) setPhase({ type: 'idle' })
+        return
+      }
+
       useChatStore.getState().voiceTurnAdded({
         userMessageId: crypto.randomUUID(),
         transcript: result.transcript,
@@ -113,7 +121,12 @@ export function useVoiceTurn() {
       })
       if (mountedRef.current) setPhase({ type: 'idle' })
     } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return // unmounted mid-flight, not an error
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        // Aborted on purpose (unmount or New chat) - not an error. Without
+        // this, a New chat mid-request would leave the phase stuck on 'processing'.
+        if (mountedRef.current) setPhase({ type: 'idle' })
+        return
+      }
       if (mountedRef.current) setPhase({ type: 'error', message: voiceErrorMessage(err) })
     } finally {
       abortRef.current = null
@@ -128,6 +141,26 @@ export function useVoiceTurn() {
     await recorder.cancel()
     if (mountedRef.current) setPhase({ type: 'idle' })
   }, [])
+
+  /** Drops whatever voice turn is in progress - a recording or an audio already sent. Safe to call when idle. */
+  const cancel = useCallback(async () => {
+    abortRef.current?.abort()
+    const recorder = recorderRef.current
+    recorderRef.current = null
+    await recorder?.cancel()
+    if (mountedRef.current) setPhase({ type: 'idle' })
+  }, [])
+
+  // New chat replaces sessionId: whatever voice turn is in progress belongs
+  // to a conversation that no longer exists. subscribe() returns its own
+  // unsubscribe - exactly the cleanup this effect needs.
+  useEffect(
+    () =>
+      useChatStore.subscribe((state, previous) => {
+        if (state.sessionId !== previous.sessionId) void cancel()
+      }),
+    [cancel],
+  )
 
   return { phase, start, send: stopAndSend, discard, setLevelListener }
 }

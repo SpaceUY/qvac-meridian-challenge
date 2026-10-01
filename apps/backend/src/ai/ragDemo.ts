@@ -1,4 +1,4 @@
-import { ChatQVAC } from "./orchestrator/qvacChatModel.js";
+import { ChatQVAC } from "qvac-langgraph";
 import { createRagGraph } from "./orchestrator/ragGraph.js";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import { QWEN3_600M_MODEL_SOURCE } from "../config/models.config.js";

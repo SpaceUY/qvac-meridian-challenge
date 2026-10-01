@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { LoaderCircle } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import type { DelegationInfo, ModelInfo, ModelStatus } from '@/lib/model-status-client'
@@ -37,6 +38,9 @@ export function EnginePanel({ model, modelStatus, statusError, delegation, cance
   // failure) - `cancelled` is what tells that apart from the app's initial
   // "about to auto-start" idle, so the label/action match what happened.
   const showCancelledState = modelStatus === 'idle' && cancelled
+  // Both the initial "about to auto-start" idle and an actual load are
+  // "working on it" - only a user-cancelled idle is not.
+  const isPreparing = modelStatus === 'loading' || (modelStatus === 'idle' && !cancelled)
   // 'ready' has two sub-labels depending on where the model actually ran -
   // not delegated (or delegation status unknown) still reads "Running
   // locally", which is correct: a configured delegate that fell back to
@@ -55,11 +59,11 @@ export function EnginePanel({ model, modelStatus, statusError, delegation, cance
         : 'No peers available.'
 
   return (
-    <div className="flex flex-col gap-4 text-sm">
+    <div className="flex flex-col gap-4 px-2 text-xs">
       <Section title="Inference">
         <div className="flex items-center justify-between gap-1.5">
           <div className={`flex items-center gap-1.5 font-medium ${STATUS_COLOR[modelStatus]}`}>
-            <span className="size-1.5 rounded-full bg-current" />
+            {isPreparing ? <LoaderCircle className="size-3.5 animate-spin" /> : <span className="size-1.5 rounded-full bg-current" />}
             {label}
           </div>
           {modelStatus === 'loading' && (
@@ -73,7 +77,7 @@ export function EnginePanel({ model, modelStatus, statusError, delegation, cance
             </Button>
           )}
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
+        <p className="mt-1 text-muted-foreground">{subtitle}</p>
       </Section>
 
       <Separator />
@@ -85,10 +89,11 @@ export function EnginePanel({ model, modelStatus, statusError, delegation, cance
   )
 }
 
+/** Section header: same uppercase-caps treatment as the corpus modal's group headers (e.g. "POLICIES · 3" in document-grid.tsx) - what makes this sidebar read as one design system with the modal instead of two. */
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div>
-      <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</h3>
+      <h3 className="mb-1.5 font-medium uppercase tracking-wide text-muted-foreground">{title}</h3>
       {children}
     </div>
   )
@@ -96,9 +101,13 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function Kv({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between border-b py-1 text-xs last:border-0">
-      <span className="text-muted-foreground">{label}</span>
-      <span>{value}</span>
+    <div className="flex justify-between gap-2 border-b py-1 last:border-0">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      {/* font-medium: matches the weight document titles get in the corpus
+          modal's cards - a value reads as content, not as muted metadata.
+          break-all: model ids like QWEN3VL_2B_MULTIMODAL_Q4_K have no spaces
+          to wrap on, so without it a long one runs straight into the label. */}
+      <span className="text-right font-medium break-all">{value}</span>
     </div>
   )
 }

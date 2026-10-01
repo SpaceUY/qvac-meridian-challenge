@@ -7,7 +7,7 @@
 // of the component.
 // ---------------------------------------------------------------------------
 
-import { useCallback, useRef } from 'react'
+import { useCallback } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useMirrorRef } from '@/hooks/use-mirror-ref'
 import { toOpenAIMessages, EngineError, readDeltas, requestCompletion } from '@/lib/chat-client'
@@ -18,50 +18,52 @@ import { revokeAttachments, type ImageAttachment } from '@/lib/image-attachments
 /** What a turn needs to be re-serialized to the wire format - never the full Message (citations/status are UI-only, irrelevant to the request). */
 type HistoryEntry = Pick<Message, 'role' | 'text' | 'images'>
 
-function useSessionId(): string {
-  const ref = useRef<string | null>(null)
-  if (ref.current === null) ref.current = crypto.randomUUID()
-  return ref.current
+/** Everything one turn needs, captured at send time. */
+type Turn = {
+  history: HistoryEntry[]
+  sessionId: string
+  userMessageId: string
+  assistantMessageId: string
+  controller: AbortController
 }
 
 export function useChat() {
   const history = useChatStore((state) => state.history)
-  const sessionId = useSessionId()
   // The history "from before this turn" - see the comment in useMirrorRef.
   const historyRef = useMirrorRef(history)
-  // The request in progress, if any. It also serves as a guard: we do not send a
-  // new question while the previous one is still arriving.
-  const abortRef = useRef<AbortController | null>(null)
 
-  const turnMutation = useMutation({
-    mutationFn: (args: {
-      history: HistoryEntry[]
-      userMessageId: string
-      assistantMessageId: string
-      signal: AbortSignal
-    }) => runTurn({ ...args, sessionId }),
+  const { mutate } = useMutation({
+    mutationFn: runTurn,
+    // Here and not on mutate(): the mutation-level callback fires even if
+    // the component unmounted mid-turn.
+    onSettled: (_data, _error, turn) => useChatStore.getState().activeTurnSettled(turn.controller),
   })
 
-  const sendMessage = useCallback((rawText: string, images: ImageAttachment[] = []) => {
-    const text = rawText.trim()
-    if ((!text && images.length === 0) || abortRef.current) return
+  const sendMessage = useCallback(
+    (rawText: string, images: ImageAttachment[] = []) => {
+      const text = rawText.trim()
+      const store = useChatStore.getState()
+      // activeTurn doubles as the guard: no new question while the previous one is still arriving.
+      if ((!text && images.length === 0) || store.activeTurn) return
 
-    const userMessageId = crypto.randomUUID()
-    const assistantMessageId = crypto.randomUUID()
-    useChatStore.getState().turnStarted(userMessageId, assistantMessageId, text, images)
+      const userMessageId = crypto.randomUUID()
+      const assistantMessageId = crypto.randomUUID()
+      store.turnStarted(userMessageId, assistantMessageId, text, images)
 
-    const history: HistoryEntry[] = [...historyRef.current, { role: 'user', text, images }]
+      const controller = new AbortController()
+      store.activeTurnStarted(controller)
+      mutate({
+        history: [...historyRef.current, { role: 'user', text, images }],
+        sessionId: store.sessionId,
+        userMessageId,
+        assistantMessageId,
+        controller,
+      })
+    },
+    [historyRef, mutate],
+  )
 
-    const controller = new AbortController()
-    abortRef.current = controller
-
-    turnMutation.mutate(
-      { history, userMessageId, assistantMessageId, signal: controller.signal },
-      { onSettled: () => { abortRef.current = null } },
-    )
-  }, []) // no dependencies: reads everything from refs, same as before
-
-  const stop = useCallback(() => abortRef.current?.abort(), [])
+  const stop = useCallback(() => useChatStore.getState().activeTurn?.abort(), [])
 
   return {
     history,
@@ -76,20 +78,13 @@ export function useChat() {
 // the store, instead of sending one at a time.
 const CHUNKS_PER_BATCH = 2
 
-async function runTurn(args: {
-  history: HistoryEntry[]
-  sessionId: string
-  userMessageId: string
-  assistantMessageId: string
-  signal: AbortSignal
-}) {
-  const { history, sessionId, userMessageId, assistantMessageId, signal } = args
+async function runTurn({ history, sessionId, userMessageId, assistantMessageId, controller }: Turn) {
   const buffer = createChunkBuffer(assistantMessageId)
   try {
     // Reads any attached File(s) into base64 here, right before the
     // request goes out - not earlier (see toOpenAIMessages's own doc).
     const openAIMessages = await toOpenAIMessages(history)
-    const body = await requestCompletion({ messages: openAIMessages, sessionId, signal })
+    const body = await requestCompletion({ messages: openAIMessages, sessionId, signal: controller.signal })
     for await (const delta of readDeltas(body)) {
       if (delta.text !== undefined) buffer.add(delta.text)
       if (delta.citations !== undefined) {

@@ -14,7 +14,8 @@ import type {
 import type { TextToSpeechPort } from '../domain/ports.js';
 import type { SynthesisResult } from '../domain/types.js';
 import { SynthesisInProgressError } from '../domain/errors.js';
-import { DEFAULT_SUPERTONIC_ENGINE_CONFIG } from '../../config/models.config.js';
+import { DEFAULT_SUPERTONIC_ENGINE_CONFIG, TTS_MODELS_BY_TIER } from '../../config/models.config.js';
+import { RESOURCE_TIER, type ResourceTier } from '../../config/resourceTier.js';
 import { TtsService } from './tts.service.js';
 
 /** Resolves every load() immediately with a fresh modelId - no cancellation support needed for these tests. */
@@ -92,11 +93,11 @@ function flushMicrotasks(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-function setup() {
+function setup(tier: ResourceTier = RESOURCE_TIER) {
   const runtime = new FakeModelRuntime();
   const models = new ModelManagementService(runtime, runtime);
   const port = new FakeTtsPort();
-  const service = new TtsService(models, port);
+  const service = new TtsService(models, port, tier);
   return { runtime, port, service };
 }
 
@@ -119,6 +120,16 @@ describe('TtsService', () => {
 
     expect(runtime.loadCalls).toHaveLength(1);
     expect(runtime.loadCalls[0]?.options).toEqual({ engineConfig: DEFAULT_SUPERTONIC_ENGINE_CONFIG });
+  });
+
+  it('loads the tier-specific Supertonic model instead of always the default tier', async () => {
+    const { runtime, port, service } = setup('high');
+
+    await service.synthesize('hello');
+    port.resolveNext({ audio: Buffer.from([1]), sampleRate: 44100 });
+    await flushMicrotasks();
+
+    expect(runtime.loadCalls[0]?.source).toEqual(TTS_MODELS_BY_TIER.high);
   });
 
   it('goes pending -> succeeded and exposes the resulting audio', async () => {

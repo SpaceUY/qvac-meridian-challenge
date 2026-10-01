@@ -1,7 +1,8 @@
 import type { ModelManagementService } from '../../models/service/models.service.js';
 import type { SpeechTranscriptionPort } from '../domain/ports.js';
 import type { StreamTranscriptSession } from '../domain/types.js';
-import { DEFAULT_WHISPER_ENGINE_CONFIG, DEFAULT_WHISPER_MODEL_SOURCE } from '../../config/models.config.js';
+import { DEFAULT_WHISPER_ENGINE_CONFIG, WHISPER_MODELS_BY_TIER } from '../../config/models.config.js';
+import { RESOURCE_TIER, type ResourceTier } from '../../config/resourceTier.js';
 
 /**
  * Orchestrates local speech-to-text: reuses the existing
@@ -14,20 +15,18 @@ import { DEFAULT_WHISPER_ENGINE_CONFIG, DEFAULT_WHISPER_MODEL_SOURCE } from '../
 export class TranscriptionService {
   private modelIdPromise?: Promise<string>;
 
+  /** `tier` defaults to the process-wide `RESOURCE_TIER`, overridable for tests. */
   constructor(
     private readonly models: ModelManagementService,
-    private readonly port: SpeechTranscriptionPort
+    private readonly port: SpeechTranscriptionPort,
+    private readonly tier: ResourceTier = RESOURCE_TIER
   ) {}
 
-  /**
-   * Loads whisper-tiny-q8-0 once (memoized), with language auto-detection
-   * enabled so English and Spanish (and anything else whisper-tiny
-   * supports) are both handled without a fixed `language`.
-   */
+  /** Loads the current tier's whisper model once (memoized), with language auto-detection on. */
   async ensureModel(): Promise<string> {
     if (!this.modelIdPromise) {
       this.modelIdPromise = this.models
-        .loadModel(DEFAULT_WHISPER_MODEL_SOURCE, { engineConfig: DEFAULT_WHISPER_ENGINE_CONFIG })
+        .loadModel(WHISPER_MODELS_BY_TIER[this.tier], { engineConfig: DEFAULT_WHISPER_ENGINE_CONFIG })
         .then((loaded) => loaded.modelId)
         .catch((error: unknown) => {
           this.modelIdPromise = undefined;

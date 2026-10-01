@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AIMessage, AIMessageChunk, HumanMessage } from "@langchain/core/messages";
-import type { ChatQVAC } from "./qvacChatModel.js";
+import type { ChatQVAC } from "qvac-langgraph";
 import { buildLlmNode } from "./graph.js";
 import { INSUFFICIENT_CONTEXT_MESSAGE } from "./ragGraph.const.js";
 
@@ -26,7 +26,7 @@ describe("buildLlmNode guard (graph.ts)", () => {
         hasEvidence: false,
         hasVisualInput: true,
         temperature: undefined,
-        seed: undefined,
+        seed: undefined, sessionId: undefined,
       },
       {},
     )) as { messages: AIMessage[] };
@@ -46,7 +46,7 @@ describe("buildLlmNode guard (graph.ts)", () => {
         hasEvidence: true,
         hasVisualInput: true,
         temperature: undefined,
-        seed: undefined,
+        seed: undefined, sessionId: undefined,
       },
       {},
     )) as { messages: AIMessage[] };
@@ -65,7 +65,7 @@ describe("buildLlmNode guard (graph.ts)", () => {
         hasEvidence: false,
         hasVisualInput: false,
         temperature: undefined,
-        seed: undefined,
+        seed: undefined, sessionId: undefined,
       },
       {},
     )) as { messages: AIMessage[] };

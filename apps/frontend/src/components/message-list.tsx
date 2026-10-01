@@ -11,7 +11,7 @@ type Props = { history: History }
 /** The whole conversation, one bubble per message. Req. [2.4] + [6.1.2]. */
 export function MessageList({ history }: Props) {
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-4 px-4 py-6">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-6">
       {history.map((message) => (
         <MessageBubble key={message.id} message={message} />
       ))}

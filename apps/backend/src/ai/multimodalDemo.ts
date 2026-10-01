@@ -18,11 +18,11 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { HumanMessage } from "@langchain/core/messages";
-import { ChatQVAC } from "./orchestrator/qvacChatModel.js";
+import { ChatQVAC } from "qvac-langgraph";
 import { ModelManagementService } from "../models/service/models.service.js";
 import { QvacRuntimeAdapter } from "../models/infra/qvacRuntimeAdapter.js";
 import { CORPUS_DIR } from "../document/infra/corpusDocumentRepository.js";
-import { LOW_RESOURCE_MODEL } from "../config/models.config.js";
+import { LLM_MODELS_BY_TIER } from "../config/models.config.js";
 
 const CORPUS_PICTURES_DIR = path.join(CORPUS_DIR, "pictures");
 
@@ -53,10 +53,10 @@ async function main(): Promise<void> {
 
   const model = new ChatQVAC({
     service,
-    modelSource: LOW_RESOURCE_MODEL.modelSource,
-    temperature: LOW_RESOURCE_MODEL.temperature,
-    ctxSize: LOW_RESOURCE_MODEL.ctxSize,
-    engineConfig: LOW_RESOURCE_MODEL.engineConfig,
+    modelSource: LLM_MODELS_BY_TIER.low.modelSource,
+    temperature: LLM_MODELS_BY_TIER.low.temperature,
+    ctxSize: LLM_MODELS_BY_TIER.low.ctxSize,
+    engineConfig: LLM_MODELS_BY_TIER.low.engineConfig,
   });
 
   try {

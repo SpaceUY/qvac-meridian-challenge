@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ModelManagementError, OperationCancelledError } from "../../models/domain/errors.js";
+import { isCancellationError, ModelManagementError, OperationCancelledError } from "../../models/domain/errors.js";
 import { ModelManagementService } from "../../models/service/models.service.js";
 import type {
   ModelProvisioningPort,
@@ -26,6 +26,7 @@ import {
 import { DEFAULT_RAG_CONFIG } from "../../config/rag.config.js";
 import type { RagRetrievalConfig } from "../../rag/domain/types.js";
 import { INSUFFICIENT_CONTEXT_MESSAGE } from "./ragGraph.const.js";
+import { LLM_MODELS_BY_TIER } from "../../config/models.config.js";
 
 /** Immediately resolves load/chat calls; replays `responses` one per `chatComplete` call (repeating the last one), recording every request for assertions. */
 class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
@@ -215,6 +216,45 @@ class ControllableModelRuntime implements ModelProvisioningPort, ModelRuntimePor
   }
 }
 
+/**
+ * Mimics a delegated load stuck in a connection phase that never registers
+ * with the runtime's own cancellation registry: `cancel()` resolves
+ * successfully but never actually interrupts the in-flight `load()` call.
+ * Exercises the path `ChatQVAC.cancelLoad()`'s `createCancelledError` hook
+ * exists for - unlike `ControllableModelRuntime` above, whose `cancel()`
+ * genuinely rejects the pending load itself, this one proves the hook
+ * wiring in `agentService.ts` actually runs.
+ */
+class HangingLoadModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
+  async searchRegistry() {
+    return [];
+  }
+
+  async listRegistry() {
+    return [];
+  }
+
+  async provision() {}
+
+  load(): Promise<LoadedModel> & { requestId: string } {
+    return Object.assign(new Promise<LoadedModel>(() => {}), { requestId: "req-load-hang" });
+  }
+
+  infer(): Promise<InferenceResult> & { requestId: string } {
+    return Object.assign(Promise.resolve({ text: "" }), { requestId: "req-infer" });
+  }
+
+  chatComplete(): Promise<ChatCompletionResult> & { requestId: string } {
+    return Object.assign(Promise.resolve({ text: "ok", toolCalls: [] }), { requestId: "req-chat" });
+  }
+
+  async unload() {}
+
+  async close() {}
+
+  async cancel() {}
+}
+
 /** In-memory `DocumentRepository` fixture - lets tests control the ingested inventory directly instead of touching `corpus/` on disk. */
 class FakeDocumentRepository implements DocumentRepository {
   constructor(private readonly documents: ArchitectureDocument[]) {}
@@ -264,6 +304,28 @@ const FAKE_DOCUMENTS: ArchitectureDocument[] = [
     updatedAt: new Date("2026-01-01"),
   },
 ];
+
+describe("AgentService model selection", () => {
+  it("loads the tier-specific chat model instead of always the default tier", async () => {
+    const runtime = new FakeModelRuntime();
+    const modelService = new ModelManagementService(runtime, runtime);
+    const embeddingPort = new FakeEmbeddingPort();
+    const vectorStore = await buildFixtureVectorStore(embeddingPort);
+    const ragService = new RagRetrievalService(embeddingPort, vectorStore);
+
+    const agentService = new AgentService(
+      modelService,
+      ragService,
+      new FakeDocumentRepository([]),
+      "high",
+    );
+
+    expect(agentService.getStatus().model).toEqual({
+      name: LLM_MODELS_BY_TIER.high.modelName,
+      quantization: LLM_MODELS_BY_TIER.high.quantization,
+    });
+  });
+});
 
 describe("AgentService.invoke", () => {
   it("sends the corpus content to the model as part of the chat history", async () => {
@@ -459,6 +521,30 @@ describe("AgentService.invoke", () => {
 
     await secondPreload;
     expect(agentService.getStatus().status).toBe("ready");
+  });
+
+  it("resolves to idle (not stuck on error) when cancelling a load whose own cancel() cannot truly interrupt it", async () => {
+    const runtime = new HangingLoadModelRuntime();
+    const modelService = new ModelManagementService(runtime, runtime);
+
+    const embeddingPort = new FakeEmbeddingPort();
+    const vectorStore = await buildFixtureVectorStore(embeddingPort);
+    const ragService = new RagRetrievalService(embeddingPort, vectorStore);
+
+    const agentService = new AgentService(
+      modelService,
+      ragService,
+      new FakeDocumentRepository([]),
+    );
+
+    const preloadPromise = agentService.preload();
+    expect(agentService.getStatus().status).toBe("loading");
+
+    await agentService.cancelPreload();
+
+    const err = await preloadPromise.catch((caught: unknown) => caught);
+    expect(isCancellationError(err)).toBe(true);
+    expect(agentService.getStatus().status).toBe("idle");
   });
 });
 

@@ -81,7 +81,7 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
     // The path the QVAC evaluator uses: one JSON object, citations on the message.
     if (!wantsStream(req.body)) {
       try {
-        const options = parseGenerationOptions(req.body);
+        const options = { ...parseGenerationOptions(req.body), sessionId: req.header("X-Meridian-Session") };
         const result = await agent.invoke(messages, options);
         res.json(toCompletionResponse(envelope, result.answer, result.citations));
       } catch (err) {
@@ -98,7 +98,7 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
     // which may be seconds away.
     res.flushHeaders();
     res.write(toRoleChunk(envelope));
-    const options = parseGenerationOptions(req.body);
+    const options = { ...parseGenerationOptions(req.body), sessionId: req.header("X-Meridian-Session") };
     const pending = agent.invoke(messages, options, (textDelta) => {
       res.write(toTextChunk(envelope, textDelta));
     });

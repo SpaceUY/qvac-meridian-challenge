@@ -8,6 +8,7 @@ import { createChatStatusRouter, createCompletionsRouter, createVoiceCompletions
 import { createTtsRouter } from "./tts/router/tts.router.js";
 import { TtsService } from "./tts/service/tts.service.js";
 import { QvacTtsAdapter } from "./tts/infra/qvacTtsAdapter.js";
+import { createDocumentsRouter } from "./document/router/documents.router.js";
 import { TranscriptionService } from "./speech/service/transcription.service.js";
 import { QvacTranscriptionAdapter } from "./speech/infra/qvacTranscriptionAdapter.js";
 import { VoiceAgentService } from "./ai/orchestrator/voiceAgentService.js";
@@ -63,6 +64,7 @@ const vectorStore = await buildFixtureVectorStore(embeddingPort);
 const ragService = new RagRetrievalService(embeddingPort, vectorStore, RAG_CONFIG);
 
 const documentRepository = new CorpusDocumentRepository();
+app.use("/api/documents", createDocumentsRouter(documentRepository));
 const agentService = new AgentService(
   modelManagementService,
   ragService,

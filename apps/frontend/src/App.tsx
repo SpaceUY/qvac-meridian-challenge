@@ -1,28 +1,33 @@
 import { AppShell } from '@/components/app-shell'
 import { ChatPanel } from '@/components/chat-panel'
-import { CorpusPanel } from '@/components/corpus-panel'
+import { CorpusDialog } from '@/components/corpus-dialog'
 import { EnginePanel } from '@/components/engine-panel'
-import { FAKE_CORPUS } from '@/lib/fake-data'
+import { NewChatButton } from '@/components/new-chat-button'
+import { Separator } from '@/components/ui/separator'
 import { useModelStatus } from '@/hooks/use-model-status'
 
 export default function App() {
   const modelStatus = useModelStatus()
   return (
     <AppShell
-      leftSidebar={<CorpusPanel documents={FAKE_CORPUS} />}
-      rightSidebar={
-        <EnginePanel
-          model={modelStatus.model}
-          modelStatus={modelStatus.status}
-          statusError={modelStatus.error}
-          delegation={modelStatus.delegation}
-          cancelled={modelStatus.cancelled}
-          onCancelLoad={modelStatus.cancelLoad}
-          onRetryLoad={modelStatus.retryLoad}
-        />
+      leftSidebar={
+        <div className="flex flex-col gap-3">
+          <NewChatButton />
+          <CorpusDialog />
+          <Separator />
+          <EnginePanel
+            model={modelStatus.model}
+            modelStatus={modelStatus.status}
+            statusError={modelStatus.error}
+            delegation={modelStatus.delegation}
+            cancelled={modelStatus.cancelled}
+            onCancelLoad={modelStatus.cancelLoad}
+            onRetryLoad={modelStatus.retryLoad}
+          />
+        </div>
       }
     >
-      <ChatPanel modelStatus={modelStatus.status} />
+      <ChatPanel modelStatus={modelStatus.status} modelCancelled={modelStatus.cancelled} />
     </AppShell>
   )
 }

@@ -4,6 +4,7 @@
   "description": "",
   "workspaces": [
     "apps/*",
+    "packages/*",
     "stock-tool"
   ],
   "scripts": {

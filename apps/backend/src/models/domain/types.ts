@@ -162,6 +162,10 @@ export interface ChatCompletionRequest {
   tools?: ChatTool[];
   temperature?: number;
   seed?: number;
+  /** Per-request KV cache session key, forwarded from the `X-Meridian-Session` header. */
+  sessionId?: string;
+  /** Whether the SDK's KV cache is used for this request, sourced from the loaded model's `AgentModelConfig.kvCacheEnabled` (`config/models.config.ts`). `undefined` means enabled, same as `true`. */
+  kvCacheEnabled?: boolean;
 }
 
 export interface ChatCompletionResult {

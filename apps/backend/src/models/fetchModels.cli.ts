@@ -3,10 +3,15 @@
  * needs before `npm run serve` starts, so `serve` never touches the network -
  * required by qvac-eval.json's contract (Req 6.1.4: "start must not require
  * network access"). Run via `npm run models:fetch`.
+ *
+ * Only provisions the resolved resource tier (not all three - see
+ * `config/resourceTier.ts`), to avoid downloading tens of GB this machine
+ * won't use. Set `QVAC_RESOURCE_TIER` to pin a specific tier.
  */
 import { QvacRuntimeAdapter } from "./infra/qvacRuntimeAdapter.js";
 import { ModelManagementService } from "./service/models.service.js";
-import { LOW_RESOURCE_MODEL, HIGH_RESOURCE_MODEL, EMBEDDING_MODEL_SOURCE } from "../config/models.config.js";
+import { LLM_MODELS_BY_TIER, WHISPER_MODELS_BY_TIER, TTS_MODELS_BY_TIER, EMBEDDING_MODEL_SOURCE } from "../config/models.config.js";
+import { RESOURCE_TIER } from "../config/resourceTier.js";
 import type { ModelSource } from "./domain/types.js";
 
 const adapter = new QvacRuntimeAdapter();
@@ -17,18 +22,17 @@ function projectionSource(engineConfig: Record<string, unknown> | undefined): Mo
   return typeof src === "string" ? { kind: "rawSrc", src } : undefined;
 }
 
+console.log(`[models:fetch] resource tier: ${RESOURCE_TIER}`);
+
+const llmModel = LLM_MODELS_BY_TIER[RESOURCE_TIER];
+
 const sources: ModelSource[] = [
-  LOW_RESOURCE_MODEL.modelSource,
-  HIGH_RESOURCE_MODEL.modelSource,
+  llmModel.modelSource,
+  WHISPER_MODELS_BY_TIER[RESOURCE_TIER],
+  TTS_MODELS_BY_TIER[RESOURCE_TIER],
   EMBEDDING_MODEL_SOURCE,
-  projectionSource(LOW_RESOURCE_MODEL.engineConfig),
-  projectionSource(HIGH_RESOURCE_MODEL.engineConfig),
-].filter((source, index, all): source is ModelSource => {
-  if (!source) return false;
-  // De-dupe: LOW/HIGH resource tiers may resolve to the same source/projection today.
-  const key = JSON.stringify(source);
-  return all.findIndex((other) => other && JSON.stringify(other) === key) === index;
-});
+  projectionSource(llmModel.engineConfig),
+].filter((source): source is ModelSource => source !== undefined);
 
 for (const source of sources) {
   const label = source.kind === "rawSrc" ? source.src : source.kind === "url" ? source.url : source.registryPath;
