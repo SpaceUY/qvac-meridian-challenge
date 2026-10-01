@@ -23,7 +23,7 @@ import {
 import type { RagRetrievalService } from "../../rag/service/rag.service.js";
 import { buildRetrieveNode } from "./ragGraph.js";
 import { BindToolsInput } from "@langchain/core/language_models/chat_models";
-import type { AIMessageChunk } from "@langchain/core/messages";
+import type { AIMessageChunk, BaseMessage } from "@langchain/core/messages";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
 
@@ -35,6 +35,50 @@ const SYSTEM_PROMPT = `You are Meridian's internal assistant. You handle two kin
 ${GROUNDING_INSTRUCTIONS}`;
 
 
+/**
+ * Tag that LangGraph's "messages" stream mode checks to skip a chat model
+ * call's tokens (`handleChatModelStart` in @langchain/langgraph's
+ * dist/pregel/messages.js). The node's returned message is still emitted
+ * once, when the node ends.
+ */
+const NO_STREAM_TAG = "nostream";
+
+/**
+ * Whether the grounding guard in `buildLlmNode` may replace this turn's
+ * reply: only when retrieval found no evidence and no tool has run yet.
+ * Both are known before the model is called, which is what lets the node
+ * decide up front whether the reply may stream.
+ */
+function guardMayReplaceReply(state: typeof State.State): boolean {
+  const usedTool = state.messages.some((message) =>
+    ToolMessage.isInstance(message),
+  );
+  return !state.hasEvidence && !usedTool;
+}
+
+/**
+ * Runs one model call and merges its streamed chunks into a single reply.
+ * `hidden` keeps the tokens off the client's stream (see `NO_STREAM_TAG`).
+ */
+async function generateReply(
+  model: ReturnType<ChatQVAC["bindTools"]>,
+  messages: BaseMessage[],
+  { hidden }: { hidden: boolean },
+): Promise<AIMessageChunk> {
+  const stream = await model.stream(
+    messages,
+    hidden ? { tags: [NO_STREAM_TAG] } : undefined,
+  );
+  let reply: AIMessageChunk | undefined;
+  for await (const chunk of stream) {
+    reply = reply ? reply.concat(chunk) : chunk;
+  }
+  if (!reply) {
+    throw new Error("model stream produced no chunks");
+  }
+  return reply;
+}
+
 export function buildLlmNode(
   tools: BindToolsInput[],
   model: ChatQVAC,
@@ -45,27 +89,19 @@ export function buildLlmNode(
       `${SYSTEM_PROMPT}\n\nContext:\n${context}`,
     );
 
-    const modelWithTools = model.bindTools(tools);
-
-    const stream = await modelWithTools.stream([
-      systemMessage,
-      ...state.messages,
-    ]);
-    let response: AIMessageChunk | undefined;
-    for await (const chunk of stream) {
-      response = response ? response.concat(chunk) : chunk;
-    }
-    if (!response) {
-      throw new Error("model stream produced no chunks");
-    }
+    // Decided before the model runs: a reply the guard below may discard
+    // must never stream, or the client sees it with the fallback glued on.
+    const guardMayReplace = guardMayReplaceReply(state);
+    const response = await generateReply(
+      model.bindTools(tools),
+      [systemMessage, ...state.messages],
+      { hidden: guardMayReplace },
+    );
 
     // Guard against hallucinated/refused answers: if this turn never called a
     // tool and retrieval found no supporting evidence, don't trust freeform
     // model text — fall back to the fixed insufficient-context message.
-    const usedTool = state.messages.some((message) =>
-      ToolMessage.isInstance(message),
-    );
-    if (!response.tool_calls?.length && !state.hasEvidence && !usedTool) {
+    if (guardMayReplace && !response.tool_calls?.length) {
       return { messages: [new AIMessage(INSUFFICIENT_CONTEXT_MESSAGE)] };
     }
 

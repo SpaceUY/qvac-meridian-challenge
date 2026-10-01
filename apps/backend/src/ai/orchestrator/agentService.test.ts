@@ -23,6 +23,9 @@ import {
   DocumentType,
   type ArchitectureDocument,
 } from "../../document/domain/document.model.js";
+import { DEFAULT_RAG_CONFIG } from "../../config/rag.config.js";
+import type { RagRetrievalConfig } from "../../rag/domain/types.js";
+import { INSUFFICIENT_CONTEXT_MESSAGE } from "./ragGraph.const.js";
 
 /** Immediately resolves load/chat calls; replays `responses` one per `chatComplete` call (repeating the last one), recording every request for assertions. */
 class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
@@ -72,8 +75,9 @@ class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
       this.responses[Math.min(this.callCount, this.responses.length - 1)];
     this.callCount += 1;
     // Mirrors the real adapter's streaming contract: deltas sum to the full
-    // text, so a single delta with the whole response satisfies it here.
-    if (response.text) onToken?.(response.text);
+    // text. One delta per word, so a test can tell "streamed token by token"
+    // apart from "arrived in one piece".
+    for (const delta of response.text.match(/\S+\s*/g) ?? []) onToken?.(delta);
     return Object.assign(Promise.resolve(response), {
       requestId: `req-chat-${this.chatRequests.length}`,
     });
@@ -397,6 +401,75 @@ describe("AgentService.invoke", () => {
 
     await secondPreload;
     expect(agentService.getStatus().status).toBe("ready");
+  });
+});
+
+/** Cosine similarity never exceeds 1, so no chunk clears this: retrieval never finds evidence. */
+const NO_EVIDENCE_CONFIG: RagRetrievalConfig = { ...DEFAULT_RAG_CONFIG, minScore: 1.01 };
+/** Cosine similarity is never below -1, so every chunk clears this: retrieval always finds evidence. */
+const ALWAYS_EVIDENCE_CONFIG: RagRetrievalConfig = { ...DEFAULT_RAG_CONFIG, minScore: -1 };
+
+async function buildAgent(runtime: FakeModelRuntime, ragConfig: RagRetrievalConfig): Promise<AgentService> {
+  const embeddingPort = new FakeEmbeddingPort();
+  const vectorStore = await buildFixtureVectorStore(embeddingPort);
+  return new AgentService(
+    new ModelManagementService(runtime, runtime),
+    new RagRetrievalService(embeddingPort, vectorStore, ragConfig),
+    new FakeDocumentRepository([]),
+  );
+}
+
+/** Runs one user turn and joins every text delta: exactly what an SSE client would render. */
+async function askOnce(agent: AgentService, question: string) {
+  const deltas: string[] = [];
+  const result = await agent.invoke(
+    [{ role: "user", message: question }],
+    (delta) => deltas.push(delta),
+  );
+  return { deltas, onScreen: deltas.join(""), result };
+}
+
+describe("AgentService.invoke streaming", () => {
+  it("never puts a reply the grounding guard discarded on screen", async () => {
+    const runtime = new FakeModelRuntime([
+      { text: "The standard warranty is 3 years.", toolCalls: [] },
+    ]);
+    const agent = await buildAgent(runtime, NO_EVIDENCE_CONFIG);
+
+    const { onScreen, result } = await askOnce(agent, "What is the standard warranty?");
+
+    expect(result.answer).toBe(INSUFFICIENT_CONTEXT_MESSAGE);
+    expect(onScreen).toBe(result.answer);
+  });
+
+  it("streams a grounded reply token by token", async () => {
+    const reply = "Standard warranty covers 24 months.";
+    const runtime = new FakeModelRuntime([{ text: reply, toolCalls: [] }]);
+    const agent = await buildAgent(runtime, ALWAYS_EVIDENCE_CONFIG);
+
+    const { deltas, onScreen, result } = await askOnce(agent, "What is the standard warranty?");
+
+    expect(result.answer).toBe(reply);
+    expect(onScreen).toBe(result.answer);
+    expect(deltas.length).toBeGreaterThan(1);
+  });
+
+  it("streams the reply that follows a tool call, even without evidence", async () => {
+    const reply = "SD-X4-001 has 22 units available in the Americas.";
+    const runtime = new FakeModelRuntime([
+      {
+        text: "",
+        toolCalls: [{ id: "call_1", name: "lookup_stock", arguments: { sku: "SD-X4-001" } }],
+      },
+      { text: reply, toolCalls: [] },
+    ]);
+    const agent = await buildAgent(runtime, NO_EVIDENCE_CONFIG);
+
+    const { deltas, onScreen, result } = await askOnce(agent, "How many SD-X4-001 are in stock?");
+
+    expect(result.answer).toBe(reply);
+    expect(onScreen).toBe(result.answer);
+    expect(deltas.length).toBeGreaterThan(1);
   });
 });
 

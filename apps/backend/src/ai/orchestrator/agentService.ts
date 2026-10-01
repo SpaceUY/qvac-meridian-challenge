@@ -211,10 +211,10 @@ export class AgentService {
       .find((message): message is AIMessage => AIMessage.isInstance(message));
 
     const answer = lastAIMessage?.text ?? "";
-    // The insufficient-context fallback (graph.ts's buildLlmNode) is a fixed
-    // string, not model-generated, so it never streams through "messages" -
-    // forward it as a single chunk here, the only path onToken wouldn't
-    // otherwise see.
+    // Safety net only: "messages" mode also emits the messages a node returns
+    // (not just model tokens), so the insufficient-context fallback and any
+    // hidden reply (see graph.ts's buildLlmNode) already reached onToken
+    // above. This covers a reply that somehow produced no stream event.
     if (!streamedAnyToken && answer) onToken?.(answer);
 
     const thinkingText = lastAIMessage?.additional_kwargs.thinkingText;
