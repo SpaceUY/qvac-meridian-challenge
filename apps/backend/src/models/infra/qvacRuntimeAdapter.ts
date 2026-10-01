@@ -285,6 +285,17 @@ export class QvacRuntimeAdapter
     await cancel({ requestId });
   }
 
+  /**
+   * Model-wide cancel of in-flight completions. Needed for a delegated
+   * model: the SDK handles a `requestId` cancel locally and its delegated
+   * completion stream is not in the request registry, so that cancel
+   * reports success without stopping anything, while a `modelId` cancel is
+   * forwarded to the provider.
+   */
+  async cancelCompletions(modelId: string): Promise<void> {
+    await cancel({ modelId, kind: "completion" });
+  }
+
   /** Omits `modelId` on purpose, so the SDK removes the key's caches for every model, not just one. */
   async deleteCache(kvCacheKey: string): Promise<void> {
     await deleteCache({ kvCacheKey });

@@ -267,6 +267,23 @@ export class ModelManagementService {
   }
 
   /**
+   * Cancels every chat completion in flight on `modelId`. `cancelCompletions`
+   * is optional on `ModelRuntimePort` (only the delegated chat path needs
+   * it) - a runtime that doesn't implement it fails with the `"cancel"`
+   * stage rather than silently leaving the completion running.
+   */
+  async cancelCompletions(modelId: string): Promise<void> {
+    if (!this.runtime.cancelCompletions) {
+      throw toModelManagementError("cancel", new Error("This runtime does not support cancelCompletions()"));
+    }
+    try {
+      await this.runtime.cancelCompletions(modelId);
+    } catch (err) {
+      throw toModelManagementError("cancel", err);
+    }
+  }
+
+  /**
    * Deletes the KV cache stored under `kvCacheKey` (a chat session's id).
    * `deleteCache` is optional on `ModelRuntimePort` - a runtime that
    * doesn't implement it fails with a distinct `"cache"` stage rather than

@@ -40,6 +40,7 @@ class RecordingChatService implements QvacChatSessionService {
   chatCompleteCallCount = 0;
   chatRequests: ChatCompletionRequest[] = [];
   cancelledRequestIds: string[] = [];
+  cancelledCompletionModelIds: string[] = [];
   /** Ordered log of `"load"`/`"unload:<modelId>"` calls, so tests can assert the unload-before-reload sequence that clears a stale delegated registry entry. */
   operations: string[] = [];
   /** When true, `loadModel()` returns a promise that never settles - a delegated connection attempt stuck mid-connect. */
@@ -103,6 +104,10 @@ class RecordingChatService implements QvacChatSessionService {
 
   async cancel(requestId: string): Promise<void> {
     this.cancelledRequestIds.push(requestId);
+  }
+
+  async cancelCompletions(modelId: string): Promise<void> {
+    this.cancelledCompletionModelIds.push(modelId);
   }
 
   async unloadModel(modelId: string): Promise<void> {
@@ -215,7 +220,7 @@ describe("QvacChatSession.cancelActive", () => {
     await session.ensureModel();
     service.hangChat = true;
 
-    void session.complete(REQUEST);
+    session.complete(REQUEST).catch(() => {}); // rejects on cancel, as asserted elsewhere
     await flushMicrotasks();
     await session.cancelActive();
 
@@ -228,6 +233,64 @@ describe("QvacChatSession.cancelActive", () => {
 
     await expect(session.cancelActive()).resolves.toBeUndefined();
     expect(service.cancelledRequestIds).toEqual([]);
+    expect(service.cancelledCompletionModelIds).toEqual([]);
+  });
+
+  it("rejects the pending complete() with a cancellation error and frees the session, even when the underlying completion never settles", async () => {
+    const service = new RecordingChatService();
+    const session = buildDelegatingSession(service);
+    await session.ensureModel();
+    service.hangChat = true;
+
+    const pending = session.complete(REQUEST);
+    await flushMicrotasks();
+    await session.cancelActive();
+
+    const error = await pending.catch((err: unknown) => err);
+    expect(isCancellationError(error)).toBe(true);
+    expect(session.isBusy()).toBe(false);
+  });
+
+  it("also cancels every completion on the model when a delegate is configured, because the SDK never aborts a delegated stream by request id", async () => {
+    const service = new RecordingChatService();
+    const session = buildDelegatingSession(service);
+    await session.ensureModel();
+    service.hangChat = true;
+
+    session.complete(REQUEST).catch(() => {}); // rejects on cancel, as asserted elsewhere
+    await flushMicrotasks();
+    await session.cancelActive();
+
+    expect(service.cancelledCompletionModelIds).toEqual(["fake-model-1"]);
+  });
+
+  it("still rejects the pending complete() when the service-level cancel fails", async () => {
+    const service = new RecordingChatService();
+    service.cancel = async () => {
+      throw new Error("provider unreachable");
+    };
+    const session = buildDelegatingSession(service);
+    await session.ensureModel();
+    service.hangChat = true;
+
+    const pending = session.complete(REQUEST);
+    await flushMicrotasks();
+    await expect(session.cancelActive()).rejects.toThrow("provider unreachable");
+
+    expect(isCancellationError(await pending.catch((err: unknown) => err))).toBe(true);
+  });
+
+  it("leaves a local-only session to the request-id cancel alone (no model-wide cancel)", async () => {
+    const service = new RecordingChatService();
+    const session = buildSession(service);
+    await session.ensureModel();
+    service.hangChat = true;
+
+    session.complete(REQUEST).catch(() => {}); // rejects on cancel, as asserted elsewhere
+    await flushMicrotasks();
+    await session.cancelActive();
+
+    expect(service.cancelledCompletionModelIds).toEqual([]);
   });
 });
 
