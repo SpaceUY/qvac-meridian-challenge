@@ -78,7 +78,7 @@ export class AgentService {
 
   /** `tier` defaults to the process-wide `RESOURCE_TIER`, overridable for tests. */
   constructor(
-    service: ModelManagementService,
+    private readonly service: ModelManagementService,
     ragService: RagRetrievalService,
     documentRepository: DocumentRepository,
     tier: ResourceTier = RESOURCE_TIER,
@@ -195,6 +195,11 @@ export class AgentService {
   async cancel(requestId: string): Promise<void> {
     if (!this.pendingRequests.has(requestId)) return;
     await this.chatModel.cancelActive();
+  }
+
+  /** Deletes the KV cache of a chat session - `sessionId` doubles as the SDK's `kvCache` key (see `QvacRuntimeAdapter.chatComplete`). Safe for a session that has no cache. */
+  async deleteSessionCache(sessionId: string): Promise<void> {
+    await this.service.deleteCache(sessionId);
   }
 
   private async runInvoke(

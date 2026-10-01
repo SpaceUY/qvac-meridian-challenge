@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { parseCitations, readDeltas, type ChatDelta } from '@/lib/chat-client'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { deleteSessionCache, EngineError, parseCitations, readDeltas, type ChatDelta } from '@/lib/chat-client'
 
 /** A body shaped like the backend's stream: strict chat.completion.chunk events, then [DONE]. */
 function sseBody(deltas: object[]): ReadableStream<Uint8Array> {
@@ -36,5 +36,28 @@ describe('parseCitations', () => {
   it('returns an empty array for anything that is not an array', () => {
     expect(parseCitations(undefined)).toEqual([])
     expect(parseCitations({ file: 'a.md' })).toEqual([])
+  })
+})
+
+describe('deleteSessionCache', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('sends a DELETE for the KV cache of the session', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await deleteSessionCache('3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/chat/sessions/3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b/cache', {
+      method: 'DELETE',
+    })
+  })
+
+  it('rejects with the server status when the backend refuses', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"error":"nope"}', { status: 500 })))
+
+    await expect(deleteSessionCache('session-1')).rejects.toBeInstanceOf(EngineError)
   })
 })

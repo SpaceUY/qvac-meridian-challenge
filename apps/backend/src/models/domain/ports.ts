@@ -77,4 +77,12 @@ export interface ModelRuntimePort {
    * without throwing in all of those cases, same as the underlying SDK.
    */
   cancel(requestId: string): Promise<void>;
+  /**
+   * Deletes the KV cache stored under `kvCacheKey` (the `sessionId` passed
+   * to `chatComplete()`), for every model. Safe for a key that doesn't
+   * exist - it resolves without throwing, same as the underlying SDK.
+   * Optional: only the chat-session path needs it, so a `ModelRuntimePort`
+   * fake used by an unrelated feature's tests doesn't have to implement it.
+   */
+  deleteCache?(kvCacheKey: string): Promise<void>;
 }

@@ -60,6 +60,14 @@ class FakeAgentService {
     this.rejectActive?.(new Error("cancelled"));
   }
 
+  readonly deletedSessionIds: string[] = [];
+  deleteSessionCacheShouldFail = false;
+
+  async deleteSessionCache(sessionId: string): Promise<void> {
+    if (this.deleteSessionCacheShouldFail) throw new Error("boom");
+    this.deletedSessionIds.push(sessionId);
+  }
+
   cancelPreloadCallCount = 0;
   cancelPreloadShouldFail = false;
 
@@ -162,6 +170,55 @@ describe("POST /preload/cancel", () => {
     const response = await fetch(`http://127.0.0.1:${port}/api/chat/preload/cancel`, { method: "POST" });
 
     expect(response.status).toBe(500);
+  });
+});
+
+describe("DELETE /sessions/:sessionId/cache", () => {
+  const SESSION_ID = "3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b";
+  let server: http.Server | undefined;
+
+  afterEach(() => {
+    server?.close();
+    server = undefined;
+  });
+
+  async function startServer(fakeAgentService: FakeAgentService): Promise<number> {
+    const app = express();
+    app.use("/api/chat", createChatStatusRouter(fakeAgentService as unknown as AgentService));
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", resolve));
+    return (server.address() as AddressInfo).port;
+  }
+
+  it("deletes the KV cache of the session and responds 204", async () => {
+    const fakeAgentService = new FakeAgentService();
+    const port = await startServer(fakeAgentService);
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/chat/sessions/${SESSION_ID}/cache`, { method: "DELETE" });
+
+    expect(response.status).toBe(204);
+    expect(fakeAgentService.deletedSessionIds).toEqual([SESSION_ID]);
+  });
+
+  it("responds 400 and deletes nothing when the session id is not a UUID", async () => {
+    const fakeAgentService = new FakeAgentService();
+    const port = await startServer(fakeAgentService);
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/chat/sessions/..%2F..%2Fother/cache`, { method: "DELETE" });
+
+    expect(response.status).toBe(400);
+    expect(fakeAgentService.deletedSessionIds).toEqual([]);
+  });
+
+  it("responds 500 without leaking the internal error when the delete fails", async () => {
+    const fakeAgentService = new FakeAgentService();
+    fakeAgentService.deleteSessionCacheShouldFail = true;
+    const port = await startServer(fakeAgentService);
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/chat/sessions/${SESSION_ID}/cache`, { method: "DELETE" });
+
+    expect(response.status).toBe(500);
+    expect(await response.text()).not.toContain("boom");
   });
 });
 

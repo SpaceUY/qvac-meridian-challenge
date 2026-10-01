@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { DelegatedProviderUnreachableError, OperationCancelledError } from "../domain/errors.js";
 
-const { loadModelMock, getLoadedModelInfoMock, completionMock, downloadAssetMock } = vi.hoisted(() => ({
+const { loadModelMock, getLoadedModelInfoMock, completionMock, downloadAssetMock, deleteCacheMock } = vi.hoisted(() => ({
   loadModelMock: vi.fn(),
   getLoadedModelInfoMock: vi.fn(),
   completionMock: vi.fn(),
   downloadAssetMock: vi.fn(),
+  deleteCacheMock: vi.fn(),
 }));
 
 /**
@@ -27,6 +28,7 @@ vi.mock("@qvac/sdk", async (importOriginal) => {
     getLoadedModelInfo: getLoadedModelInfoMock,
     completion: completionMock,
     downloadAsset: downloadAssetMock,
+    deleteCache: deleteCacheMock,
   };
 });
 
@@ -94,6 +96,17 @@ describe("QvacRuntimeAdapter.getLoadedModelInfo", () => {
       isDelegated: false,
       providerPublicKey: undefined,
     });
+  });
+});
+
+describe("QvacRuntimeAdapter.deleteCache", () => {
+  it("deletes the SDK's KV cache for the given key, across every model", async () => {
+    deleteCacheMock.mockResolvedValue({ success: true });
+
+    const adapter = new QvacRuntimeAdapter();
+    await adapter.deleteCache("session-1");
+
+    expect(deleteCacheMock).toHaveBeenCalledWith({ kvCacheKey: "session-1" });
   });
 });
 

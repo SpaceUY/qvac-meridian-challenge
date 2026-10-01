@@ -129,6 +129,17 @@ class IntrospectableRuntime extends FakeModelRuntime {
   }
 }
 
+/** A runtime that implements the optional `deleteCache()`, recording every key it was asked to delete. */
+class CacheableRuntime extends FakeModelRuntime {
+  readonly deletedCacheKeys: string[] = [];
+  deleteCacheShouldFail = false;
+
+  async deleteCache(kvCacheKey: string): Promise<void> {
+    if (this.deleteCacheShouldFail) throw new Error('boom');
+    this.deletedCacheKeys.push(kvCacheKey);
+  }
+}
+
 const SOURCE: ModelSource = { kind: 'url', url: 'https://example.com/model.gguf' };
 
 describe('ModelManagementService cancellation', () => {
@@ -284,5 +295,31 @@ describe('ModelManagementService.getLoadedModelInfo', () => {
     await expect(service.getLoadedModelInfo(loaded.modelId)).rejects.toMatchObject({
       stage: 'introspect'
     });
+  });
+});
+
+describe('ModelManagementService.deleteCache', () => {
+  it('asks the runtime to delete the KV cache stored under the key', async () => {
+    const runtime = new CacheableRuntime();
+    const service = new ModelManagementService(runtime, runtime);
+
+    await service.deleteCache('session-1');
+
+    expect(runtime.deletedCacheKeys).toEqual(['session-1']);
+  });
+
+  it('rejects with a "cache" error when the runtime fails to delete it', async () => {
+    const runtime = new CacheableRuntime();
+    runtime.deleteCacheShouldFail = true;
+    const service = new ModelManagementService(runtime, runtime);
+
+    await expect(service.deleteCache('session-1')).rejects.toMatchObject({ stage: 'cache' });
+  });
+
+  it('rejects with a "cache" error when the runtime does not implement deleteCache()', async () => {
+    const runtime = new FakeModelRuntime();
+    const service = new ModelManagementService(runtime, runtime);
+
+    await expect(service.deleteCache('session-1')).rejects.toMatchObject({ stage: 'cache' });
   });
 });

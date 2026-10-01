@@ -267,6 +267,23 @@ export class ModelManagementService {
   }
 
   /**
+   * Deletes the KV cache stored under `kvCacheKey` (a chat session's id).
+   * `deleteCache` is optional on `ModelRuntimePort` - a runtime that
+   * doesn't implement it fails with a distinct `"cache"` stage rather than
+   * silently leaving the cache behind.
+   */
+  async deleteCache(kvCacheKey: string): Promise<void> {
+    if (!this.runtime.deleteCache) {
+      throw toModelManagementError("cache", new Error("This runtime does not support deleteCache()"));
+    }
+    try {
+      await this.runtime.deleteCache(kvCacheKey);
+    } catch (err) {
+      throw toModelManagementError("cache", err);
+    }
+  }
+
+  /**
    * Introspection on a loaded model: whether it's running locally or was
    * delegated to a remote provider. `getLoadedModelInfo` is optional on
    * `ModelRuntimePort` (only the chat-completion delegation path needs
