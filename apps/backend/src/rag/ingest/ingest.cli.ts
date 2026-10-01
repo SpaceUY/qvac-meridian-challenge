@@ -6,7 +6,7 @@ import { QvacChunker } from '../infra/qvacChunker.adapter.js';
 import { LanceDbVectorStoreWriter } from '../infra/lanceDbVectorStore.js';
 import { CorpusIngestService, type IngestReport } from './corpusIngest.service.js';
 import { CORPUS_ROOT, VECTOR_DB_DIR } from '../../config/rag.config.js';
-import { DEFAULT_EMBEDDING_BATCH_SIZE, EMBEDDING_MODEL_SOURCE } from '../../config/models.config.js';
+import { DEFAULT_EMBEDDING_BATCH_SIZE, EMBEDDING_MODEL_EXPECTED_SIZE, EMBEDDING_MODEL_SOURCE } from '../../config/models.config.js';
 
 function printReport(report: IngestReport, totalRows: number): void {
   const list = (label: string, items: string[]): void => {
@@ -35,7 +35,8 @@ async function main(): Promise<void> {
     modelService,
     new QvacEmbeddingAdapter(),
     EMBEDDING_MODEL_SOURCE,
-    DEFAULT_EMBEDDING_BATCH_SIZE
+    DEFAULT_EMBEDDING_BATCH_SIZE,
+    EMBEDDING_MODEL_EXPECTED_SIZE
   );
   const writer = await LanceDbVectorStoreWriter.open(VECTOR_DB_DIR);
 

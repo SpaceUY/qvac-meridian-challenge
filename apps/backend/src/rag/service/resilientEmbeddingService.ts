@@ -39,14 +39,14 @@ export interface NativeEmbeddingLike extends EmbeddingPort {
  * two arguments are test-only overrides (a fake native provider / fake SDK
  * factory) - production call sites never pass them.
  *
- * I.4 LIMITATION: `modelSource`/`batchSize` only ever reach the SDK
- * fallback. `NativeEmbeddingProvider` always loads EmbeddingGemma 300M Q4_0
- * (see `infra/nativeEmbedding/embeddingGemmaModel.ts`) regardless of what
- * `modelSource` this class was constructed with - it is not a general
- * "load any registry model natively" path. Fine today because
- * `EMBEDDING_MODEL_SOURCE` (`config/models.config.ts`) is the only model
- * either path is ever asked to load; would need addressing before this
- * class is used with more than one embedding model.
+ * `modelSource`/`expectedSize` are shared by both paths: the native
+ * provider resolves `modelSource` to a cached GGUF via
+ * `resolveNativeEmbeddingModelPath()` (see
+ * `infra/nativeEmbedding/embeddingGemmaModel.ts`), and the SDK fallback
+ * loads the same `modelSource` through `@qvac/sdk`'s own `loadModel()` - so
+ * both paths always load the same model, whatever
+ * `EMBEDDING_MODEL_SOURCE`/`EMBEDDING_MODEL_EXPECTED_SIZE`
+ * (`config/models.config.ts`) is currently set to.
  */
 export class ResilientEmbeddingService implements EmbeddingPort {
   private sdkFallback?: QvacEmbeddingService;
@@ -57,7 +57,8 @@ export class ResilientEmbeddingService implements EmbeddingPort {
     adapter: QvacEmbeddingAdapter,
     modelSource: ModelSource,
     batchSize: number,
-    private readonly nativeProvider: NativeEmbeddingLike = new NativeEmbeddingProvider(),
+    expectedModelSize: number,
+    private readonly nativeProvider: NativeEmbeddingLike = new NativeEmbeddingProvider(modelSource, expectedModelSize),
     private readonly createSdkFallback: () => QvacEmbeddingService = () =>
       new QvacEmbeddingService(models, adapter, modelSource, batchSize)
   ) {}

@@ -4,8 +4,8 @@ import { AUTHORITY_RANK, DEFAULT_RAG_CONFIG, SUPERSEDED_SOURCES } from './rag.co
 describe('DEFAULT_RAG_CONFIG', () => {
   it('documents the tuned defaults from the retrieval eval sweep', () => {
     expect(DEFAULT_RAG_CONFIG).toEqual({
-      topK: 8,
-      minScore: 0.54,
+      topK: 15,
+      minScore: 0.57,
       maxContextChunks: 3,
       dedupeExactContent: true
     });

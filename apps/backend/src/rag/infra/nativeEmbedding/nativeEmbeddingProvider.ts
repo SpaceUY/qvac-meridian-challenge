@@ -1,7 +1,8 @@
 import type { EmbeddingPort } from '../../domain/ports.js';
+import type { ModelSource } from '../../../models/domain/types.js';
 import { createEmbeddingVectorValidator } from '../embeddingVectorValidation.js';
 import { NativeEmbeddingClient } from './nativeEmbeddingClient.js';
-import { DEFAULT_NATIVE_EMBED_CONFIG, resolveEmbeddingGemmaModelPath } from './embeddingGemmaModel.js';
+import { DEFAULT_NATIVE_EMBED_CONFIG, resolveNativeEmbeddingModelPath } from './embeddingGemmaModel.js';
 
 export { NativeWorkerError } from './nativeEmbeddingClient.js';
 
@@ -14,9 +15,10 @@ export { NativeWorkerError } from './nativeEmbeddingClient.js';
  * benchmarking, not a long-lived server) into something suitable for
  * production.
  *
- * I.4 LIMITATION: always loads EmbeddingGemma 300M Q4_0
- * (`embeddingGemmaModel.ts`) - see that file's doc comment. Unlike the SDK
- * fallback, this class cannot be pointed at a different model.
+ * Loads whatever `modelSource` it's constructed with (resolved to a cached
+ * GGUF path via `resolveNativeEmbeddingModelPath()`) - generalized from the
+ * original I.4 integration, which always loaded EmbeddingGemma 300M Q4_0
+ * regardless of what `ResilientEmbeddingService` was configured with.
  *
  * Lazy, cached load - mirrors `QvacEmbeddingService.ensureModel()`: the
  * worker spawns and the model loads on the first `embed()`/`embedBatch()`
@@ -31,10 +33,15 @@ export class NativeEmbeddingProvider implements EmbeddingPort {
   private readonly validate = createEmbeddingVectorValidator();
   private loadPromise?: Promise<void>;
 
+  constructor(
+    private readonly modelSource: ModelSource,
+    private readonly expectedSize: number
+  ) {}
+
   /** Spawns the worker and loads the model if that hasn't happened yet; otherwise resolves immediately. Rejects (and forgets the attempt, so a later call retries) if the worker fails to start or load. */
   async ensureLoaded(): Promise<void> {
     if (!this.loadPromise) {
-      const modelPath = resolveEmbeddingGemmaModelPath();
+      const modelPath = resolveNativeEmbeddingModelPath(this.modelSource, this.expectedSize);
       this.loadPromise = this.client.start(modelPath, DEFAULT_NATIVE_EMBED_CONFIG).catch((err: unknown) => {
         this.loadPromise = undefined;
         throw err;

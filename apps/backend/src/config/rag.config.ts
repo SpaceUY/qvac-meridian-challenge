@@ -27,9 +27,9 @@ export const TEXT_EXTENSIONS = new Set(['.md', '.txt', '.html', '.json', '.csv']
 
 /**
  * `chunkSize`/`chunkOverlap` are in WORDS (`splitStrategy: 'word'`) - not
- * characters. Least-validated of the three tuned retrieval knobs: the size
- * sweep (90/180/270/360) ran before an embedding prefix fix and wasn't
- * repeated after.
+ * characters. Re-validated as part of the BGE-M3 retrieval benchmark (30-doc
+ * real corpus, EN+ES, 13-question holdout): these two values were already
+ * the sweep's winner (90/180/270/360 tested) and carry over unchanged.
  */
 export const CHUNK_OPTIONS = {
   chunkSize: 180,
@@ -39,32 +39,41 @@ export const CHUNK_OPTIONS = {
 } as const;
 
 /**
- * Output dimension of `EMBEDDINGGEMMA_300M_Q4_0`, measured in Lab 3. The
- * challenge requires the store's vector dimension to match the embedding
- * model's; `CorpusIngestService` asserts the first real vector against this
- * number rather than trusting it, so a model swap fails loudly at ingest
- * instead of silently writing a table nothing can query.
+ * Output dimension of `EMBEDDING_MODEL_SOURCE` (BGE-M3, see
+ * `models.config.ts`). The challenge requires the store's vector dimension
+ * to match the embedding model's; `CorpusIngestService` asserts the first
+ * real vector against this number rather than trusting it, so a model swap
+ * fails loudly at ingest instead of silently writing a table nothing can
+ * query. Changing this value alone does nothing to existing data - a full
+ * reindex is required, see `EMBEDDING_MODEL_SOURCE`'s doc comment.
  */
-export const EMBEDDING_DIMENSIONS = 768;
+export const EMBEDDING_DIMENSIONS = 1024;
 
 /**
  * `topK` is the search pool feeding `metadataRerank()`, not the final
- * count - `maxContextChunks` is what reaches the LLM. `minScore` is a flat
- * 0.54 (no EN/ES routing exists) assuming `metadataRerank()` runs as a
- * second layer, not retrieval alone.
+ * count - `maxContextChunks` is what reaches the LLM (the benchmark's own
+ * "topK/Recall@3" figures refer to this, `maxContextChunks`, not the search
+ * pool below). `topK` here is set equal to `RERANK_CANDIDATE_POOL` so the
+ * reranker always sees every retrieved candidate - a lower `topK` would
+ * starve `RERANK_CANDIDATE_POOL` of candidates it could otherwise rerank.
+ * `minScore` is a flat 0.57 - the more conservative (higher) of the
+ * benchmark's two "with a reranker downstream" thresholds (EN 0.57 / ES
+ * 0.55), applied uniformly since this codebase has no EN/ES query-language
+ * routing today.
  */
 export const DEFAULT_RAG_CONFIG: RagRetrievalConfig = {
-  topK: 8,
-  minScore: 0.54,
+  topK: 15,
+  minScore: 0.57,
   maxContextChunks: 3,
   dedupeExactContent: true
 };
 
 /**
  * Tunable data for `metadataRerank()` (`../rag/service/metadataRerank.ts`).
- * `AUTHORITY_WEIGHT`/`SUPERSEDED_PENALTY` were tuned pre-embedding-prefix-fix
- * and not re-validated after - the post-fix holdout showed English Recall@3
- * drop from 100% to 92.3%.
+ * Re-tuned specifically for BGE-M3 (120-combination sweep, validated against
+ * a 13-question holdout never used to pick the weights) - see
+ * `EMBEDDING_MODEL_SOURCE` in `models.config.ts` for the full benchmark
+ * context.
  */
 export type AuthorityLabel =
   | 'official-policy'
@@ -86,11 +95,11 @@ export const AUTHORITY_RANK: Record<AuthorityLabel, number> = {
 };
 
 /** Top-ranked search candidates `metadataRerank()` reorders; the rest pass through untouched. */
-export const RERANK_CANDIDATE_POOL = 8;
+export const RERANK_CANDIDATE_POOL = 15;
 /** Score bonus per authority tier above `informal-notes`. */
-export const AUTHORITY_WEIGHT = 0.03;
+export const AUTHORITY_WEIGHT = 0.02;
 /** Score penalty for a source listed in `SUPERSEDED_SOURCES`. */
-export const SUPERSEDED_PENALTY = 0.05;
+export const SUPERSEDED_PENALTY = 0.03;
 
 /** `documentType` (corpus top-level folder) -> authority label. No `pictures` entry: `ragChunk()` never processes binaries. */
 export const AUTHORITY_BY_DOCUMENT_TYPE: Record<string, AuthorityLabel> = {

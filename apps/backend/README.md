@@ -428,10 +428,25 @@ removed on the next run. To force a full rebuild: `rm -rf .lancedb`.
 Paths stored in the table (and therefore in citations) are relative to
 `corpus/` — `reports/q1-2026-sales-summary.md`, never `corpus/reports/...`.
 
-Embeddings come from `EMBEDDINGGEMMA_300M_Q4_0` (768 dimensions) through the
-SDK's `embed()`; chunking through `ragChunk()`. The SDK's own RAG workspace
+Embeddings come from BGE-M3 (1024 dimensions, loaded via an HTTPS `url`
+source — it isn't in `@qvac/sdk`'s own model catalog, see
+`EMBEDDING_MODEL_SOURCE` in `config/models.config.ts`) through the SDK's
+`embed()`; chunking through `ragChunk()`. The SDK's own RAG workspace
 (`ragIngest()`/`ragSearch()`) is deliberately not used — the challenge
 excludes it for this requirement.
+
+**Migrating from a previous embedding model (e.g. EmbeddingGemma) to
+BGE-M3 requires a full reindex, not just a config change.** Vectors from
+different embedding models aren't compatible with each other, and the
+ingest's incremental-by-content-hash state has no way to tell that the
+*model* changed, not the documents — see "Known limitations" below. Run:
+
+    rm -rf .lancedb && npm run ingest --workspace=apps/backend
+
+before starting a server that expects the new model/dimension. An existing
+`.lancedb/` built with the old model will fail loudly at ingest (dimension
+mismatch) rather than silently serving wrong-dimension vectors, but it still
+needs to be rebuilt — this is not automatic.
 
 ### Known limitations
 
