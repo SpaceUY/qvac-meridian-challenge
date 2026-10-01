@@ -1,0 +1,9 @@
+diff a/apps/backend/src/ai/orchestrator/agentService.ts b/apps/backend/src/ai/orchestrator/agentService.ts	(rejected hunks)
+@@ -8,6 +8,7 @@ import { createGraph } from "./graph.js";
+ import { State } from "./domain.js";
+ import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
+ import type { ModelManagementService } from "../../models/service/models.service.js";
++import { isCancellationError } from "../../models/domain/errors.js";
+ import {
+   RESOURCE_THRESHOLDS,
+   LOW_RESOURCE_MODEL,

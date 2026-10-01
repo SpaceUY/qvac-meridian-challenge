@@ -126,6 +126,8 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
   private modelIdPromise?: Promise<string>;
   /** The `requestId` of the `chatComplete` call currently in flight, if any - lets `cancelActive()` cancel it. */
   private activeRequestId?: string;
+  /** The `requestId` of the `loadModel` call currently in flight, if any - lets `cancelLoad()` cancel it. */
+  private loadRequestId?: string;
 
   constructor(fields: QVACChatModelInput) {
     super(fields);
@@ -150,6 +152,16 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
     await this.service.cancel(this.activeRequestId);
   }
 
+  /**
+   * Cancels the `loadModel` call currently in flight on this model, if
+   * any - used by `AgentService.cancelPreload()` to stop a running
+   * `preload()`. No-op when nothing is in flight.
+   */
+  async cancelLoad(): Promise<void> {
+    if (!this.loadRequestId) return;
+    await this.service.cancel(this.loadRequestId);
+  }
+
   _llmType(): string {
     return "qvac";
   }
@@ -166,20 +178,24 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
 
   async ensureModel(): Promise<string> {
     if (!this.modelIdPromise) {
-      this.modelIdPromise = this.service
-        .loadModel(this.modelSource, {
-          ctxSize: this.ctxSize,
-          // The llamacpp-completion addon only parses tool calls when the model
-          // was loaded with `tools: true` *and* the request carries tools -
-          // load-time opt-in is required even though it's a no-op without the
-          // latter, so this can't be deferred to bindTools()/_generate().
-          tools: true,
-          engineConfig: this.engineConfig,
-        })
+      const pending = this.service.loadModel(this.modelSource, {
+        ctxSize: this.ctxSize,
+        // The llamacpp-completion addon only parses tool calls when the model
+        // was loaded with `tools: true` *and* the request carries tools -
+        // load-time opt-in is required even though it's a no-op without the
+        // latter, so this can't be deferred to bindTools()/_generate().
+        tools: true,
+        engineConfig: this.engineConfig,
+      });
+      this.loadRequestId = pending.requestId;
+      this.modelIdPromise = pending
         .then((loaded) => loaded.modelId)
         .catch((error: unknown) => {
           this.modelIdPromise = undefined;
           throw error;
+        })
+        .finally(() => {
+          this.loadRequestId = undefined;
         });
     }
     return this.modelIdPromise;

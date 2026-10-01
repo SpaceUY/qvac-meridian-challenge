@@ -10,3 +10,4 @@ export const INVALID_MESSAGES_ERROR = "invalid messages";
 export const INVALID_AUDIO_ERROR = "invalid audio";
 export const VOICE_COMPLETION_ERROR = "could not generate a voice response";
 export const EMPTY_TRANSCRIPT_ERROR = "no speech detected in audio";
+export const CANCEL_PRELOAD_ERROR = "could not cancel model load";

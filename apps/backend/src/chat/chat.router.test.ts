@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import express from "express";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AgentService, AgentStatusPayload, ConversationMessage, InvokeResult } from "../ai/orchestrator/agentService.js";
-import { createCompletionsRouter } from "./chat.router.js";
+import { createChatStatusRouter, createCompletionsRouter } from "./chat.router.js";
 
 /**
  * Stands in for `AgentService` for router-level tests: `invoke()` never
@@ -44,6 +44,14 @@ class FakeAgentService {
     if (requestId !== this.activeRequestId) return;
     this.cancelledRequestIds.push(requestId);
     this.rejectActive?.(new Error("cancelled"));
+  }
+
+  cancelPreloadCallCount = 0;
+  cancelPreloadShouldFail = false;
+
+  async cancelPreload(): Promise<void> {
+    this.cancelPreloadCallCount += 1;
+    if (this.cancelPreloadShouldFail) throw new Error("boom");
   }
 }
 
@@ -101,5 +109,44 @@ describe("POST /completions - client disconnect", () => {
 
     expect(body).toContain("[DONE]");
     expect(fakeAgentService.cancelledRequestIds).toEqual([]);
+  });
+});
+
+describe("POST /preload/cancel", () => {
+  let server: http.Server | undefined;
+
+  afterEach(() => {
+    server?.close();
+    server = undefined;
+  });
+
+  it("cancels the model load in progress", async () => {
+    const fakeAgentService = new FakeAgentService();
+    const app = express();
+    app.use("/api/chat", createChatStatusRouter(fakeAgentService as unknown as AgentService));
+
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/chat/preload/cancel`, { method: "POST" });
+
+    expect(response.status).toBe(200);
+    expect(fakeAgentService.cancelPreloadCallCount).toBe(1);
+  });
+
+  it("responds 500 when cancelling the load fails", async () => {
+    const fakeAgentService = new FakeAgentService();
+    fakeAgentService.cancelPreloadShouldFail = true;
+    const app = express();
+    app.use("/api/chat", createChatStatusRouter(fakeAgentService as unknown as AgentService));
+
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/chat/preload/cancel`, { method: "POST" });
+
+    expect(response.status).toBe(500);
   });
 });

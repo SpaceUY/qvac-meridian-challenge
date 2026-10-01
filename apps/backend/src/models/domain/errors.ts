@@ -56,3 +56,8 @@ export class OperationCancelledError extends Error {
     this.requestId = requestId;
   }
 }
+
+/** True if `err` is a `ModelManagementError` caused by `cancel()`, as opposed to a genuine failure. */
+export function isCancellationError(err: unknown): boolean {
+  return err instanceof ModelManagementError && err.cause instanceof OperationCancelledError;
+}

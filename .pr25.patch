@@ -1,0 +1,721 @@
+diff --git a/apps/backend/src/ai/orchestrator/agentService.test.ts b/apps/backend/src/ai/orchestrator/agentService.test.ts
+index 041169c..5368ae1 100644
+--- a/apps/backend/src/ai/orchestrator/agentService.test.ts
++++ b/apps/backend/src/ai/orchestrator/agentService.test.ts
+@@ -91,17 +91,27 @@ interface PendingChatCall {
+   reject: (err: unknown) => void;
+ }
+ 
++interface PendingLoadCall {
++  resolve: (result: LoadedModel) => void;
++  reject: (err: unknown) => void;
++}
++
+ /**
+- * Like `FakeModelRuntime` above, but `chatComplete` calls stay pending until
+- * the test explicitly `settle()`s or `cancel()`s them by requestId - needed
+- * to exercise `AgentService.cancel()`, which cancels whatever chat call is
+- * currently in flight on the underlying `ChatQVAC` model.
++ * Like `FakeModelRuntime` above, but `load`/`chatComplete` calls stay
++ * pending until the test explicitly `settle()`s or `cancel()`s them by
++ * requestId - needed to exercise `AgentService.cancel()`/`cancelPreload()`,
++ * which cancel whatever call is currently in flight on the underlying
++ * `ChatQVAC` model.
+  */
+ class ControllableModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
+   private nextRequestId = 0;
+-  private readonly pending = new Map<string, PendingChatCall>();
++  private readonly pendingChat = new Map<string, PendingChatCall>();
++  private readonly pendingLoad = new Map<string, PendingLoadCall>();
++  private readonly loadSources = new Map<string, ModelSource>();
+   private readonly chatRequestIdQueue: string[] = [];
+   private chatRequestWaiter?: (requestId: string) => void;
++  private readonly loadRequestIdQueue: string[] = [];
++  private loadRequestWaiter?: (requestId: string) => void;
+ 
+   async searchRegistry() {
+     return [];
+@@ -114,10 +124,18 @@ class ControllableModelRuntime implements ModelProvisioningPort, ModelRuntimePor
+   async provision() {}
+ 
+   load(source: ModelSource): Promise<LoadedModel> & { requestId: string } {
+-    return Object.assign(
+-      Promise.resolve({ modelId: "fake-model", source, loadedAt: new Date() }),
+-      { requestId: "req-load" },
+-    );
++    const requestId = `req-load-${(this.nextRequestId += 1)}`;
++    this.loadSources.set(requestId, source);
++    const promise = new Promise<LoadedModel>((resolve, reject) => {
++      this.pendingLoad.set(requestId, { resolve, reject });
++    });
++    if (this.loadRequestWaiter) {
++      this.loadRequestWaiter(requestId);
++      this.loadRequestWaiter = undefined;
++    } else {
++      this.loadRequestIdQueue.push(requestId);
++    }
++    return Object.assign(promise, { requestId });
+   }
+ 
+   infer(): Promise<InferenceResult> & { requestId: string } {
+@@ -129,7 +147,7 @@ class ControllableModelRuntime implements ModelProvisioningPort, ModelRuntimePor
+   chatComplete(): Promise<ChatCompletionResult> & { requestId: string } {
+     const requestId = `req-chat-${(this.nextRequestId += 1)}`;
+     const promise = new Promise<ChatCompletionResult>((resolve, reject) => {
+-      this.pending.set(requestId, { resolve, reject });
++      this.pendingChat.set(requestId, { resolve, reject });
+     });
+     if (this.chatRequestWaiter) {
+       this.chatRequestWaiter(requestId);
+@@ -145,20 +163,35 @@ class ControllableModelRuntime implements ModelProvisioningPort, ModelRuntimePor
+   async close() {}
+ 
+   async cancel(requestId: string) {
+-    const call = this.pending.get(requestId);
+-    if (!call) return; // unknown, already-settled, or already-cancelled: safe no-op
+-    this.pending.delete(requestId);
+-    call.reject(new OperationCancelledError(requestId));
++    const chatCall = this.pendingChat.get(requestId);
++    if (chatCall) {
++      this.pendingChat.delete(requestId);
++      chatCall.reject(new OperationCancelledError(requestId));
++      return;
++    }
++    const loadCall = this.pendingLoad.get(requestId);
++    if (!loadCall) return; // unknown, already-settled, or already-cancelled: safe no-op
++    this.pendingLoad.delete(requestId);
++    loadCall.reject(new OperationCancelledError(requestId));
+   }
+ 
+   /** Resolves the given in-flight chat call with a fixed reply. Throws if `requestId` isn't pending. */
+   settle(requestId: string, result: ChatCompletionResult = { text: "ok", toolCalls: [] }): void {
+-    const call = this.pending.get(requestId);
++    const call = this.pendingChat.get(requestId);
+     if (!call) throw new Error(`no pending chat call for requestId "${requestId}"`);
+-    this.pending.delete(requestId);
++    this.pendingChat.delete(requestId);
+     call.resolve(result);
+   }
+ 
++  /** Resolves the given in-flight load call with a synthetic result built from its own `source`. Throws if `requestId` isn't pending. */
++  settleLoad(requestId: string): void {
++    const call = this.pendingLoad.get(requestId);
++    if (!call) throw new Error(`no pending load call for requestId "${requestId}"`);
++    this.pendingLoad.delete(requestId);
++    const source = this.loadSources.get(requestId)!;
++    call.resolve({ modelId: `fake-model-${requestId}`, source, loadedAt: new Date() });
++  }
++
+   /** Resolves with the requestId of the next `chatComplete` call, so a test can wait for it to actually start before cancelling. */
+   nextChatRequestId(): Promise<string> {
+     const queued = this.chatRequestIdQueue.shift();
+@@ -167,6 +200,15 @@ class ControllableModelRuntime implements ModelProvisioningPort, ModelRuntimePor
+       this.chatRequestWaiter = resolve;
+     });
+   }
++
++  /** Resolves with the requestId of the next `load` call, so a test can wait for it to actually start before cancelling. */
++  nextLoadRequestId(): Promise<string> {
++    const queued = this.loadRequestIdQueue.shift();
++    if (queued) return Promise.resolve(queued);
++    return new Promise((resolve) => {
++      this.loadRequestWaiter = resolve;
++    });
++  }
+ }
+ 
+ /** In-memory `DocumentRepository` fixture - lets tests control the ingested inventory directly instead of touching `corpus/` on disk. */
+@@ -300,6 +342,7 @@ describe("AgentService.invoke", () => {
+     const pending = agentService.invoke([
+       { role: "user", message: "What's the warranty policy?" },
+     ]);
++    runtime.settleLoad(await runtime.nextLoadRequestId());
+     const chatRequestId = await runtime.nextChatRequestId();
+ 
+     await agentService.cancel(pending.requestId);
+@@ -321,4 +364,38 @@ describe("AgentService.invoke", () => {
+       expect.objectContaining({ answer: expect.any(String) }),
+     );
+   });
++
++  it("cancels an in-flight model load without leaving the agent unable to load a model afterward", async () => {
++    const runtime = new ControllableModelRuntime();
++    const modelService = new ModelManagementService(runtime, runtime);
++
++    const embeddingPort = new FakeEmbeddingPort();
++    const vectorStore = await buildFixtureVectorStore(embeddingPort);
++    const ragService = new RagRetrievalService(embeddingPort, vectorStore);
++
++    const agentService = new AgentService(
++      modelService,
++      ragService,
++      new FakeDocumentRepository([]),
++    );
++
++    const preloadPromise = agentService.preload();
++    const loadRequestId = await runtime.nextLoadRequestId();
++    expect(agentService.getStatus().status).toBe("loading");
++
++    await agentService.cancelPreload();
++
++    await expect(preloadPromise).rejects.toBeInstanceOf(ModelManagementError);
++    // A cancelled load isn't a genuine failure: the agent should be ready
++    // to try loading again, not stuck showing an error.
++    expect(agentService.getStatus().status).toBe("idle");
++
++    const secondPreload = agentService.preload();
++    const secondLoadRequestId = await runtime.nextLoadRequestId();
++    expect(secondLoadRequestId).not.toBe(loadRequestId);
++    runtime.settleLoad(secondLoadRequestId);
++
++    await secondPreload;
++    expect(agentService.getStatus().status).toBe("ready");
++  });
+ });
+diff --git a/apps/backend/src/ai/orchestrator/agentService.ts b/apps/backend/src/ai/orchestrator/agentService.ts
+index 25e13d2..93ce1c9 100644
+--- a/apps/backend/src/ai/orchestrator/agentService.ts
++++ b/apps/backend/src/ai/orchestrator/agentService.ts
+@@ -8,6 +8,7 @@ import { createGraph } from "./graph.js";
+ import { State } from "./domain.js";
+ import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
+ import type { ModelManagementService } from "../../models/service/models.service.js";
++import { isCancellationError } from "../../models/domain/errors.js";
+ import {
+   RESOURCE_THRESHOLDS,
+   LOW_RESOURCE_MODEL,
+@@ -112,12 +113,27 @@ export class AgentService {
+       await this.chatModel.ensureModel();
+       this.status = "ready";
+     } catch (err) {
+-      this.status = "error";
+-      this.statusError = err instanceof Error ? err.message : String(err);
++      // A cancelled load isn't a genuine failure - go back to "idle" so a
++      // caller can start loading again, rather than getting stuck on "error".
++      if (isCancellationError(err)) {
++        this.status = "idle";
++      } else {
++        this.status = "error";
++        this.statusError = err instanceof Error ? err.message : String(err);
++      }
+       throw err;
+     }
+   }
+ 
++  /**
++   * Cancels the model load started by `preload()`, if one is currently in
++   * flight. Safe to call when nothing is loading - a no-op, same
++   * convention as `ModelManagementService.cancel()`.
++   */
++  async cancelPreload(): Promise<void> {
++    await this.chatModel.cancelLoad();
++  }
++
+   /**
+    * Sends a conversation history through the graph, returns the assistant's
+    * reply text and thinking trace. Pass `onToken` to receive the final
+diff --git a/apps/backend/src/ai/orchestrator/graph.ts b/apps/backend/src/ai/orchestrator/graph.ts
+index be63e63..b508907 100644
+--- a/apps/backend/src/ai/orchestrator/graph.ts
++++ b/apps/backend/src/ai/orchestrator/graph.ts
+@@ -14,7 +14,7 @@ import { lookupStockTool } from "./stockTool.js";
+ import { createListDocumentsTool } from "./listDocumentsTool.js";
+ import { ChatQVAC } from "./qvacChatModel.js";
+ import { buildGroundedContext } from "../../rag/service/contextBuilder.js";
+-import { ModelManagementError, OperationCancelledError } from "../../models/domain/errors.js";
++import { isCancellationError } from "../../models/domain/errors.js";
+ import { State } from "./domain.js";
+ import {
+   GROUNDING_INSTRUCTIONS,
+@@ -34,10 +34,6 @@ const SYSTEM_PROMPT = `You are Meridian's internal assistant. You handle two kin
+ 
+ ${GROUNDING_INSTRUCTIONS}`;
+ 
+-/** A `chatComplete` call rejected because `AgentService.cancel()` cancelled it - retrying it would defeat the cancellation. */
+-function isCancellation(error: unknown): boolean {
+-  return error instanceof ModelManagementError && error.cause instanceof OperationCancelledError;
+-}
+ 
+ export function buildLlmNode(
+   tools: BindToolsInput[],
+@@ -153,7 +149,7 @@ export function createGraph(
+ 
+   return new StateGraph(State)
+     .addNode("llm", llmCall, {
+-      retryPolicy: { maxAttempts: 2, retryOn: (error) => !isCancellation(error) },
++      retryPolicy: { maxAttempts: 2, retryOn: (error) => !isCancellationError(error) },
+     })
+     .addNode("rag", ragNode)
+     .addNode("toolNode", toolNode)
+diff --git a/apps/backend/src/ai/orchestrator/qvacChatModel.ts b/apps/backend/src/ai/orchestrator/qvacChatModel.ts
+index 173bc82..ae58a6a 100644
+--- a/apps/backend/src/ai/orchestrator/qvacChatModel.ts
++++ b/apps/backend/src/ai/orchestrator/qvacChatModel.ts
+@@ -125,6 +125,8 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
+   private modelIdPromise?: Promise<string>;
+   /** The `requestId` of the `chatComplete` call currently in flight, if any - lets `cancelActive()` cancel it. */
+   private activeRequestId?: string;
++  /** The `requestId` of the `loadModel` call currently in flight, if any - lets `cancelLoad()` cancel it. */
++  private loadRequestId?: string;
+ 
+   constructor(fields: QVACChatModelInput) {
+     super(fields);
+@@ -149,6 +151,16 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
+     await this.service.cancel(this.activeRequestId);
+   }
+ 
++  /**
++   * Cancels the `loadModel` call currently in flight on this model, if
++   * any - used by `AgentService.cancelPreload()` to stop a running
++   * `preload()`. No-op when nothing is in flight.
++   */
++  async cancelLoad(): Promise<void> {
++    if (!this.loadRequestId) return;
++    await this.service.cancel(this.loadRequestId);
++  }
++
+   _llmType(): string {
+     return "qvac";
+   }
+@@ -165,20 +177,24 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
+ 
+   async ensureModel(): Promise<string> {
+     if (!this.modelIdPromise) {
+-      this.modelIdPromise = this.service
+-        .loadModel(this.modelSource, {
+-          ctxSize: this.ctxSize,
+-          // The llamacpp-completion addon only parses tool calls when the model
+-          // was loaded with `tools: true` *and* the request carries tools -
+-          // load-time opt-in is required even though it's a no-op without the
+-          // latter, so this can't be deferred to bindTools()/_generate().
+-          tools: true,
+-          engineConfig: this.engineConfig,
+-        })
++      const pending = this.service.loadModel(this.modelSource, {
++        ctxSize: this.ctxSize,
++        // The llamacpp-completion addon only parses tool calls when the model
++        // was loaded with `tools: true` *and* the request carries tools -
++        // load-time opt-in is required even though it's a no-op without the
++        // latter, so this can't be deferred to bindTools()/_generate().
++        tools: true,
++        engineConfig: this.engineConfig,
++      });
++      this.loadRequestId = pending.requestId;
++      this.modelIdPromise = pending
+         .then((loaded) => loaded.modelId)
+         .catch((error: unknown) => {
+           this.modelIdPromise = undefined;
+           throw error;
++        })
++        .finally(() => {
++          this.loadRequestId = undefined;
+         });
+     }
+     return this.modelIdPromise;
+diff --git a/apps/backend/src/chat/chat.router.const.ts b/apps/backend/src/chat/chat.router.const.ts
+index bd741b9..29b2c41 100644
+--- a/apps/backend/src/chat/chat.router.const.ts
++++ b/apps/backend/src/chat/chat.router.const.ts
+@@ -10,3 +10,4 @@ export const INVALID_MESSAGES_ERROR = "invalid messages";
+ export const INVALID_AUDIO_ERROR = "invalid audio";
+ export const VOICE_COMPLETION_ERROR = "could not generate a voice response";
+ export const EMPTY_TRANSCRIPT_ERROR = "no speech detected in audio";
++export const CANCEL_PRELOAD_ERROR = "could not cancel model load";
+diff --git a/apps/backend/src/chat/chat.router.test.ts b/apps/backend/src/chat/chat.router.test.ts
+index 9f6fdcb..c981aa7 100644
+--- a/apps/backend/src/chat/chat.router.test.ts
++++ b/apps/backend/src/chat/chat.router.test.ts
+@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
+ import express from "express";
+ import { afterEach, describe, expect, it } from "vitest";
+ import type { AgentService, AgentStatusPayload, ConversationMessage, InvokeResult } from "../ai/orchestrator/agentService.js";
+-import { createCompletionsRouter } from "./chat.router.js";
++import { createChatStatusRouter, createCompletionsRouter } from "./chat.router.js";
+ 
+ /**
+  * Stands in for `AgentService` for router-level tests: `invoke()` never
+@@ -45,6 +45,14 @@ class FakeAgentService {
+     this.cancelledRequestIds.push(requestId);
+     this.rejectActive?.(new Error("cancelled"));
+   }
++
++  cancelPreloadCallCount = 0;
++  cancelPreloadShouldFail = false;
++
++  async cancelPreload(): Promise<void> {
++    this.cancelPreloadCallCount += 1;
++    if (this.cancelPreloadShouldFail) throw new Error("boom");
++  }
+ }
+ 
+ describe("POST /completions - client disconnect", () => {
+@@ -103,3 +111,42 @@ describe("POST /completions - client disconnect", () => {
+     expect(fakeAgentService.cancelledRequestIds).toEqual([]);
+   });
+ });
++
++describe("POST /preload/cancel", () => {
++  let server: http.Server | undefined;
++
++  afterEach(() => {
++    server?.close();
++    server = undefined;
++  });
++
++  it("cancels the model load in progress", async () => {
++    const fakeAgentService = new FakeAgentService();
++    const app = express();
++    app.use("/api/chat", createChatStatusRouter(fakeAgentService as unknown as AgentService));
++
++    server = app.listen(0);
++    await new Promise<void>((resolve) => server!.once("listening", resolve));
++    const { port } = server.address() as AddressInfo;
++
++    const response = await fetch(`http://127.0.0.1:${port}/api/chat/preload/cancel`, { method: "POST" });
++
++    expect(response.status).toBe(200);
++    expect(fakeAgentService.cancelPreloadCallCount).toBe(1);
++  });
++
++  it("responds 500 when cancelling the load fails", async () => {
++    const fakeAgentService = new FakeAgentService();
++    fakeAgentService.cancelPreloadShouldFail = true;
++    const app = express();
++    app.use("/api/chat", createChatStatusRouter(fakeAgentService as unknown as AgentService));
++
++    server = app.listen(0);
++    await new Promise<void>((resolve) => server!.once("listening", resolve));
++    const { port } = server.address() as AddressInfo;
++
++    const response = await fetch(`http://127.0.0.1:${port}/api/chat/preload/cancel`, { method: "POST" });
++
++    expect(response.status).toBe(500);
++  });
++});
+diff --git a/apps/backend/src/chat/chat.router.ts b/apps/backend/src/chat/chat.router.ts
+index e8034cf..e633c8c 100644
+--- a/apps/backend/src/chat/chat.router.ts
++++ b/apps/backend/src/chat/chat.router.ts
+@@ -10,9 +10,10 @@ import {
+   INVALID_AUDIO_ERROR,
+   VOICE_COMPLETION_ERROR,
+   EMPTY_TRANSCRIPT_ERROR,
++  CANCEL_PRELOAD_ERROR,
+ } from "./chat.router.const.js";
+ 
+-/** `GET /status` + `POST /preload`, mounted at `/api/chat` in server.ts. */
++/** `GET /status` + `POST /preload` + `POST /preload/cancel`, mounted at `/api/chat` in server.ts. */
+ export function createChatStatusRouter(agentService: AgentService): Router {
+   const router = Router();
+ 
+@@ -29,6 +30,19 @@ export function createChatStatusRouter(agentService: AgentService): Router {
+     res.status(202).json(agentService.getStatus());
+   });
+ 
++  // Cancels the model load started by /preload, if one is in flight. Same
++  // safe-no-op convention as the rest of the cancel API: calling this when
++  // nothing is loading (or after it already finished) does nothing.
++  router.post("/preload/cancel", async (_req: Request, res: Response) => {
++    try {
++      await agentService.cancelPreload();
++      res.json({ ok: true });
++    } catch (err) {
++      console.error("[chat:preload:cancel]", err);
++      res.status(500).json({ error: CANCEL_PRELOAD_ERROR });
++    }
++  });
++
+   return router;
+ }
+ 
+diff --git a/apps/backend/src/models/domain/errors.ts b/apps/backend/src/models/domain/errors.ts
+index b683f40..75dd60b 100644
+--- a/apps/backend/src/models/domain/errors.ts
++++ b/apps/backend/src/models/domain/errors.ts
+@@ -56,3 +56,8 @@ export class OperationCancelledError extends Error {
+     this.requestId = requestId;
+   }
+ }
++
++/** True if `err` is a `ModelManagementError` caused by `cancel()`, as opposed to a genuine failure. */
++export function isCancellationError(err: unknown): boolean {
++  return err instanceof ModelManagementError && err.cause instanceof OperationCancelledError;
++}
+diff --git a/apps/backend/src/models/infra/qvacRuntimeAdapter.test.ts b/apps/backend/src/models/infra/qvacRuntimeAdapter.test.ts
+new file mode 100644
+index 0000000..a55e923
+--- /dev/null
++++ b/apps/backend/src/models/infra/qvacRuntimeAdapter.test.ts
+@@ -0,0 +1,40 @@
++import { describe, expect, it, vi } from "vitest";
++import { OperationCancelledError } from "../domain/errors.js";
++
++const { loadModelMock } = vi.hoisted(() => ({ loadModelMock: vi.fn() }));
++
++/**
++ * A cancelled `loadModel()` call never round-trips as an
++ * `InferenceCancelledError` instance - per `@qvac/sdk`'s own
++ * `rpc-error.ts` comment, that class is only ever constructed
++ * client-side from the completion/streaming path's aggregated partial
++ * state. A cancelled load instead crosses the RPC boundary as a
++ * generic reconstructed error carrying the same `INFERENCE_CANCELLED`
++ * code/message, since that code has no typed reconstructor registered.
++ * Only `loadModel` is overridden here - everything else (including
++ * `SDK_SERVER_ERROR_CODES`, used below) stays real.
++ */
++vi.mock("@qvac/sdk", async (importOriginal) => {
++  const actual = await importOriginal<typeof import("@qvac/sdk")>();
++  return { ...actual, loadModel: loadModelMock };
++});
++
++const { QvacRuntimeAdapter } = await import("./qvacRuntimeAdapter.js");
++const { SDK_SERVER_ERROR_CODES } = await import("@qvac/sdk");
++
++describe("QvacRuntimeAdapter.load", () => {
++  it("translates a cancelled load's generic RPC error into OperationCancelledError, not a genuine failure", async () => {
++    const genericRpcError = Object.assign(
++      new Error('Inference request "req-1" was cancelled before it could complete'),
++      { code: SDK_SERVER_ERROR_CODES.INFERENCE_CANCELLED, name: "INFERENCE_CANCELLED" },
++    );
++    loadModelMock.mockReturnValue(
++      Object.assign(Promise.reject(genericRpcError), { requestId: "req-1" }),
++    );
++
++    const adapter = new QvacRuntimeAdapter();
++    const pending = adapter.load({ kind: "url", url: "https://example.com/model.gguf" });
++
++    await expect(pending).rejects.toBeInstanceOf(OperationCancelledError);
++  });
++});
+diff --git a/apps/backend/src/models/infra/qvacRuntimeAdapter.ts b/apps/backend/src/models/infra/qvacRuntimeAdapter.ts
+index 442c63e..2bb9c2e 100644
+--- a/apps/backend/src/models/infra/qvacRuntimeAdapter.ts
++++ b/apps/backend/src/models/infra/qvacRuntimeAdapter.ts
+@@ -8,6 +8,7 @@ import {
+   loadModel,
+   modelRegistryList,
+   modelRegistrySearch,
++  SDK_SERVER_ERROR_CODES,
+   unloadModel,
+ } from "@qvac/sdk";
+ import { OperationCancelledError } from "../domain/errors.js";
+@@ -228,11 +229,25 @@ function toRegistryModelSummary(entry: {
+  * catalog (`dist/server/rpc/handlers/load-model/resolve.js`). Shared by
+  * `load()` and `provision()` so the scheme is defined in exactly one place.
+  */
+-/** Translates the SDK's `InferenceCancelledError` (thrown for a cancelled load or inference alike) into the domain-level `OperationCancelledError`; passes any other error through unchanged. */
++/**
++ * Translates the SDK's cancellation errors into the domain-level
++ * `OperationCancelledError`; passes any other error through unchanged.
++ * Two different shapes cross this boundary for the same event:
++ *  - `InferenceCancelledError`, constructed client-side from the
++ *    completion stream's own aggregated state (chat/infer) - a real
++ *    instance of the class re-exported from `@qvac/sdk`.
++ *  - A cancelled `loadModel()` call, which never round-trips as an
++ *    `InferenceCancelledError` instance (that class has no typed
++ *    RPC reconstructor registered - see `@qvac/sdk`'s own
++ *    `rpc-error.ts`) but carries the same `INFERENCE_CANCELLED` code.
++ */
+ function toDomainError(requestId: string, err: unknown): unknown {
+-  return err instanceof InferenceCancelledError
+-    ? new OperationCancelledError(requestId)
+-    : err;
++  const isCancelled =
++    err instanceof InferenceCancelledError ||
++    (err instanceof Error &&
++      "code" in err &&
++      err.code === SDK_SERVER_ERROR_CODES.INFERENCE_CANCELLED);
++  return isCancelled ? new OperationCancelledError(requestId) : err;
+ }
+ 
+ function toModelSrc(source: ModelSource): string {
+diff --git a/apps/frontend/src/App.tsx b/apps/frontend/src/App.tsx
+index 2abead1..9b752eb 100644
+--- a/apps/frontend/src/App.tsx
++++ b/apps/frontend/src/App.tsx
+@@ -10,7 +10,16 @@ export default function App() {
+   return (
+     <AppShell
+       leftSidebar={<CorpusPanel documents={FAKE_CORPUS} />}
+-      rightSidebar={<EnginePanel model={modelStatus.model} modelStatus={modelStatus.status} statusError={modelStatus.error} />}
++      rightSidebar={
++        <EnginePanel
++          model={modelStatus.model}
++          modelStatus={modelStatus.status}
++          statusError={modelStatus.error}
++          cancelled={modelStatus.cancelled}
++          onCancelLoad={modelStatus.cancelLoad}
++          onRetryLoad={modelStatus.retryLoad}
++        />
++      }
+     >
+       <ChatPanel modelStatus={modelStatus.status} />
+     </AppShell>
+diff --git a/apps/frontend/src/components/engine-panel.tsx b/apps/frontend/src/components/engine-panel.tsx
+index 7fa35a4..e2dd89a 100644
+--- a/apps/frontend/src/components/engine-panel.tsx
++++ b/apps/frontend/src/components/engine-panel.tsx
+@@ -1,8 +1,16 @@
+ import type { ReactNode } from 'react'
+ import { Separator } from '@/components/ui/separator'
++import { Button } from '@/components/ui/button'
+ import type { ModelInfo, ModelStatus } from '@/lib/model-status-client'
+ 
+-type Props = { model?: ModelInfo; modelStatus: ModelStatus; statusError?: string }
++type Props = {
++  model?: ModelInfo
++  modelStatus: ModelStatus
++  statusError?: string
++  cancelled: boolean
++  onCancelLoad: () => void
++  onRetryLoad: () => void
++}
+ 
+ const STATUS_LABEL: Record<ModelStatus, string> = {
+   idle: 'Starting…',
+@@ -18,13 +26,31 @@ const STATUS_COLOR: Record<ModelStatus, string> = {
+ }
+ 
+ /** Right panel: "with what" the assistant runs. Req. [5.1] + [5.1.1]. */
+-export function EnginePanel({ model, modelStatus, statusError }: Props) {
++export function EnginePanel({ model, modelStatus, statusError, cancelled, onCancelLoad, onRetryLoad }: Props) {
++  // A cancelled load is still reported as 'idle' by the server (it's not a
++  // failure) - `cancelled` is what tells that apart from the app's initial
++  // "about to auto-start" idle, so the label/action match what happened.
++  const showCancelledState = modelStatus === 'idle' && cancelled
++  const label = showCancelledState ? 'Load cancelled' : STATUS_LABEL[modelStatus]
++
+   return (
+     <div className="flex flex-col gap-4 text-sm">
+       <Section title="Inference">
+-        <div className={`flex items-center gap-1.5 font-medium ${STATUS_COLOR[modelStatus]}`}>
+-          <span className="size-1.5 rounded-full bg-current" />
+-          {STATUS_LABEL[modelStatus]}
++        <div className="flex items-center justify-between gap-1.5">
++          <div className={`flex items-center gap-1.5 font-medium ${STATUS_COLOR[modelStatus]}`}>
++            <span className="size-1.5 rounded-full bg-current" />
++            {label}
++          </div>
++          {modelStatus === 'loading' && (
++            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={onCancelLoad}>
++              Cancel
++            </Button>
++          )}
++          {showCancelledState && (
++            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={onRetryLoad}>
++              Load
++            </Button>
++          )}
+         </div>
+         <p className="mt-1 text-xs text-muted-foreground">
+           {modelStatus === 'error' ? statusError : 'No peers available.'}
+diff --git a/apps/frontend/src/hooks/use-model-status.ts b/apps/frontend/src/hooks/use-model-status.ts
+index f1e4798..057e1c9 100644
+--- a/apps/frontend/src/hooks/use-model-status.ts
++++ b/apps/frontend/src/hooks/use-model-status.ts
+@@ -1,12 +1,28 @@
+-import { useEffect } from 'react'
+-import { useQuery, useMutation } from '@tanstack/react-query'
+-import { fetchModelStatus, triggerPreload, type ModelStatus, type ModelInfo } from '@/lib/model-status-client'
++import { useEffect, useState } from 'react'
++import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
++import {
++  fetchModelStatus,
++  triggerPreload,
++  cancelPreload,
++  type ModelStatus,
++  type ModelInfo,
++} from '@/lib/model-status-client'
+ 
+ const STATUS_QUERY_KEY = ['model-status']
+ // How long we wait between checks while the model still isn't ready.
+ const POLL_MS = 1000
+ 
+-export function useModelStatus(): { status: ModelStatus; error?: string; model?: ModelInfo } {
++export function useModelStatus(): {
++  status: ModelStatus
++  error?: string
++  model?: ModelInfo
++  /** True once the user has cancelled a load and hasn't asked to retry yet - lets the UI say "cancelled" instead of "starting". */
++  cancelled: boolean
++  cancelLoad: () => void
++  retryLoad: () => void
++} {
++  const queryClient = useQueryClient()
++  const [cancelled, setCancelled] = useState(false)
+   const query = useQuery({
+     queryKey: STATUS_QUERY_KEY,
+     queryFn: fetchModelStatus,
+@@ -22,22 +38,52 @@ export function useModelStatus(): { status: ModelStatus; error?: string; model?:
+ 
+   const preload = useMutation({ mutationFn: triggerPreload })
+ 
+-  // Fires the preload exactly ONCE, as soon as we know it's 'idle'.
+-  // preload.status flips to 'pending' in the same render that calls
+-  // mutate(), so this effect can't fire it twice.
++  // Fires the preload exactly ONCE, as soon as we know it's 'idle' - only
++  // for the initial "just started" idle, never after a user-initiated
++  // cancel (see cancelLoadMutation below), which is why `cancelled` is
++  // part of the guard. preload.status flips to 'pending' in the same
++  // render that calls mutate(), so this effect can't fire it twice.
+   useEffect(() => {
+-    if (query.data?.status === 'idle' && preload.status === 'idle') {
++    if (query.data?.status === 'idle' && preload.status === 'idle' && !cancelled) {
+       preload.mutate()
+     }
+-  }, [query.data?.status, preload])
++  }, [query.data?.status, preload, cancelled])
++
++  const cancelLoadMutation = useMutation({
++    mutationFn: cancelPreload,
++    onSuccess: () => {
++      // Stay cancelled - don't auto-retry. The user asked to stop, so the
++      // load stays stopped until they explicitly call retryLoad() below.
++      setCancelled(true)
++      void queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY })
++    },
++  })
++
++  function retryLoad() {
++    setCancelled(false)
++    preload.mutate()
++  }
+ 
+   // The server can report 'error' (failed to load the model, already
+   // covered by the spec), but it can also be unreachable altogether
+   // (backend down) - there `query.data` never arrives, so that's handled
+   // separately.
+   if (query.isError) {
+-    return { status: 'error', error: 'could not reach the server' }
++    return {
++      status: 'error',
++      error: 'could not reach the server',
++      cancelled,
++      cancelLoad: () => cancelLoadMutation.mutate(),
++      retryLoad,
++    }
+   }
+ 
+-  return { status: query.data?.status ?? 'idle', error: query.data?.error, model: query.data?.model }
++  return {
++    status: query.data?.status ?? 'idle',
++    error: query.data?.error,
++    model: query.data?.model,
++    cancelled,
++    cancelLoad: () => cancelLoadMutation.mutate(),
++    retryLoad,
++  }
+ }
+diff --git a/apps/frontend/src/lib/model-status-client.ts b/apps/frontend/src/lib/model-status-client.ts
+index 278f45e..9068039 100644
+--- a/apps/frontend/src/lib/model-status-client.ts
++++ b/apps/frontend/src/lib/model-status-client.ts
+@@ -13,3 +13,8 @@ export async function triggerPreload(): Promise<ModelStatusResponse> {
+   if (!res.ok) throw new Error(`preload failed: ${res.status}`)
+   return res.json()
+ }
++
++export async function cancelPreload(): Promise<void> {
++  const res = await fetch('/api/chat/preload/cancel', { method: 'POST' })
++  if (!res.ok) throw new Error(`cancel preload failed: ${res.status}`)
++}

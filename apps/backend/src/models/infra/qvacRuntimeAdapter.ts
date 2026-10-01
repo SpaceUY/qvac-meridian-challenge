@@ -8,6 +8,7 @@ import {
   loadModel,
   modelRegistryList,
   modelRegistrySearch,
+  SDK_SERVER_ERROR_CODES,
   unloadModel,
 } from "@qvac/sdk";
 import { OperationCancelledError } from "../domain/errors.js";
@@ -228,11 +229,25 @@ function toRegistryModelSummary(entry: {
  * catalog (`dist/server/rpc/handlers/load-model/resolve.js`). Shared by
  * `load()` and `provision()` so the scheme is defined in exactly one place.
  */
-/** Translates the SDK's `InferenceCancelledError` (thrown for a cancelled load or inference alike) into the domain-level `OperationCancelledError`; passes any other error through unchanged. */
+/**
+ * Translates the SDK's cancellation errors into the domain-level
+ * `OperationCancelledError`; passes any other error through unchanged.
+ * Two different shapes cross this boundary for the same event:
+ *  - `InferenceCancelledError`, constructed client-side from the
+ *    completion stream's own aggregated state (chat/infer) - a real
+ *    instance of the class re-exported from `@qvac/sdk`.
+ *  - A cancelled `loadModel()` call, which never round-trips as an
+ *    `InferenceCancelledError` instance (that class has no typed
+ *    RPC reconstructor registered - see `@qvac/sdk`'s own
+ *    `rpc-error.ts`) but carries the same `INFERENCE_CANCELLED` code.
+ */
 function toDomainError(requestId: string, err: unknown): unknown {
-  return err instanceof InferenceCancelledError
-    ? new OperationCancelledError(requestId)
-    : err;
+  const isCancelled =
+    err instanceof InferenceCancelledError ||
+    (err instanceof Error &&
+      "code" in err &&
+      err.code === SDK_SERVER_ERROR_CODES.INFERENCE_CANCELLED);
+  return isCancelled ? new OperationCancelledError(requestId) : err;
 }
 
 function toModelSrc(source: ModelSource): string {
