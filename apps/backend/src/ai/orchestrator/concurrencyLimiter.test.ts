@@ -94,6 +94,15 @@ describe("ConcurrencyLimiter.acquire", () => {
     void firstQueued;
   });
 
+  it("rejects a second acquire() for a key already active, instead of silently clobbering the caller's bookkeeping for it", async () => {
+    const limiter = new ConcurrencyLimiter(2);
+    const releaseA = await limiter.acquire("a");
+
+    await expect(limiter.acquire("a")).rejects.toThrow(/already active/i);
+    expect(limiter.activeCount).toBe(1);
+    void releaseA;
+  });
+
   it("rejects admission once the queue is at its depth cap, instead of growing unbounded", async () => {
     const limiter = new ConcurrencyLimiter(1, 2);
     await limiter.acquire("active");

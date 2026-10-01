@@ -24,6 +24,7 @@ const DEFAULT_MAX_QUEUE_DEPTH = 64;
  */
 export class ConcurrencyLimiter {
   private active = 0;
+  private readonly activeKeys = new Set<string>();
   private readonly waiters = new Map<string, Waiter>();
   private readonly queueOrder: string[] = [];
 
@@ -47,12 +48,13 @@ export class ConcurrencyLimiter {
    * `OperationCancelledError` if `cancel(key)` fires first, without ever
    * admitting the caller.
    *
-   * Rejects immediately (without queuing) if `key` is already queued -
-   * `waiters`/`queueOrder` are keyed by `key`, so a second call reusing the
-   * same one would silently overwrite the first's entry, leaving it waiting
-   * on a slot forever instead of failing loudly. Not expected in practice
+   * Rejects immediately if `key` is already active or already queued -
+   * `activeKeys`/`waiters`/`queueOrder` are all keyed by `key`, so a second
+   * call reusing the same one would silently clobber the first's bookkeeping
+   * (an early, premature `release()` for the wrong holder, or a waiter left
+   * stranded forever) instead of failing loudly. Not expected in practice
    * (every caller mints a fresh id per call), but cheap to guard against a
-   * permanent hang.
+   * permanent hang or a leaked slot.
    *
    * Also rejects immediately once `queuedCount` is already at
    * `maxQueueDepth` - the queue is backpressure, not unbounded storage; a
@@ -60,9 +62,13 @@ export class ConcurrencyLimiter {
    * indefinitely behind an ever-growing line.
    */
   acquire(key: string): Promise<() => void> {
+    if (this.activeKeys.has(key)) {
+      return Promise.reject(new Error(`ConcurrencyLimiter: a request with key "${key}" is already active`));
+    }
     if (this.active < this.limit) {
       this.active += 1;
-      return Promise.resolve(() => this.release());
+      this.activeKeys.add(key);
+      return Promise.resolve(() => this.release(key));
     }
     if (this.waiters.has(key)) {
       return Promise.reject(new Error(`ConcurrencyLimiter: a request with key "${key}" is already queued`));
@@ -93,13 +99,15 @@ export class ConcurrencyLimiter {
     return true;
   }
 
-  private release(): void {
+  private release(key: string): void {
     this.active -= 1;
+    this.activeKeys.delete(key);
     const nextKey = this.queueOrder.shift();
     if (nextKey === undefined) return;
     const waiter = this.waiters.get(nextKey);
     this.waiters.delete(nextKey);
     this.active += 1;
-    waiter?.resolve(() => this.release());
+    this.activeKeys.add(nextKey);
+    waiter?.resolve(() => this.release(nextKey));
   }
 }
