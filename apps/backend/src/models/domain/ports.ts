@@ -78,6 +78,14 @@ export interface ModelRuntimePort {
    */
   cancel(requestId: string): Promise<void>;
   /**
+   * Cancels every chat completion in flight on `modelId`. Optional: only
+   * the chat-completion delegation path needs it. Exists because
+   * `cancel(requestId)` cannot stop a completion running on a *delegated*
+   * model - the SDK handles a request-id cancel locally and never forwards
+   * it to the provider - whereas a model-wide cancel is.
+   */
+  cancelCompletions?(modelId: string): Promise<void>;
+  /**
    * Deletes the KV cache stored under `kvCacheKey` (the `sessionId` passed
    * to `chatComplete()`), for every model. Safe for a key that doesn't
    * exist - it resolves without throwing, same as the underlying SDK.

@@ -140,6 +140,17 @@ class CacheableRuntime extends FakeModelRuntime {
   }
 }
 
+/** A runtime that implements the optional `cancelCompletions()`, recording every model it was asked to cancel on. */
+class CompletionCancellingRuntime extends FakeModelRuntime {
+  readonly cancelledModelIds: string[] = [];
+  cancelCompletionsShouldFail = false;
+
+  async cancelCompletions(modelId: string): Promise<void> {
+    if (this.cancelCompletionsShouldFail) throw new Error('boom');
+    this.cancelledModelIds.push(modelId);
+  }
+}
+
 /** A runtime that implements the optional `heartbeat()`, recording every delegate it was asked to check. */
 class HeartbeatRuntime extends FakeModelRuntime {
   readonly heartbeatCalls: Array<{ providerPublicKey: string; timeout: number }> = [];
@@ -332,6 +343,32 @@ describe('ModelManagementService.deleteCache', () => {
     const service = new ModelManagementService(runtime, runtime);
 
     await expect(service.deleteCache('session-1')).rejects.toMatchObject({ stage: 'cache' });
+  });
+});
+
+describe('ModelManagementService.cancelCompletions', () => {
+  it('asks the runtime to cancel every completion on the model', async () => {
+    const runtime = new CompletionCancellingRuntime();
+    const service = new ModelManagementService(runtime, runtime);
+
+    await service.cancelCompletions('model-1');
+
+    expect(runtime.cancelledModelIds).toEqual(['model-1']);
+  });
+
+  it('rejects with a "cancel" error when the runtime fails to cancel', async () => {
+    const runtime = new CompletionCancellingRuntime();
+    runtime.cancelCompletionsShouldFail = true;
+    const service = new ModelManagementService(runtime, runtime);
+
+    await expect(service.cancelCompletions('model-1')).rejects.toMatchObject({ stage: 'cancel' });
+  });
+
+  it('rejects with a "cancel" error when the runtime does not implement cancelCompletions()', async () => {
+    const runtime = new FakeModelRuntime();
+    const service = new ModelManagementService(runtime, runtime);
+
+    await expect(service.cancelCompletions('model-1')).rejects.toMatchObject({ stage: 'cancel' });
   });
 });
 

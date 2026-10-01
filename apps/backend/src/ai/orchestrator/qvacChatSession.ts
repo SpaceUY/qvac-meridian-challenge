@@ -17,7 +17,7 @@ const DEFAULT_CTX_SIZE = 4096;
 /** The slice of `ModelManagementService` a chat session needs - structural, so tests can pass a plain fake. */
 export type QvacChatSessionService = Pick<
   ModelManagementService,
-  "loadModel" | "chatComplete" | "cancel" | "unloadModel" | "getLoadedModelInfo"
+  "loadModel" | "chatComplete" | "cancel" | "cancelCompletions" | "unloadModel" | "getLoadedModelInfo"
 >;
 
 export interface QvacChatSessionOptions {
@@ -56,6 +56,10 @@ export class QvacChatSession {
   private switchesInFlight = 0;
   /** The `requestId` of the `chatComplete` call currently in flight, if any - lets `cancelActive()` cancel it. */
   private activeRequestId?: string;
+  /** The model `activeRequestId` is running on - `cancelActive()` needs it for the model-wide cancel. */
+  private activeModelId?: string;
+  /** Set while a completion is in flight; `cancelActive()` uses it to reject `complete()` immediately. See `cancelActive()`. */
+  private completionAbandonSignal?: { reject: (err: unknown) => void };
   /** The `requestId` of the `loadModel` call currently in flight, if any - lets `cancelLoad()` cancel it. */
   private loadRequestId?: string;
   /**
@@ -105,29 +109,59 @@ export class QvacChatSession {
         }
       : undefined;
 
-    const pending = this.service.chatComplete(modelId, fullRequest, trackedOnToken);
-    this.activeRequestId = pending.requestId;
     try {
-      return await pending;
+      return await this.runCancellable(modelId, this.service.chatComplete(modelId, fullRequest, trackedOnToken));
     } catch (error) {
       if (anyTokenEmitted || !isDelegatedProviderUnreachableError(error)) throw error;
       const recoveredModelId = await this.recoverFromDelegationFailure();
-      const retryPending = this.service.chatComplete(recoveredModelId, fullRequest, trackedOnToken);
-      this.activeRequestId = retryPending.requestId;
-      return await retryPending;
+      return await this.runCancellable(
+        recoveredModelId,
+        this.service.chatComplete(recoveredModelId, fullRequest, trackedOnToken),
+      );
     } finally {
       this.activeRequestId = undefined;
+      this.activeModelId = undefined;
+      this.completionAbandonSignal = undefined;
     }
   };
+
+  /** Registers `pending` as the in-flight completion and races it against `cancelActive()`'s abandon signal. */
+  private runCancellable(
+    modelId: string,
+    pending: Promise<ChatCompletionResult> & { requestId: string },
+  ): Promise<ChatCompletionResult> {
+    this.activeRequestId = pending.requestId;
+    this.activeModelId = modelId;
+    const abandoned = new Promise<never>((_, reject) => {
+      this.completionAbandonSignal = { reject };
+    });
+    return Promise.race([pending, abandoned]);
+  }
 
   /**
    * Cancels the `chatComplete` call currently in flight on this session, if
    * any - used by a host's cancel endpoint to stop a running generation.
    * No-op when nothing is in flight (e.g. it already settled).
+   *
+   * `service.cancel()` cannot stop a completion running on a *delegated*
+   * model: the SDK handles a request-id cancel locally and reports success
+   * without forwarding it to the provider, which keeps generating (and
+   * keeps this session busy) until it finishes. So when a delegate is
+   * configured, a model-wide cancel follows - that one is forwarded.
+   * Rejecting `completionAbandonSignal` first (before any cancel RPC)
+   * frees the caller immediately, regardless of whether either cancel
+   * takes effect or how long it takes. The real completion keeps running
+   * in the background until a cancel lands.
    */
   async cancelActive(): Promise<void> {
-    if (!this.activeRequestId) return;
-    await this.service.cancel(this.activeRequestId);
+    const requestId = this.activeRequestId;
+    if (!requestId) return;
+    const modelId = this.activeModelId;
+    this.completionAbandonSignal?.reject(
+      new ModelManagementError("cancel", "Operation cancelled", new OperationCancelledError(requestId)),
+    );
+    await this.service.cancel(requestId);
+    if (this.delegate && modelId) await this.service.cancelCompletions(modelId);
   }
 
   /**
