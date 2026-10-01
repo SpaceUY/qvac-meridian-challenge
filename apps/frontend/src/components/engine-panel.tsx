@@ -3,13 +3,14 @@ import { LoaderCircle } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import type { DelegationInfo, ModelInfo, ModelStatus } from '@/lib/model-status-client'
+import type { DelegationInfo, ModelInfo, ModelStatus, ResourceTier } from '@/lib/model-status-client'
 import { countAvailablePeers } from '@/lib/peers'
 
 type Props = {
   model?: ModelInfo
   modelStatus: ModelStatus
   statusError?: string
+  hardwareTier?: ResourceTier
   delegation?: DelegationInfo
   cancelled: boolean
   onCancelLoad: () => void
@@ -28,6 +29,11 @@ const STATUS_COLOR: Record<ModelStatus, string> = {
   ready: 'text-emerald-500',
   error: 'text-destructive',
 }
+const HARDWARE_TIER_LABEL: Record<ResourceTier, string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+}
 
 /** Truncated the same way the backend's own provider.ts log lines do (first 16 hex chars + "…"), so this matches what a developer sees in the terminal. */
 function formatProviderKey(providerPublicKey: string): string {
@@ -35,7 +41,7 @@ function formatProviderKey(providerPublicKey: string): string {
 }
 
 /** Right panel: "with what" the assistant runs. Req. [5.1] + [5.1.1]. */
-export function EnginePanel({ model, modelStatus, statusError, delegation, cancelled, onCancelLoad, onRetryLoad }: Props) {
+export function EnginePanel({ model, modelStatus, statusError, hardwareTier, delegation, cancelled, onCancelLoad, onRetryLoad }: Props) {
   // A cancelled load is still reported as 'idle' by the server (it's not a
   // failure) - `cancelled` is what tells that apart from the app's initial
   // "about to auto-start" idle, so the label/action match what happened.
@@ -90,7 +96,8 @@ export function EnginePanel({ model, modelStatus, statusError, delegation, cance
       </Section>
 
       <Separator />
-      <Section title="Chat model">
+      <Section title="Chat details">
+        <Kv label="Hardware tier" value={hardwareTier ? HARDWARE_TIER_LABEL[hardwareTier] : '—'} />
         <Kv label="Name" value={model?.name ?? '—'} />
         <Kv label="Quantization" value={model?.quantization ?? '—'} />
       </Section>
@@ -110,7 +117,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function Kv({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between gap-2 border-b py-1 last:border-0">
+    <div className="flex justify-between gap-2 py-1">
       <span className="shrink-0 text-muted-foreground">{label}</span>
       {/* font-medium: matches the weight document titles get in the corpus
           modal's cards - a value reads as content, not as muted metadata.

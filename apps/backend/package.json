@@ -19,7 +19,9 @@
     "provider": "tsx src/models/provider.ts",
     "multimodal-demo": "tsx src/ai/multimodalDemo.ts",
     "speech-demo": "tsx src/speech/demo.ts",
-    "tts-demo": "tsx src/tts/demo.ts"
+    "tts-demo": "tsx src/tts/demo.ts",
+    "native-embed-benchmark": "tsx src/experiments/native-embed-spike/benchmark.ts",
+    "native-embed-verify": "tsx src/experiments/native-embed-spike/verifyVectorStore.ts"
   },
   "keywords": [],
   "author": "",
@@ -29,6 +31,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^24.13.6",
+    "bare-runtime": "^1.24.2",
     "openai": "7.23.0",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",

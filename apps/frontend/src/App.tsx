@@ -21,12 +21,14 @@ export default function App() {
         leftSidebar={
           <div className="flex flex-col gap-3">
             <NewChatButton />
+            <Separator />
             <CorpusDialog />
             <Separator />
             <EnginePanel
               model={modelStatus.model}
               modelStatus={modelStatus.status}
               statusError={modelStatus.error}
+              hardwareTier={modelStatus.hardwareTier}
               delegation={modelStatus.delegation}
               cancelled={modelStatus.cancelled}
               onCancelLoad={modelStatus.cancelLoad}

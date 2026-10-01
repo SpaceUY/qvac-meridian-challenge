@@ -325,6 +325,23 @@ describe("AgentService model selection", () => {
       quantization: LLM_MODELS_BY_TIER.high.quantization,
     });
   });
+
+  it("reports the resolved hardware tier in its status payload", async () => {
+    const runtime = new FakeModelRuntime();
+    const modelService = new ModelManagementService(runtime, runtime);
+    const embeddingPort = new FakeEmbeddingPort();
+    const vectorStore = await buildFixtureVectorStore(embeddingPort);
+    const ragService = new RagRetrievalService(embeddingPort, vectorStore);
+
+    const agentService = new AgentService(
+      modelService,
+      ragService,
+      new FakeDocumentRepository([]),
+      "medium",
+    );
+
+    expect(agentService.getStatus().hardwareTier).toBe("medium");
+  });
 });
 
 /** A `FakeModelRuntime` that also implements the optional `deleteCache()`, recording every key it was asked to delete. */

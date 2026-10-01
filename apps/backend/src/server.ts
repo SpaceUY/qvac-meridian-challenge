@@ -13,14 +13,14 @@ import { TranscriptionService } from "./speech/service/transcription.service.js"
 import { QvacTranscriptionAdapter } from "./speech/infra/qvacTranscriptionAdapter.js";
 import { VoiceAgentService } from "./ai/orchestrator/voiceAgentService.js";
 import { QvacEmbeddingAdapter } from "./rag/infra/qvacEmbeddingAdapter.js";
-import { buildFixtureVectorStore } from "./rag/infra/fixtures/corpus-chunks.fixture.js";
+import { LanceDbVectorStore } from "./rag/infra/lanceDbVectorStore.js";
 import { RagRetrievalService } from "./rag/service/rag.service.js";
-import { QvacEmbeddingService } from "./rag/service/qvacEmbeddingService.js";
-import type { RagRetrievalConfig } from "./rag/domain/types.js";
+import { ResilientEmbeddingService } from "./rag/service/resilientEmbeddingService.js";
+import { VECTOR_DB_DIR } from "./config/rag.config.js";
 import { CorpusDocumentRepository } from "./document/infra/corpusDocumentRepository.js";
 import {
   DEFAULT_EMBEDDING_BATCH_SIZE,
-  NOMIC_EMBED_TEXT_V1_5_MODEL_SOURCE,
+  EMBEDDING_MODEL_SOURCE,
 } from "./config/models.config.js";
 import { PUBLIC_CHAT_MODEL } from "./chat/chat.router.const.js";
 
@@ -40,28 +40,28 @@ const modelManagementService = new ModelManagementService(qvacRuntimeAdapter, qv
 app.use("/api/models", createModelsRouter(modelManagementService));
 
 /**
- * PLACEHOLDER: real embeddings (nomic-embed-text-v1.5 via QVAC) over a
- * handful of fixture chunks "inspired by" corpus/ (not the real files) —
- * not yet the persisted, real-corpus vector store [2.3] needs (Lucas's next
- * ticket). minScore is still tuned down from `DEFAULT_RAG_CONFIG`'s 0.65;
- * re-tune once retrieval has been exercised against the real model at
- * runtime (no local inference happens in this environment to calibrate it
- * against).
+ * Retrieval over the persisted LanceDB table written by `npm run ingest`,
+ * queried with EmbeddingGemma through the same `ModelManagementService` as
+ * the chat model: one QVAC worker, one owner of `close()`, and `unloadAll()`
+ * on shutdown releases both models. The server only READS the table - it
+ * never ingests - so a restart never re-embeds the corpus.
  */
-const RAG_CONFIG: RagRetrievalConfig = {
-  topK: 3,
-  minScore: 0.3,
-  maxContextChunks: 2,
-  dedupeExactContent: true,
-};
-const embeddingPort = new QvacEmbeddingService(
+if (!(await LanceDbVectorStore.exists(VECTOR_DB_DIR))) {
+  throw new Error(`No vector store at ${VECTOR_DB_DIR}. Run "npm run ingest --workspace=apps/backend" first.`);
+}
+// I.4: native @qvac/embed-llamacpp path primary, @qvac/sdk path as fallback
+// (init failure or a mid-session worker crash) - see
+// docs/i4-native-addon-results.md. Same constructor shape as the
+// QvacEmbeddingService it replaces.
+const embeddingPort = new ResilientEmbeddingService(
   modelManagementService,
   new QvacEmbeddingAdapter(),
-  NOMIC_EMBED_TEXT_V1_5_MODEL_SOURCE,
+  EMBEDDING_MODEL_SOURCE,
   DEFAULT_EMBEDDING_BATCH_SIZE,
 );
-const vectorStore = await buildFixtureVectorStore(embeddingPort);
-const ragService = new RagRetrievalService(embeddingPort, vectorStore, RAG_CONFIG);
+const vectorStore = await LanceDbVectorStore.open(VECTOR_DB_DIR);
+// No config override: DEFAULT_RAG_CONFIG, the same tuning as ragDemo.
+const ragService = new RagRetrievalService(embeddingPort, vectorStore);
 
 const documentRepository = new CorpusDocumentRepository();
 app.use("/api/documents", createDocumentsRouter(documentRepository));
@@ -171,10 +171,43 @@ const server = app.listen(3001, () => {
   console.log("Server listening on port 3001");
 });
 
+const SHUTDOWN_CLEANUP_TIMEOUT_MS = 3000;
+
+let shuttingDown = false;
+
+/**
+ * Best-effort cleanup with a hard timeout, guarded against re-entry (SIGINT
+ * can be delivered/forwarded more than once, e.g. by npm/tsx's own wrapper
+ * chain). On a real Ctrl+C, @qvac/sdk's spawned worker process shares this
+ * process's terminal process group and receives the same SIGINT, so it can
+ * die concurrently with (or before) unloadAll()/close() try to talk to it -
+ * either call can then hang for as long as the SDK's own internal RPC
+ * timeout (30s). The worker is going down either way, so there's no reason
+ * to wait that long here.
+ */
 async function shutdown(): Promise<void> {
-  await modelManagementService.unloadAll();
-  await modelManagementService.close();
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  await Promise.race([
+    // embeddingPort.unload() first: if the native path is active, this asks
+    // its bare.exe worker to unload and exit gracefully (see
+    // nativeEmbeddingClient.ts) instead of relying solely on the
+    // process.once("exit") kill-if-still-alive safety net that class also
+    // registers.
+    embeddingPort
+      .unload()
+      .then(() => modelManagementService.unloadAll())
+      .then(() => modelManagementService.close()),
+    new Promise((resolve) => setTimeout(resolve, SHUTDOWN_CLEANUP_TIMEOUT_MS)),
+  ]).catch((err: unknown) => {
+    console.error("[shutdown] cleanup failed", err);
+  });
+
   server.close(() => process.exit(0));
+  // Last resort in case server.close() never calls back (e.g. a lingering
+  // keep-alive connection).
+  setTimeout(() => process.exit(0), 1000).unref();
 }
 
 process.on("SIGINT", () => void shutdown());
