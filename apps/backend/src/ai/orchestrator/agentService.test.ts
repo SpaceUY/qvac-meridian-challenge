@@ -370,6 +370,23 @@ describe("AgentService.invoke", () => {
     expect(humanEntry?.images).toEqual([{ mimeType: "image/jpeg", data: imageBytes }]);
   });
 
+  it("forwards temperature and seed from invoke() options to the underlying chat request", async () => {
+    const runtime = new FakeModelRuntime();
+    const modelService = new ModelManagementService(runtime, runtime);
+    const embeddingPort = new FakeEmbeddingPort();
+    const vectorStore = await buildFixtureVectorStore(embeddingPort);
+    const ragService = new RagRetrievalService(embeddingPort, vectorStore);
+    const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]));
+
+    await agentService.invoke(
+      [{ role: "user", message: "What was Q2 revenue?" }],
+      { temperature: 0.15, seed: 999 },
+    );
+
+    expect(runtime.lastChatRequest?.temperature).toBe(0.15);
+    expect(runtime.lastChatRequest?.seed).toBe(999);
+  });
+
   it("cancels an in-flight invoke without leaving the model unusable for a follow-up invoke", async () => {
     const runtime = new ControllableModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
@@ -465,6 +482,7 @@ async function askOnce(agent: AgentService, question: string) {
   const deltas: string[] = [];
   const result = await agent.invoke(
     [{ role: "user", message: question }],
+    undefined,
     (delta) => deltas.push(delta),
   );
   return { deltas, onScreen: deltas.join(""), result };

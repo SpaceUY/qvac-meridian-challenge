@@ -11,12 +11,14 @@ import type { DocumentRepository } from "../../document/domain/document-reposito
 import type { ModelManagementService } from "../../models/service/models.service.js";
 import type { SupportedImageMimeType } from "../../models/domain/types.js";
 import { isCancellationError } from "../../models/domain/errors.js";
+import type { LoadedModelDelegationInfo } from "../../models/domain/types.js";
 import {
   RESOURCE_THRESHOLDS,
   LOW_RESOURCE_MODEL,
   HIGH_RESOURCE_MODEL,
   type AgentModelConfig,
 } from "../../config/models.config.js";
+import { DELEGATE_CONFIG } from "../../config/delegate.config.js";
 
 const BYTES_PER_GB = 1024 ** 3;
 
@@ -26,6 +28,8 @@ export interface AgentStatusPayload {
   status: AgentStatus;
   error?: string;
   model: { name: string; quantization: string };
+  /** Present once known (after a successful `preload()`) - whether the chat model is running on a remote provider or locally. Absent while idle/loading/error, or if delegation status couldn't be confirmed. */
+  delegation?: LoadedModelDelegationInfo;
 }
 
 export interface ConversationMessage {
@@ -92,6 +96,7 @@ export class AgentService {
       temperature,
       ctxSize,
       engineConfig,
+      delegate: DELEGATE_CONFIG,
     });
     this.graph = createGraph(this.chatModel, ragService, documentRepository);
     //this.corpusContext = loadCorpusContext();
@@ -112,12 +117,22 @@ export class AgentService {
     return isLowResource ? LOW_RESOURCE_MODEL : HIGH_RESOURCE_MODEL;
   }
 
-  /** The current load status — polled by `GET /api/chat/status` (Task 2). Also carries a model snapshot for the engine panel. */
+  /**
+   * The current load status — polled by `GET /api/chat/status` (Task 2).
+   * Also carries a model snapshot for the engine panel. `delegation` is
+   * read live off `chatModel.getCachedDelegationInfo()` rather than a
+   * snapshot taken once at `preload()` time, so it reflects a mid-session
+   * recovery (the chat model falling back to local after its delegated
+   * provider died) instead of staying stuck on stale "still delegated"
+   * status forever.
+   */
   getStatus(): AgentStatusPayload {
+    const delegation = this.chatModel.getCachedDelegationInfo();
     return {
       status: this.status,
       ...(this.statusError ? { error: this.statusError } : {}),
       model: this.modelInfo,
+      ...(delegation ? { delegation } : {}),
     };
   }
 
@@ -128,6 +143,7 @@ export class AgentService {
     this.statusError = undefined;
     try {
       await this.chatModel.ensureModel();
+      await this.chatModel.getDelegationInfo();
       this.status = "ready";
     } catch (err) {
       // A cancelled load isn't a genuine failure - go back to "idle" so a

@@ -4,6 +4,7 @@ import express from "express";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import OpenAI from "openai";
 import type { AgentService, AgentStatusPayload, ConversationMessage, InvokeResult } from "../ai/orchestrator/agentService.js";
+import type { GenerationOptions } from "../ai/orchestrator/domain.js";
 import {
   createChatStatusRouter,
   createCompletionsRouter,
@@ -32,7 +33,11 @@ class FakeAgentService {
     return { status: "ready", model: { name: "fake", quantization: "q4" } };
   }
 
-  invoke(_messages: ConversationMessage[], onToken?: (textDelta: string) => void): Promise<InvokeResult> & { requestId: string } {
+  invoke(
+    _messages: ConversationMessage[],
+    _options?: GenerationOptions,
+    onToken?: (textDelta: string) => void,
+  ): Promise<InvokeResult> & { requestId: string } {
     const requestId = `req-${(this.nextRequestId += 1)}`;
     this.activeRequestId = requestId;
     const promise =
@@ -165,7 +170,7 @@ const QUESTION = [{ role: "user" as const, content: "What was Q2 2026 revenue?" 
 /** Orchestrator stand-in: streams the answer in two deltas, like the real one streams tokens. */
 const fakeAgent: CompletionAgent = {
   getStatus: () => ({ status: "ready", model: { name: "fake", quantization: "none" } }),
-  invoke: (_messages, onToken) => {
+  invoke: (_messages, _options, onToken) => {
     const promise = (async () => {
       onToken?.("Q2 2026 total revenue ");
       onToken?.("was $18.4M.");

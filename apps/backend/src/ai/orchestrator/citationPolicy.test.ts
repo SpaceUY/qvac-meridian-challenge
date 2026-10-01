@@ -42,4 +42,15 @@ describe("isInsufficientContextAnswer", () => {
   it("stays in sync with the sentence the prompt asks the model to say", () => {
     expect(GROUNDING_INSTRUCTIONS.toLowerCase()).toContain(INSUFFICIENT_CONTEXT_PREFIX.toLowerCase());
   });
+
+  it("tells the model to answer the latest message instead of an earlier turn's topic", () => {
+    // Regression guard for a real repro: attaching an image and asking "what
+    // do you see" made the model ignore the image and re-answer a previous
+    // turn's document question (with a fabricated excuse) once retrieval for
+    // the new turn came back empty. Confirmed fixed manually against the
+    // live model; this just guards the instruction text from being reverted.
+    const lower = GROUNDING_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain("most recent message");
+    expect(lower).toContain("describe or analyze the image directly");
+  });
 });

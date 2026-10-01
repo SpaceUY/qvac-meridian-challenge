@@ -21,6 +21,7 @@ import {
   DEFAULT_EMBEDDING_BATCH_SIZE,
   NOMIC_EMBED_TEXT_V1_5_MODEL_SOURCE,
 } from "./config/models.config.js";
+import { PUBLIC_CHAT_MODEL } from "./chat/chat.router.const.js";
 
 const app = express();
 
@@ -69,6 +70,93 @@ const agentService = new AgentService(
 );
 app.use("/api/chat", createChatStatusRouter(agentService));
 app.use("/v1/chat", createCompletionsRouter(agentService));
+
+// Auto-preload so `GET /health` can signal readiness without a separate
+// POST /api/chat/preload call - required for qvac-eval.json's "start must
+// not require network access" contract: by the time this runs, `npm run
+// models:fetch` has already cache-warmed every asset this touches. Chat and
+// embedding warm-up run CONCURRENTLY (both fire-and-forget, neither awaited
+// before the other starts) so total time-to-ready is max(chat load,
+// embedding load), not their sum.
+//
+// Both warm-ups are self-healing across `/health` polls rather than
+// permanently latching on one transient failure (this branch loads chat +
+// embedding concurrently into the same worker process, which is exactly the
+// situation most likely to produce a one-off hiccup): `AgentService.preload()`
+// is idempotent and safe to call again once its status is "error" - it only
+// no-ops while "loading"/"ready" (see its own doc comment) - and
+// `warmUpEmbedding()` below mirrors `QvacEmbeddingService.ensureModel()`'s own
+// cached-promise-cleared-on-failure pattern so a later call actually retries
+// instead of reusing a rejected promise forever.
+let embeddingReady = false;
+let embeddingWarmupPromise: Promise<void> | undefined;
+
+function warmUpEmbedding(): Promise<void> {
+  if (!embeddingWarmupPromise) {
+    embeddingWarmupPromise = embeddingPort
+      .embed("readiness warm-up")
+      .then(() => {
+        embeddingReady = true;
+      })
+      .catch((err: unknown) => {
+        console.error("[server] embedding model warm-up failed", err);
+        // Clear so the next call (e.g. the next /health poll, since
+        // embeddingReady is still false) starts a fresh attempt instead of
+        // being stuck on this rejected promise forever.
+        embeddingWarmupPromise = undefined;
+        throw err;
+      });
+  }
+  return embeddingWarmupPromise;
+}
+
+agentService.preload().catch((err: unknown) => {
+  console.error("[server] initial chat model preload failed", err);
+});
+warmUpEmbedding().catch(() => {
+  // Logged inside warmUpEmbedding() already; swallow here so this fire-and-
+  // forget kick-off doesn't surface as an unhandled rejection.
+});
+
+app.get("/health", (_req, res) => {
+  let chatStatus = agentService.getStatus();
+  if (chatStatus.status === "error") {
+    // preload() sets status to "loading" synchronously before its first
+    // await, so re-reading getStatus() right after this call reflects the
+    // freshly-kicked attempt instead of the stale "error".
+    agentService.preload().catch((err: unknown) => {
+      console.error("[server] chat model preload retry failed", err);
+    });
+    chatStatus = agentService.getStatus();
+  }
+  if (!embeddingReady) {
+    warmUpEmbedding().catch(() => {
+      // Logged inside warmUpEmbedding() already.
+    });
+  }
+  if (chatStatus.status === "ready" && embeddingReady) {
+    res.status(200).json({ status: "ready" });
+    return;
+  }
+  res.status(503).json({
+    status: chatStatus.status,
+    embedding: embeddingReady ? "ready" : "loading",
+  });
+});
+
+app.get("/v1/models", (_req, res) => {
+  res.json({
+    object: "list",
+    data: [
+      {
+        id: PUBLIC_CHAT_MODEL,
+        object: "model",
+        created: Math.floor(Date.now() / 1000),
+        owned_by: "meridian",
+      },
+    ],
+  });
+});
 
 const ttsService = new TtsService(modelManagementService, new QvacTtsAdapter());
 app.use("/api/tts", createTtsRouter(ttsService));

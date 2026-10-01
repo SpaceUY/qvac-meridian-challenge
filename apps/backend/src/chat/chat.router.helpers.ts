@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ConversationMessage } from "../ai/orchestrator/agentService.js";
+import type { GenerationOptions } from "../ai/orchestrator/domain.js";
 import type { SupportedImageMimeType } from "../models/domain/types.js";
 import type { Citation } from "../rag/domain/types.js";
 import {
@@ -189,6 +190,24 @@ function detectImageMimeType(data: Buffer): DetectedImageMimeType | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+/** Extracts `temperature`/`seed` off the OpenAI-shaped request body, honoring only well-formed values in OpenAI's own accepted range (Req 6.1.3 — deterministic reruns via a stock OpenAI client). Silently drops an out-of-range/malformed value rather than erroring the whole request - matches this file's existing `parseMessages()` philosophy of validating narrowly rather than rejecting a request over an unrelated field. */
+export function parseGenerationOptions(body: unknown): GenerationOptions {
+  if (!isRecord(body)) return {};
+  const options: GenerationOptions = {};
+  if (
+    typeof body.temperature === "number" &&
+    Number.isFinite(body.temperature) &&
+    body.temperature >= 0 &&
+    body.temperature <= 2
+  ) {
+    options.temperature = body.temperature;
+  }
+  if (typeof body.seed === "number" && Number.isSafeInteger(body.seed)) {
+    options.seed = body.seed;
+  }
+  return options;
 }
 
 /** Decodes the voice endpoint's `audioBase64` field into a Buffer. Undefined if missing, not a string, or empty. */

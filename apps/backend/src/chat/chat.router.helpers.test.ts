@@ -3,6 +3,7 @@ import {
   parseMessages,
   parseHistory,
   parseAudioBase64,
+  parseGenerationOptions,
   describeParseError,
   createEnvelope,
   wantsStream,
@@ -210,6 +211,33 @@ describe("parseHistory", () => {
   it("returns undefined when messages is missing or malformed", () => {
     expect(parseHistory({})).toBeUndefined();
     expect(parseHistory({ messages: [{ role: "user" }] })).toBeUndefined();
+  });
+});
+
+describe("parseGenerationOptions", () => {
+  it("extracts temperature and seed when present", () => {
+    expect(parseGenerationOptions({ temperature: 0.2, seed: 42 })).toEqual({
+      temperature: 0.2,
+      seed: 42,
+    });
+  });
+
+  it("omits fields that are absent or the wrong type", () => {
+    expect(parseGenerationOptions({})).toEqual({});
+    expect(parseGenerationOptions({ temperature: "hot", seed: null })).toEqual({});
+  });
+
+  it("omits temperature outside OpenAI's [0, 2] range, and non-finite values", () => {
+    expect(parseGenerationOptions({ temperature: -0.1 })).toEqual({});
+    expect(parseGenerationOptions({ temperature: 2.1 })).toEqual({});
+    expect(parseGenerationOptions({ temperature: NaN })).toEqual({});
+    expect(parseGenerationOptions({ temperature: Infinity })).toEqual({});
+  });
+
+  it("omits a non-integer or non-finite seed", () => {
+    expect(parseGenerationOptions({ seed: 1.5 })).toEqual({});
+    expect(parseGenerationOptions({ seed: NaN })).toEqual({});
+    expect(parseGenerationOptions({ seed: Number.MAX_SAFE_INTEGER + 1 })).toEqual({});
   });
 });
 

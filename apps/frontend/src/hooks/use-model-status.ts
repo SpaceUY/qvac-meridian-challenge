@@ -6,16 +6,22 @@ import {
   cancelPreload,
   type ModelStatus,
   type ModelInfo,
+  type DelegationInfo,
 } from '@/lib/model-status-client'
 
 const STATUS_QUERY_KEY = ['model-status']
 // How long we wait between checks while the model still isn't ready.
 const POLL_MS = 1000
+// Once ready, delegation status can still change mid-session (a delegated
+// model falling back to local after its provider dies) - keep polling, just
+// much less aggressively than while loading.
+const READY_POLL_MS = 5000
 
 export function useModelStatus(): {
   status: ModelStatus
   error?: string
   model?: ModelInfo
+  delegation?: DelegationInfo
   /** True once the user has cancelled a load and hasn't asked to retry yet - lets the UI say "cancelled" instead of "starting". */
   cancelled: boolean
   cancelLoad: () => void
@@ -32,7 +38,8 @@ export function useModelStatus(): {
     retry: false,
     refetchInterval: (q) => {
       const status = q.state.data?.status
-      return status === 'ready' || status === 'error' ? false : POLL_MS
+      if (status === 'error') return false
+      return status === 'ready' ? READY_POLL_MS : POLL_MS
     },
   })
 
@@ -82,6 +89,7 @@ export function useModelStatus(): {
     status: query.data?.status ?? 'idle',
     error: query.data?.error,
     model: query.data?.model,
+    delegation: query.data?.delegation,
     cancelled,
     cancelLoad: () => cancelLoadMutation.mutate(),
     retryLoad,

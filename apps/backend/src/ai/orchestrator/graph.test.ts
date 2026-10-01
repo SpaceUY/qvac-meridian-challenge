@@ -25,6 +25,8 @@ describe("buildLlmNode guard (graph.ts)", () => {
         chunks: [],
         hasEvidence: false,
         hasVisualInput: true,
+        temperature: undefined,
+        seed: undefined,
       },
       {},
     )) as { messages: AIMessage[] };
@@ -43,6 +45,8 @@ describe("buildLlmNode guard (graph.ts)", () => {
         chunks: [{ id: "c1", content: "Warranty covers 24 months.", score: 0.9 }],
         hasEvidence: true,
         hasVisualInput: true,
+        temperature: undefined,
+        seed: undefined,
       },
       {},
     )) as { messages: AIMessage[] };
@@ -60,6 +64,8 @@ describe("buildLlmNode guard (graph.ts)", () => {
         chunks: [],
         hasEvidence: false,
         hasVisualInput: false,
+        temperature: undefined,
+        seed: undefined,
       },
       {},
     )) as { messages: AIMessage[] };

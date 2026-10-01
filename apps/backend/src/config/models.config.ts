@@ -19,11 +19,12 @@ import type { ModelSource } from '../models/domain/types.js';
  * SDK's runtime *calls* (load/infer/etc.), not its catalog constants - this
  * file, like the config it replaces, only ever reads plain data off them.
  *
- * Entries pulled from `qvac.config.json` (the QVAC model-serving preload
- * list) that no pipeline consumes yet are kept as plain catalog-name
- * strings rather than `@qvac/sdk` imports, since there's no local install
- * to confirm those exports against - the same "search/reference by name"
- * approach `REGISTRY_MODEL_NAME` below already used.
+ * Entries pulled from the SDK's model-serving preload config (previously
+ * `qvac.config.json`, since deleted from this repo) that no pipeline
+ * consumes yet are kept as plain catalog-name strings rather than
+ * `@qvac/sdk` imports, since there's no local install to confirm those
+ * exports against - the same "search/reference by name" approach
+ * `REGISTRY_MODEL_NAME` below already used.
  */
 
 /* =============================================================================
@@ -121,11 +122,12 @@ export const HTTP_MODEL_URL =
 export const REGISTRY_MODEL_NAME = 'Qwen3-1.7B-Q4_0';
 
 /**
- * Preloaded in `qvac.config.json` ("llama-tool-calling-1b-inst-q4-k", tool
- * calling enabled) - evaluated but not currently selected by
- * `AgentService.selectModelConfig` (`HIGH_RESOURCE_MODEL` above still uses
- * `QWEN3_600M_INST_Q4`). No adapter consumes this yet, so it's kept as a
- * catalog-name string rather than an `@qvac/sdk` import.
+ * Previously preloaded via the SDK's model-serving config
+ * ("llama-tool-calling-1b-inst-q4-k", tool calling enabled) - evaluated but
+ * not currently selected by `AgentService.selectModelConfig`
+ * (`HIGH_RESOURCE_MODEL` above still uses `QWEN3_600M_INST_Q4`). No adapter
+ * consumes this yet, so it's kept as a catalog-name string rather than an
+ * `@qvac/sdk` import.
  */
 export const LLAMA_TOOL_CALLING_1B_INST_Q4_K_MODEL_NAME = 'LLAMA_TOOL_CALLING_1B_INST_Q4_K';
 
@@ -139,8 +141,9 @@ export const EMBEDDING_MODEL_TYPE = 'llamacpp-embedding';
 /**
  * Embedding model backing the RAG pipeline: EmbeddingGemma 300M, Q4_0,
  * ~277MB on disk, 768-dimensional output (measured, see
- * `EMBEDDING_DIMENSIONS` in `rag.config.ts`). Already preloaded in
- * `qvac.config.json` as "embeddinggemma-300m-q4-0". Passed to
+ * `EMBEDDING_DIMENSIONS` in `rag.config.ts`). Previously preloaded via the
+ * SDK's model-serving config as "embeddinggemma-300m-q4-0"; now loaded
+ * on-demand by `QvacEmbeddingService.ensureModel()` instead. Passed to
  * `rag/service/qvacEmbeddingService.ts` by the ingest CLI and the server. Whatever queries
  * the table must use this same model: a different embedding model can emit
  * the same 768 dimensions, so a mismatch returns wrong chunks instead of
@@ -177,9 +180,9 @@ export const SILERO_VAD_MODEL_SRC = VAD_SILERO_5_1_2.src;
 export const WHISPER_MODEL_TYPE = 'whispercpp-transcription';
 
 /**
- * Small quantized multilingual whisper model, already preloaded in
- * `qvac.config.json` - light enough for an 8GB RAM machine. Same catalog
- * constant the text/LLM completion model section above draws from a
+ * Small quantized multilingual whisper model, previously preloaded via the
+ * SDK's model-serving config - light enough for an 8GB RAM machine. Same
+ * catalog constant the text/LLM completion model section above draws from a
  * sibling entry of, applied here to the transcription engine.
  */
 export const DEFAULT_WHISPER_MODEL_SOURCE: ModelSource = {
@@ -213,9 +216,10 @@ export const TTS_MODEL_TYPE = 'tts-ggml';
  * Selected low-resource-profile TTS model: multilingual Supertonic2, Q4
  * quant. Loaded by `tts/service/tts.service.ts` via
  * `tts/infra/qvacTtsAdapter.ts`, the same way `qvacRuntimeAdapter.ts` loads
- * completion/whisper models. `qvac.config.json`'s TTS preload entry still
- * points at a different model (chatterbox, "tts-t3-turbo-en-chatterbox-
- * q8-0") - that file wasn't updated as part of this selection.
+ * completion/whisper models. The SDK's model-serving config previously
+ * pointed its TTS preload entry at a different model (chatterbox,
+ * "tts-t3-turbo-en-chatterbox-q8-0") before that config was deleted from
+ * this repo - that entry was never updated to match this selection.
  */
 export const SUPERTONIC2_TTS_MODEL_SOURCE: ModelSource = {
   kind: 'registry',
@@ -239,10 +243,10 @@ export const DEFAULT_SUPERTONIC_ENGINE_CONFIG = {
  * ========================================================================== */
 
 /**
- * Preloaded in `qvac.config.json` ("abot-world-0-5b-lf-vae", config:
- * `{ prediction: "v" }`) - a world model for agent state simulation/
- * prediction. No world-model pipeline exists in this backend yet. Kept as
- * a catalog-name string rather than an `@qvac/sdk` import since nothing
- * currently loads it.
+ * Previously preloaded via the SDK's model-serving config
+ * ("abot-world-0-5b-lf-vae", config: `{ prediction: "v" }`) - a world model
+ * for agent state simulation/prediction. No world-model pipeline exists in
+ * this backend yet. Kept as a catalog-name string rather than an
+ * `@qvac/sdk` import since nothing currently loads it.
  */
 export const ABOT_WORLD_0_5B_LF_VAE_MODEL_NAME = 'ABOT_WORLD_0_5B_LF_VAE';

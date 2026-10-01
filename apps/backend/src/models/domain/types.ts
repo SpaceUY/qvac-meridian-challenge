@@ -26,7 +26,11 @@ export interface RegistrySearchQuery {
 /**
  * Where to load model weights from. `registry` resolves a previously
  * discovered catalog entry; `url` loads directly from an HTTPS location
- * (including HuggingFace file URLs) without going through the registry.
+ * (including HuggingFace file URLs) without going through the registry;
+ * `rawSrc` passes an already-formed catalog src string straight through
+ * unwrapped (e.g. a VLM's projection model, exported by `@qvac/sdk` as a
+ * `.src` string rather than a `registryPath`/`registrySource` pair — see
+ * `config/models.config.ts`'s `MMPROJ_QWEN3VL_2B_MULTIMODAL_Q4_K.src`).
  * Adding a new source kind later (e.g. a local filesystem path) only
  * touches this union and the adapter's `load()` — nothing else.
  */
@@ -37,7 +41,8 @@ export type ModelSource =
       registrySource: string;
       modelType?: string;
     }
-  | { kind: "url"; url: string; modelType?: string };
+  | { kind: "url"; url: string; modelType?: string }
+  | { kind: "rawSrc"; src: string; modelType?: string };
 
 export interface ModelDownloadProgress {
   percentage: number;
@@ -53,6 +58,13 @@ export interface LoadedModel {
 
 export interface InferenceResult {
   text: string;
+}
+
+/** Introspection on a loaded model: whether it's running locally or was delegated to a remote provider (see `DelegateOptions`). */
+export interface LoadedModelDelegationInfo {
+  isDelegated: boolean;
+  /** Present only when `isDelegated` is true. */
+  providerPublicKey?: string;
 }
 
 export type ModelRequestState =
@@ -79,6 +91,14 @@ export interface ModelRequestStatus {
   text?: string;
 }
 
+/** Where to route a model load instead of running it locally, and how to fall back if that fails. Mirrors `@qvac/sdk`'s `loadModel({ delegate })` shape exactly (see `qvacRuntimeAdapter.ts`'s `load()`), kept independent of the SDK's own type since `domain/` never imports `@qvac/sdk`. */
+export interface DelegateOptions {
+  providerPublicKey: string;
+  timeout?: number;
+  fallbackToLocal?: boolean;
+  forceNewConnection?: boolean;
+}
+
 /** Extra load-time engine config. Kept separate from `ModelSource` because it configures the runtime, not where weights come from. */
 export interface LoadModelOptions {
   ctxSize?: number;
@@ -86,6 +106,8 @@ export interface LoadModelOptions {
   tools?: boolean;
   /** Opaque per-engine load config (e.g. whisper's `language`/`detect_language`), merged as-is into the SDK's `modelConfig`. */
   engineConfig?: Record<string, unknown>;
+  /** Route this load to a remote provider instead of running it locally. See `config/delegate.config.ts` for how the chat-completion path populates this. */
+  delegate?: DelegateOptions;
 }
 
 /** Closed set of image formats the multimodal pipeline accepts today - see the design spec for why WebP is deliberately excluded even though the API boundary can detect it. */
@@ -139,6 +161,7 @@ export interface ChatCompletionRequest {
   history: ChatMessage[];
   tools?: ChatTool[];
   temperature?: number;
+  seed?: number;
 }
 
 export interface ChatCompletionResult {
