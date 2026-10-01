@@ -14,9 +14,9 @@ import { useStickToBottom } from '@/hooks/use-stick-to-bottom'
 import type { ModelStatus } from '@/lib/model-status-client'
 import type { ImageAttachment } from '@/lib/image-attachments'
 
-type Props = { modelStatus: ModelStatus; modelCancelled: boolean }
+type Props = { modelStatus: ModelStatus; modelCancelled: boolean; embeddingReady: boolean; serverUnreachable: boolean }
 
-export function ChatPanel({ modelStatus, modelCancelled }: Props) {
+export function ChatPanel({ modelStatus, modelCancelled, embeddingReady, serverUnreachable }: Props) {
   const { history, isStreaming, sendMessage, stop } = useChat()
   const { phase: voicePhase, start: startVoice, send: sendVoice, discard: discardVoice, setLevelListener } = useVoiceTurn()
   // The composer is out of the normal flow, so it takes up no room. The spacer
@@ -43,7 +43,7 @@ export function ChatPanel({ modelStatus, modelCancelled }: Props) {
       ? 'Processing audio…'
       : isStreaming
         ? 'Waiting for the response…'
-        : 'Ask anything'
+        : 'Ask about your documents…'
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -52,7 +52,13 @@ export function ChatPanel({ modelStatus, modelCancelled }: Props) {
             in the visible area; the spacer keeps it above the composer. */}
         <div ref={contentRef} className="flex min-h-full flex-col">
           {history.length === 0 ? (
-            <Welcome modelStatus={modelStatus} modelCancelled={modelCancelled} />
+            <Welcome
+              modelStatus={modelStatus}
+              modelCancelled={modelCancelled}
+              embeddingReady={embeddingReady}
+              serverUnreachable={serverUnreachable}
+              onAsk={(text) => handleSend(text, [])}
+            />
           ) : (
             <MessageList history={history} />
           )}

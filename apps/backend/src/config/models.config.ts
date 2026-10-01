@@ -22,6 +22,15 @@ function toRegistrySource(entry: { registryPath: string; registrySource: string 
   return { kind: "registry", registryPath: entry.registryPath, registrySource: entry.registrySource, modelType };
 }
 
+/** Applies `fn` to each tier of a per-tier catalog map, keeping the same tiers - lets WHISPER_MODELS_BY_TIER/WHISPER_MODEL_NAMES_BY_TIER (and their TTS counterparts) both derive from one tier->catalog-entry mapping instead of repeating it. */
+function mapTiers<T, R>(byTier: Record<ResourceTier, T>, fn: (entry: T) => R): Record<ResourceTier, R> {
+  return {
+    low: fn(byTier.low),
+    medium: fn(byTier.medium),
+    high: fn(byTier.high),
+  };
+}
+
 /**
  * Single source of truth for every concrete model this backend uses or has
  * evaluated, grouped by capability. Pipelines (`ai/orchestrator`, `rag`,
@@ -239,12 +248,19 @@ export const SILERO_VAD_MODEL_SRC = VAD_SILERO_5_1_2.src;
 /** The only whisper.cpp addon type this feature targets. */
 export const WHISPER_MODEL_TYPE = "whispercpp-transcription";
 
-/** Whisper model per resource tier, sized for each tier's RAM/VRAM profile. */
-export const WHISPER_MODELS_BY_TIER: Record<ResourceTier, ModelSource> = {
-  low: toRegistrySource(WHISPER_TINY_Q8_0, WHISPER_MODEL_TYPE),
-  medium: toRegistrySource(WHISPER_SMALL_Q8_0, WHISPER_MODEL_TYPE),
-  high: toRegistrySource(WHISPER_LARGE_V3_TURBO, WHISPER_MODEL_TYPE),
+/** Whisper catalog entry per resource tier - the single source of truth WHISPER_MODELS_BY_TIER and WHISPER_MODEL_NAMES_BY_TIER both derive from, sized for each tier's RAM/VRAM profile. */
+const WHISPER_CATALOG_BY_TIER: Record<ResourceTier, { registryPath: string; registrySource: string; name: string }> = {
+  low: WHISPER_TINY_Q8_0,
+  medium: WHISPER_SMALL_Q8_0,
+  high: WHISPER_LARGE_V3_TURBO,
 };
+
+export const WHISPER_MODELS_BY_TIER: Record<ResourceTier, ModelSource> = mapTiers(WHISPER_CATALOG_BY_TIER, (entry) =>
+  toRegistrySource(entry, WHISPER_MODEL_TYPE),
+);
+
+/** Display name of the Whisper model resolved per tier - kept separate so a display-only consumer (the engine panel) doesn't need to unpack a ModelSource to show a name. */
+export const WHISPER_MODEL_NAMES_BY_TIER: Record<ResourceTier, string> = mapTiers(WHISPER_CATALOG_BY_TIER, (entry) => entry.name);
 
 /**
  * `detect_language` enables EN/ES (and other) auto-detection. `vadModelSrc`
@@ -267,15 +283,24 @@ export const DEFAULT_WHISPER_ENGINE_CONFIG = {
 export const TTS_MODEL_TYPE = "tts-ggml";
 
 /**
- * TTS model per resource tier. `medium`/`high` intentionally use the same
- * Supertonic3 Q4_0 for now - Q8_0 for `high` is evaluated separately once
- * its quality/latency tradeoff is measured.
+ * TTS catalog entry per resource tier - the single source of truth
+ * TTS_MODELS_BY_TIER and TTS_MODEL_NAMES_BY_TIER both derive from.
+ * `medium`/`high` intentionally use the same Supertonic3 Q4_0 for now -
+ * Q8_0 for `high` is evaluated separately once its quality/latency
+ * tradeoff is measured.
  */
-export const TTS_MODELS_BY_TIER: Record<ResourceTier, ModelSource> = {
-  low: toRegistrySource(TTS_MULTILINGUAL_SUPERTONIC2_Q4_0, TTS_MODEL_TYPE),
-  medium: toRegistrySource(TTS_MULTILINGUAL_SUPERTONIC3_Q4_0, TTS_MODEL_TYPE),
-  high: toRegistrySource(TTS_MULTILINGUAL_SUPERTONIC3_Q4_0, TTS_MODEL_TYPE),
+const TTS_CATALOG_BY_TIER: Record<ResourceTier, { registryPath: string; registrySource: string; name: string }> = {
+  low: TTS_MULTILINGUAL_SUPERTONIC2_Q4_0,
+  medium: TTS_MULTILINGUAL_SUPERTONIC3_Q4_0,
+  high: TTS_MULTILINGUAL_SUPERTONIC3_Q4_0,
 };
+
+export const TTS_MODELS_BY_TIER: Record<ResourceTier, ModelSource> = mapTiers(TTS_CATALOG_BY_TIER, (entry) =>
+  toRegistrySource(entry, TTS_MODEL_TYPE),
+);
+
+/** Display name of the TTS model resolved per tier - kept separate for the same display-only reason as WHISPER_MODEL_NAMES_BY_TIER. */
+export const TTS_MODEL_NAMES_BY_TIER: Record<ResourceTier, string> = mapTiers(TTS_CATALOG_BY_TIER, (entry) => entry.name);
 
 /** textToSpeech() doesn't return this - same for all Supertonic versions per @qvac/tts-ggml. */
 export const SUPERTONIC_SAMPLE_RATE = 44100;

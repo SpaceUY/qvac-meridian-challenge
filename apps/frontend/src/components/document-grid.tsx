@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { FileText } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { formatLabel, groupDocuments } from '@/lib/document-groups'
+import { formatLabel, formatUpdatedAt, groupDocuments } from '@/lib/document-groups'
 import type { CorpusDocument } from '@/lib/documents-client'
 
 type Props = { documents: CorpusDocument[]; query: string }
@@ -38,8 +38,19 @@ function DocumentCard({ doc }: { doc: CorpusDocument }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium" title={doc.title}>{doc.title}</p>
         <p className="truncate text-xs text-muted-foreground" title={doc.id}>{doc.id}</p>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+          Updated {formatUpdatedAt(doc.updatedAt)}
+          {doc.tags.length > 0 ? ` · ${doc.tags.join(', ')}` : ''}
+        </p>
       </div>
-      <Badge variant="outline" className="shrink-0">{formatLabel(doc.format)}</Badge>
+      <div className="flex shrink-0 flex-col items-end gap-1">
+        <Badge variant="outline">{formatLabel(doc.format)}</Badge>
+        {doc.status === 'ARCHIVED' && (
+          <Badge variant="secondary" title="No longer the current version - kept for reference only">
+            Archived
+          </Badge>
+        )}
+      </div>
     </li>
   )
 }

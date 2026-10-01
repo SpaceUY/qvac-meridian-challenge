@@ -8,7 +8,7 @@
 // shape; doesn't know what a microphone or the store are.
 
 import type { OpenAIMessage } from '@/lib/chat-client'
-import { EngineError, readErrorMessage, parseCitations } from '@/lib/chat-client'
+import { EngineError, readErrorMessage, parseCitations, parseTools } from '@/lib/chat-client'
 import type { Citation } from '@/lib/chat-types'
 import { readSSEEvents } from '@/lib/parse-sse'
 import { isObject } from '@/lib/utils'
@@ -17,7 +17,7 @@ const VOICE_COMPLETIONS_ENDPOINT = '/v1/chat/voice-completions'
 
 export type VoiceDelta =
   | { type: 'audio'; text: string; audioDataUrl?: string; sampleRate?: number }
-  | { type: 'done'; transcript: string; citations: Citation[] }
+  | { type: 'done'; transcript: string; tools: string[]; citations: Citation[] }
   | { type: 'error'; error: string }
 
 type VoiceCompletionRequest = {
@@ -65,7 +65,12 @@ function parseVoiceEvent(json: string): VoiceDelta | null {
   }
 
   if (event.type === 'done' && typeof event.transcript === 'string') {
-    return { type: 'done', transcript: event.transcript, citations: parseCitations(event.citations) }
+    return {
+      type: 'done',
+      transcript: event.transcript,
+      tools: parseTools(event.tools),
+      citations: parseCitations(event.citations),
+    }
   }
 
   if (event.type === 'error' && typeof event.error === 'string') {

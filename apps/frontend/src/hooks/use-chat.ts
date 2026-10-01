@@ -87,6 +87,9 @@ async function runTurn({ history, sessionId, userMessageId, assistantMessageId, 
     const body = await requestCompletion({ messages: openAIMessages, sessionId, signal: controller.signal })
     for await (const delta of readDeltas(body)) {
       if (delta.text !== undefined) buffer.add(delta.text)
+      if (delta.tools !== undefined) {
+        useChatStore.getState().toolsReceived(assistantMessageId, delta.tools)
+      }
       if (delta.citations !== undefined) {
         useChatStore.getState().citationsReceived(assistantMessageId, delta.citations)
       }

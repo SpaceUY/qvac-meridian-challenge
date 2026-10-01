@@ -132,7 +132,7 @@ export function Composer({
   }
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-1.5">
+    <div className="mx-auto flex max-w-3xl flex-col gap-1.5">
       {voicePhase.type === 'error' && (
         <p className="rounded-md bg-destructive/10 px-3 py-1.5 text-xs text-destructive">{voicePhase.message}</p>
       )}
@@ -140,13 +140,13 @@ export function Composer({
         <p className="rounded-md bg-destructive/10 px-3 py-1.5 text-xs text-destructive">{attachError}</p>
       )}
       <div
-        className="relative flex flex-col gap-1.5 rounded-3xl border bg-secondary/50 p-2 shadow-sm"
+        className="relative flex flex-col gap-1.5 rounded-2xl border bg-card p-2 shadow-lg shadow-black/20"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
         {isDragOver && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-3xl border-2 border-dashed border-primary bg-primary/5 text-sm font-medium text-primary">
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-primary/5 text-sm font-medium text-primary">
             Drop image here
           </div>
         )}
@@ -173,15 +173,16 @@ export function Composer({
             style={{ fieldSizing: 'fixed' }}
           />
           {isStreaming ? (
-            <Button size="icon" variant="destructive" className="shrink-0 rounded-full" onClick={onStop}>
+            <Button size="icon-lg" variant="destructive" className="shrink-0 rounded-xl" onClick={onStop} aria-label="Stop response">
               <Square className="size-4" />
             </Button>
           ) : (
             <Button
-              size="icon"
-              className="shrink-0 rounded-full"
+              size="icon-lg"
+              className="shrink-0 rounded-xl"
               disabled={(!text.trim() && images.length === 0) || textDisabled}
               onClick={send}
+              aria-label="Send"
             >
               <Send className="size-4" />
             </Button>
@@ -189,6 +190,7 @@ export function Composer({
           <MicButton phase={voicePhase} disabled={micDisabled} onClick={onMicClick} />
         </div>
       </div>
+      <p className="px-2 text-center text-xs text-muted-foreground">Answers come from your local corpus — check the cited sources.</p>
       <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
   )

@@ -8,6 +8,7 @@ import {
   type ModelInfo,
   type DelegationInfo,
   type ResourceTier,
+  type ProviderHealth,
 } from '@/lib/model-status-client'
 
 const STATUS_QUERY_KEY = ['model-status']
@@ -21,11 +22,17 @@ const READY_POLL_MS = 5000
 export function useModelStatus(): {
   status: ModelStatus
   error?: string
+  /** The status request itself failed (backend down) - as opposed to the backend reporting that the model failed to load. Polling keeps going, so this clears by itself once the server is back. */
+  serverUnreachable: boolean
   model?: ModelInfo
   hardwareTier?: ResourceTier
   delegation?: DelegationInfo
   /** Whether a delegation-recovery reload is in flight right now (see `AgentStatusPayload.recovering` on the backend). `false` until the first poll resolves. */
   recovering: boolean
+  providerHealth?: ProviderHealth
+  sttModel?: string
+  ttsModel?: string
+  embeddingReady: boolean
   /** True once the user has cancelled a load and hasn't asked to retry yet - lets the UI say "cancelled" instead of "starting". */
   cancelled: boolean
   cancelLoad: () => void
@@ -83,7 +90,9 @@ export function useModelStatus(): {
     return {
       status: 'error',
       error: 'could not reach the server',
+      serverUnreachable: true,
       recovering: false,
+      embeddingReady: false,
       cancelled,
       cancelLoad: () => cancelLoadMutation.mutate(),
       retryLoad,
@@ -93,10 +102,15 @@ export function useModelStatus(): {
   return {
     status: query.data?.status ?? 'idle',
     error: query.data?.error,
+    serverUnreachable: false,
     model: query.data?.model,
     hardwareTier: query.data?.hardwareTier,
     delegation: query.data?.delegation,
     recovering: query.data?.recovering ?? false,
+    providerHealth: query.data?.providerHealth,
+    sttModel: query.data?.sttModel,
+    ttsModel: query.data?.ttsModel,
+    embeddingReady: query.data?.embeddingReady ?? false,
     cancelled,
     cancelLoad: () => cancelLoadMutation.mutate(),
     retryLoad,

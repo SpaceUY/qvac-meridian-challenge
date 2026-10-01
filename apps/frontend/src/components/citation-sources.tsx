@@ -1,59 +1,45 @@
 import { FileText } from 'lucide-react'
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { citationTitle, formatScore } from '@/lib/citation-label'
 import type { Citation } from '@/lib/chat-types'
 
 /**
- * The human-readable side of req. [6.1.2]: one pill under the answer naming
- * the top source ("Q2 2026 Sales Performance Report +1"). Hovering it - or
- * reaching it with Tab - opens a card listing every cited document with its
- * corpus path and similarity score. Built only from `citations`, the same
+ * The human-readable side of req. [6.1.2]: every cited document as a card
+ * under the answer - number, readable title, corpus path and similarity
+ * score. Always visible (no hover needed): the sources are the proof that
+ * the answer came from the corpus. Built only from `citations`, the same
  * array the API returns: the UI never has a second source of truth.
  */
 export function CitationSources({ citations }: { citations: Citation[] }) {
-  const [top, ...rest] = citations
-  if (!top) return null
+  if (citations.length === 0) return null
 
   return (
-    <HoverCard openDelay={150} closeDelay={100}>
-      <HoverCardTrigger asChild>
-        <button
-          type="button"
-          className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-        >
-          <FileText className="size-3 shrink-0" aria-hidden />
-          <span className="truncate">{citationTitle(top.file)}</span>
-          {rest.length > 0 && <span className="shrink-0 font-medium">+{rest.length}</span>}
-        </button>
-      </HoverCardTrigger>
-      <HoverCardContent align="start" className="w-80">
-        <p className="mb-2 text-xs font-medium text-muted-foreground">
-          {citations.length === 1 ? 'Source' : `${citations.length} sources`}
-        </p>
-        <ul className="flex flex-col gap-2">
-          {citations.map((citation) => (
-            <CitationRow key={citation.file} citation={citation} />
-          ))}
-        </ul>
-      </HoverCardContent>
-    </HoverCard>
+    <section aria-label="Sources" className="mt-3 flex flex-col gap-2">
+      <p className="text-xs font-medium text-muted-foreground">{citations.length === 1 ? '1 source' : `${citations.length} sources`}</p>
+      <ol className="grid gap-2 sm:grid-cols-2">
+        {citations.map((citation, index) => (
+          <SourceCard key={citation.file} citation={citation} number={index + 1} />
+        ))}
+      </ol>
+    </section>
   )
 }
 
-function CitationRow({ citation }: { citation: Citation }) {
+function SourceCard({ citation, number }: { citation: Citation; number: number }) {
   return (
-    <li className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium">{citationTitle(citation.file)}</p>
-        <p className="truncate font-mono text-xs text-muted-foreground" title={citation.file}>
-          {citation.file}
-        </p>
-      </div>
-      {citation.score !== undefined && (
-        <span className="shrink-0 text-xs tabular-nums text-muted-foreground" title="Retrieval similarity (higher is closer)">
-          {formatScore(citation.score)}
+    <li className="flex min-w-0 flex-col gap-1.5 rounded-lg border bg-card px-3.5 py-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="flex size-[18px] shrink-0 items-center justify-center rounded-[5px] bg-primary/15 font-mono text-[11px] text-primary">
+          {number}
         </span>
-      )}
+        <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        <span className="truncate text-sm font-medium">{citationTitle(citation.file)}</span>
+        {citation.score !== undefined && (
+          <span className="ml-auto shrink-0 font-mono text-xs tabular-nums text-muted-foreground" title="Retrieval similarity (higher is closer)">
+            {formatScore(citation.score)}
+          </span>
+        )}
+      </div>
+      <p className="truncate font-mono text-xs text-muted-foreground" title={citation.file}>{citation.file}</p>
     </li>
   )
 }

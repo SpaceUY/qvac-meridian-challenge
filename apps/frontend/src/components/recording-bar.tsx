@@ -59,7 +59,7 @@ export function RecordingBar({ onCancel, onSend, registerLevelListener }: Props)
   const ss = String(elapsedSeconds % 60).padStart(2, '0')
 
   return (
-    <div className="mx-auto flex max-w-2xl items-center gap-2 rounded-3xl border bg-secondary/50 p-2 shadow-sm">
+    <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-2xl border bg-card p-2 shadow-lg shadow-black/20">
       <Button
         type="button"
         size="icon"
@@ -90,7 +90,7 @@ export function RecordingBar({ onCancel, onSend, registerLevelListener }: Props)
         </div>
       </div>
 
-      <Button type="button" size="icon" className="shrink-0 rounded-full" onClick={onSend} aria-label="Send recording">
+      <Button type="button" size="icon-lg" className="shrink-0 rounded-xl" onClick={onSend} aria-label="Send recording">
         <Send className="size-4" />
       </Button>
     </div>

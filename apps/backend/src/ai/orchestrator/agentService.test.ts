@@ -26,7 +26,7 @@ import {
 import { DEFAULT_RAG_CONFIG } from "../../config/rag.config.js";
 import type { RagRetrievalConfig } from "../../rag/domain/types.js";
 import { INSUFFICIENT_CONTEXT_MESSAGE } from "./ragGraph.const.js";
-import { LLM_MODELS_BY_TIER } from "../../config/models.config.js";
+import { LLM_MODELS_BY_TIER, WHISPER_MODEL_NAMES_BY_TIER, TTS_MODEL_NAMES_BY_TIER } from "../../config/models.config.js";
 
 /** Immediately resolves load/chat calls; replays `responses` one per `chatComplete` call (repeating the last one), recording every request for assertions. */
 class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
@@ -343,6 +343,25 @@ describe("AgentService model selection", () => {
     expect(agentService.getStatus().hardwareTier).toBe("medium");
   });
 
+  it("reports the STT and TTS model names resolved for the tier, alongside the chat model", async () => {
+    const runtime = new FakeModelRuntime();
+    const modelService = new ModelManagementService(runtime, runtime);
+    const embeddingPort = new FakeEmbeddingPort();
+    const vectorStore = await buildFixtureVectorStore(embeddingPort);
+    const ragService = new RagRetrievalService(embeddingPort, vectorStore);
+
+    const agentService = new AgentService(
+      modelService,
+      ragService,
+      new FakeDocumentRepository([]),
+      "low",
+    );
+
+    const status = agentService.getStatus();
+    expect(status.sttModel).toBe(WHISPER_MODEL_NAMES_BY_TIER.low);
+    expect(status.ttsModel).toBe(TTS_MODEL_NAMES_BY_TIER.low);
+  });
+
   it("never reports providerHealth when no delegate is configured", async () => {
     const runtime = new FakeModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
@@ -456,6 +475,57 @@ describe("AgentService.invoke", () => {
     );
     expect(toolMessage?.content).toContain("policies/warranty-terms.md");
     expect(toolMessage?.content).toContain("faqs/support-sla-faq.html");
+  });
+
+  it("reports which tool the model used when it calls list_documents", async () => {
+    const runtime = new FakeModelRuntime([
+      {
+        text: "",
+        toolCalls: [{ id: "call_1", name: "list_documents", arguments: {} }],
+      },
+      { text: "There are 2 documents ingested.", toolCalls: [] },
+    ]);
+    const modelService = new ModelManagementService(runtime, runtime);
+    const embeddingPort = new FakeEmbeddingPort();
+    const vectorStore = await buildFixtureVectorStore(embeddingPort);
+    const ragService = new RagRetrievalService(embeddingPort, vectorStore);
+    const agentService = new AgentService(
+      modelService,
+      ragService,
+      new FakeDocumentRepository(FAKE_DOCUMENTS),
+    );
+
+    const result = await agentService.invoke([
+      { role: "user", message: "What documents are currently ingested?" },
+    ]);
+
+    expect(result.toolsUsed).toEqual(["list_documents"]);
+  });
+
+  it("reports lookup_stock as the tool used for a stock question", async () => {
+    const runtime = new FakeModelRuntime([
+      {
+        text: "",
+        toolCalls: [{ id: "call_1", name: "lookup_stock", arguments: { sku: "SD-X4-001" } }],
+      },
+      { text: "SD-X4-001 has 22 units available.", toolCalls: [] },
+    ]);
+    const agent = await buildAgent(runtime, ALWAYS_EVIDENCE_CONFIG);
+
+    const result = await agent.invoke([
+      { role: "user", message: "How many SD-X4-001 are in stock?" },
+    ]);
+
+    expect(result.toolsUsed).toEqual(["lookup_stock"]);
+  });
+
+  it("reports no tools used for an answer that only used RAG", async () => {
+    const runtime = new FakeModelRuntime([{ text: "Enterprise P1 SLA is 4 hours.", toolCalls: [] }]);
+    const agent = await buildAgentWithPermissiveRag(runtime);
+
+    const result = await agent.invoke([{ role: "user", message: "What is the P1 SLA?" }]);
+
+    expect(result.toolsUsed).toEqual([]);
   });
 
   it("forwards an attached image through the graph to the model", async () => {

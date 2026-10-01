@@ -141,6 +141,7 @@ export function useVoiceTurn() {
             useChatStore.getState().voiceAudioChunkReceived(assistantMessageId, delta.audioDataUrl)
           }
         } else if (delta.type === 'done') {
+          useChatStore.getState().toolsReceived(assistantMessageId, delta.tools)
           useChatStore.getState().voiceTranscriptReceived(userMessageId, delta.transcript)
           useChatStore.getState().citationsReceived(assistantMessageId, delta.citations)
         } else {

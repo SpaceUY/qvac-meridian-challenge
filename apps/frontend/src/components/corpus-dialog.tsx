@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { Search } from 'lucide-react'
+import { ChevronRight, Database, Search } from 'lucide-react'
 import type { UseQueryResult } from '@tanstack/react-query'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -9,7 +8,7 @@ import { DocumentGrid, DocumentGridSkeleton } from '@/components/document-grid'
 import { useDocuments } from '@/hooks/use-documents'
 import type { CorpusDocument } from '@/lib/documents-client'
 
-/** Left sidebar: "CORPUS · N docs", opening the full inventory in a modal. Req. [3.1.1]. The count only shows once it is real - never a placeholder number. */
+/** Left sidebar: the "Corpus · N docs" card, opening the full inventory in a modal. Req. [3.1.1]. The count only shows once it is real - never a placeholder number. */
 export function CorpusDialog() {
   const documents = useDocuments()
   const [query, setQuery] = useState('')
@@ -18,10 +17,15 @@ export function CorpusDialog() {
   return (
     <Dialog onOpenChange={(isOpen) => { if (!isOpen) setQuery('') }}>
       <DialogTrigger asChild>
-        <Button variant="ghost" className="w-full justify-between px-2">
-          <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Corpus</span>
-          {count !== undefined && <Badge variant="secondary">{count} docs</Badge>}
-        </Button>
+        <button
+          type="button"
+          className="flex w-full items-center gap-2.5 rounded-lg border bg-card px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+        >
+          <Database className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="flex-1 font-medium">Corpus</span>
+          {count !== undefined && <span className="font-mono text-xs text-muted-foreground">{count} docs</span>}
+          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        </button>
       </DialogTrigger>
       <DialogContent className="flex max-h-[85vh] flex-col gap-4 sm:max-w-3xl">
         <DialogHeader>

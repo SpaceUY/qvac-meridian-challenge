@@ -30,3 +30,14 @@ describe('conversationReset', () => {
     expect(useChatStore.getState().history).toEqual([])
   })
 })
+
+describe('toolsReceived', () => {
+  it('attaches the tool names to the message with that id', () => {
+    useChatStore.getState().turnStarted('user-1', 'assistant-1', 'How many SD-X4-001 in stock?')
+
+    useChatStore.getState().toolsReceived('assistant-1', ['lookup_stock'])
+
+    const message = useChatStore.getState().history.find((m) => m.id === 'assistant-1')
+    expect(message?.tools).toEqual(['lookup_stock'])
+  })
+})

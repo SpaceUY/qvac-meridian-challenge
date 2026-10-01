@@ -1,129 +1,128 @@
 import type { ReactNode } from 'react'
-import { LoaderCircle } from 'lucide-react'
-import { Separator } from '@/components/ui/separator'
+import { LoaderCircle, Users } from 'lucide-react'
+import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import type { DelegationInfo, ModelInfo, ModelStatus, ResourceTier } from '@/lib/model-status-client'
-import { countAvailablePeers } from '@/lib/peers'
+import { SidebarSection } from '@/components/sidebar-section'
+import { describeEngineStatus, type EngineTone } from '@/lib/engine-status'
+import { describePeers, describeProviderHealth } from '@/lib/peers'
+import type { DelegationInfo, ModelInfo, ModelStatus, ProviderHealth, ResourceTier } from '@/lib/model-status-client'
 
 type Props = {
   model?: ModelInfo
   modelStatus: ModelStatus
   statusError?: string
+  serverUnreachable: boolean
   hardwareTier?: ResourceTier
+  sttModel?: string
+  ttsModel?: string
   delegation?: DelegationInfo
+  providerHealth?: ProviderHealth
+  recovering: boolean
   cancelled: boolean
   onCancelLoad: () => void
   onRetryLoad: () => void
 }
 
-const STATUS_LABEL: Record<ModelStatus, string> = {
-  idle: 'Starting…',
-  loading: 'Loading model…',
-  ready: 'Running locally',
-  error: 'Load failed',
-}
-const STATUS_COLOR: Record<ModelStatus, string> = {
+const TONE_TEXT: Record<EngineTone, string> = {
+  ready: 'text-primary',
+  working: 'text-amber-400',
   idle: 'text-muted-foreground',
-  loading: 'text-amber-500',
-  ready: 'text-emerald-500',
   error: 'text-destructive',
 }
-const HARDWARE_TIER_LABEL: Record<ResourceTier, string> = {
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
+const TONE_DOT: Record<Exclude<EngineTone, 'working'>, string> = {
+  ready: 'bg-primary ring-3 ring-primary/20',
+  idle: 'bg-muted-foreground',
+  error: 'bg-destructive ring-3 ring-destructive/20',
 }
+const HARDWARE_TIER_LABEL: Record<ResourceTier, string> = { low: 'Low', medium: 'Medium', high: 'High' }
 
-/** Truncated the same way the backend's own provider.ts log lines do (first 16 hex chars + "…"), so this matches what a developer sees in the terminal. */
-function formatProviderKey(providerPublicKey: string): string {
-  return `${providerPublicKey.slice(0, 16)}…`
-}
-
-/** Right panel: "with what" the assistant runs. Req. [5.1] + [5.1.1]. */
-export function EnginePanel({ model, modelStatus, statusError, hardwareTier, delegation, cancelled, onCancelLoad, onRetryLoad }: Props) {
-  // A cancelled load is still reported as 'idle' by the server (it's not a
-  // failure) - `cancelled` is what tells that apart from the app's initial
-  // "about to auto-start" idle, so the label/action match what happened.
-  const showCancelledState = modelStatus === 'idle' && cancelled
-  // Both the initial "about to auto-start" idle and an actual load are
-  // "working on it" - only a user-cancelled idle is not.
-  const isPreparing = modelStatus === 'loading' || (modelStatus === 'idle' && !cancelled)
-  // 'ready' has two sub-labels depending on where the model actually ran -
-  // not delegated (or delegation status unknown) still reads "Running
-  // locally", which is correct: a configured delegate that fell back to
-  // local is genuinely running locally now, not a bug.
-  const isRunningRemotely = modelStatus === 'ready' && delegation?.isDelegated === true
-  const label = showCancelledState
-    ? 'Load cancelled'
-    : isRunningRemotely
-      ? 'Running on remote peer'
-      : STATUS_LABEL[modelStatus]
-  const subtitle =
-    modelStatus === 'error'
-      ? statusError
-      : isRunningRemotely && delegation?.providerPublicKey
-        ? `Provider: ${formatProviderKey(delegation.providerPublicKey)}`
-        : 'No peers available.'
+/** "With what" the assistant runs: status card, active models, peers. Req. [5.1] + [5.1.1]. What each state says is decided in lib/engine-status.ts and lib/peers.ts - this file only draws it. */
+export function EnginePanel(props: Props) {
+  const { modelStatus, statusError, serverUnreachable, hardwareTier, delegation, providerHealth, recovering, cancelled } = props
+  const view = describeEngineStatus({ status: modelStatus, cancelled, serverUnreachable, recovering, statusError, delegation })
+  const peers = describePeers(delegation)
 
   return (
-    <div className="flex flex-col gap-4 px-2 text-xs">
-      <Section title="Inference">
-        <div className="flex items-center justify-between gap-1.5">
-          <div className={`flex items-center gap-1.5 font-medium ${STATUS_COLOR[modelStatus]}`}>
-            {isPreparing ? <LoaderCircle className="size-3.5 animate-spin" /> : <span className="size-1.5 rounded-full bg-current" />}
-            {label}
+    <div className="flex flex-col gap-6">
+      <SidebarSection title="Inference">
+        <div className={cn('flex flex-col gap-3 rounded-xl border bg-card p-3.5', view.tone === 'error' && 'border-destructive/30')}>
+          <div className="flex items-center gap-2">
+            {view.tone === 'working' ? (
+              <LoaderCircle className="size-3.5 animate-spin text-amber-400" aria-hidden />
+            ) : (
+              <span aria-hidden className={cn('size-2 shrink-0 rounded-full', TONE_DOT[view.tone])} />
+            )}
+            <span role="status" className={cn('flex-1 text-sm font-semibold', TONE_TEXT[view.tone])}>{view.label}</span>
+            {view.location && <Chip>{view.location}</Chip>}
+            {view.action === 'cancel' && <Button size="xs" variant="ghost" onClick={props.onCancelLoad}>Cancel</Button>}
+            {view.action === 'load' && <Button size="xs" variant="ghost" onClick={props.onRetryLoad}>Load</Button>}
           </div>
-          {modelStatus === 'loading' && (
-            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={onCancelLoad}>
-              Cancel
-            </Button>
-          )}
-          {showCancelledState && (
-            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={onRetryLoad}>
-              Load
-            </Button>
+          {view.detail && <p className="text-xs leading-relaxed break-all text-muted-foreground">{view.detail}</p>}
+          {hardwareTier && !serverUnreachable && (
+            <div className="flex flex-wrap gap-1.5"><Chip>{HARDWARE_TIER_LABEL[hardwareTier]} tier</Chip></div>
           )}
         </div>
-        <p className="mt-1 text-muted-foreground">{subtitle}</p>
-      </Section>
+      </SidebarSection>
 
-      <Section title="Peers">
-        <div className="flex items-center justify-between gap-1.5">
-          <span className="text-muted-foreground">Peers available</span>
-          <Badge variant="secondary">{countAvailablePeers(delegation)}</Badge>
+      {/* While the server is down, whatever model info is left over is stale - show none of it. */}
+      {!serverUnreachable && <ActiveModels model={props.model} sttModel={props.sttModel} ttsModel={props.ttsModel} />}
+
+      <SidebarSection title="Peers">
+        <div className="flex items-center gap-2.5 px-0.5">
+          <Users className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="text-sm">{peers.title}</span>
+            <span className="truncate text-xs text-muted-foreground">{peers.detail}</span>
+          </div>
+          <Chip>{peers.count}</Chip>
         </div>
-      </Section>
-
-      <Separator />
-      <Section title="Chat details">
-        <Kv label="Hardware tier" value={hardwareTier ? HARDWARE_TIER_LABEL[hardwareTier] : '—'} />
-        <Kv label="Name" value={model?.name ?? '—'} />
-        <Kv label="Quantization" value={model?.quantization ?? '—'} />
-      </Section>
+        {providerHealth && <ProviderHealthLine health={providerHealth} />}
+      </SidebarSection>
     </div>
   )
 }
 
-/** Section header: same uppercase-caps treatment as the corpus modal's group headers (e.g. "POLICIES · 3" in document-grid.tsx) - what makes this sidebar read as one design system with the modal instead of two. */
-function Section({ title, children }: { title: string; children: ReactNode }) {
+/** Chat/VLM, STT and TTS (PR #48). Rows without data are left out instead of showing "—". */
+function ActiveModels({ model, sttModel, ttsModel }: Pick<Props, 'model' | 'sttModel' | 'ttsModel'>) {
+  if (!model && !sttModel && !ttsModel) return null
   return (
-    <div>
-      <h3 className="mb-1.5 font-medium uppercase tracking-wide text-muted-foreground">{title}</h3>
-      {children}
+    <SidebarSection title="Active models">
+      <dl className="flex flex-col gap-2.5 rounded-xl border bg-card p-3.5">
+        {model && <ModelRow kind="Chat / VLM" name={model.name} extra={model.quantization} />}
+        {sttModel && <ModelRow kind="Speech-to-text" name={sttModel} />}
+        {ttsModel && <ModelRow kind="Text-to-speech" name={ttsModel} />}
+      </dl>
+    </SidebarSection>
+  )
+}
+
+function ModelRow({ kind, name, extra }: { kind: string; name: string; extra?: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <dt className="text-xs text-muted-foreground">{kind}</dt>
+      <dd className="flex min-w-0 flex-wrap items-center gap-1.5">
+        {/* break-all: ids like QWEN3_5_9B_MULTIMODAL_Q4_K_M have no spaces to wrap on. */}
+        <span className="min-w-0 font-mono text-xs font-medium break-all">{name}</span>
+        {extra && <Chip>{extra}</Chip>}
+      </dd>
     </div>
   )
 }
 
-function Kv({ label, value }: { label: string; value: string }) {
+/** Heartbeat of the delegate (PR #48): short label on screen, detail in the native tooltip. */
+function ProviderHealthLine({ health }: { health: ProviderHealth }) {
+  const view = describeProviderHealth(health)
   return (
-    <div className="flex justify-between gap-2 py-1">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      {/* font-medium: matches the weight document titles get in the corpus
-          modal's cards - a value reads as content, not as muted metadata.
-          break-all: model ids like QWEN3VL_2B_MULTIMODAL_Q4_K have no spaces
-          to wrap on, so without it a long one runs straight into the label. */}
-      <span className="text-right font-medium break-all">{value}</span>
-    </div>
+    <p title={view.tooltip} className={cn('flex items-center gap-1.5 px-0.5 text-xs', view.up ? 'text-primary' : 'text-destructive')}>
+      <span aria-hidden className="size-1.5 rounded-full bg-current" />
+      {view.label}
+    </p>
+  )
+}
+
+/** Small monospace tag for technical values (Q4_K_M, on-device, a count). */
+function Chip({ children }: { children: ReactNode }) {
+  return (
+    <span className="shrink-0 rounded-md border bg-secondary px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">{children}</span>
   )
 }

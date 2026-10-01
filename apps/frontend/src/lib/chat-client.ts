@@ -19,7 +19,7 @@ export type ContentPart =
 
 /** The "wire" format: how messages travel over the network (OpenAI style). `content` stays a plain string for text-only turns (unchanged wire shape); only a turn with images gets the content-parts array. */
 export type OpenAIMessage = { role: 'user' | 'assistant'; content: string | ContentPart[] }
-export type ChatDelta = { text?: string; citations?: Citation[] }
+export type ChatDelta = { text?: string; tools?: string[]; citations?: Citation[] }
 
 /**
  * Async because building an image turn's wire content means reading each
@@ -115,11 +115,16 @@ function parseChunk(json: string): ChatDelta | null {
   if (!isObject(delta)) return null
 
   const text = typeof delta.content === 'string' && delta.content !== '' ? delta.content : undefined
+  const tools = parseTools(delta.tools)
   const citations = parseCitations(delta.citations)
 
-  if (text === undefined && citations.length === 0) return null
+  if (text === undefined && tools.length === 0 && citations.length === 0) return null
 
-  return { text, citations: citations.length > 0 ? citations : undefined }
+  return {
+    text,
+    tools: tools.length > 0 ? tools : undefined,
+    citations: citations.length > 0 ? citations : undefined,
+  }
 }
 
 function safeJsonParse(json: string): unknown {
@@ -128,6 +133,11 @@ function safeJsonParse(json: string): unknown {
   } catch {
     return null
   }
+}
+
+/** Keeps only string entries. Exported for voice-client.ts: the voice endpoint's `tools` field has the same shape. */
+export function parseTools(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : []
 }
 
 /** Keeps only well-formed citations. Exported for voice-client.ts: the voice endpoint carries the same array. */

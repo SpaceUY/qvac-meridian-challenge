@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import type { RagRetrievalService } from "../../rag/service/rag.service.js";
 import type { Citation, RetrievedChunk } from "../../rag/domain/types.js";
 import { selectCitations } from "./citationPolicy.js";
@@ -12,7 +12,7 @@ import type { ModelManagementService } from "../../models/service/models.service
 import type { SupportedImageMimeType } from "../../models/domain/types.js";
 import { isCancellationError } from "../../models/domain/errors.js";
 import type { LoadedModelDelegationInfo } from "../../models/domain/types.js";
-import { LLM_MODELS_BY_TIER, resolveEngineConfig } from "../../config/models.config.js";
+import { LLM_MODELS_BY_TIER, WHISPER_MODEL_NAMES_BY_TIER, TTS_MODEL_NAMES_BY_TIER, resolveEngineConfig } from "../../config/models.config.js";
 import { RESOURCE_TIER, type ResourceTier } from "../../config/resourceTier.js";
 import { DELEGATE_CONFIG, HEARTBEAT_CONFIG } from "../../config/delegate.config.js";
 import { ProviderHealthMonitor, type DesiredProviderMode } from "./providerHealthMonitor.js";
@@ -27,6 +27,10 @@ export interface AgentStatusPayload {
   model: { name: string; quantization: string };
   /** The resource tier this process resolved at startup (`resourceTier.ts`) - the same value every tiered consumer (chat, TTS, STT) is using right now. */
   hardwareTier: ResourceTier;
+  /** Display name of the Whisper model resolved for this tier - not necessarily loaded into memory yet (STT loads lazily, on first use), just which one this process would load. */
+  sttModel: string;
+  /** Display name of the TTS model resolved for this tier - same "resolved, not necessarily loaded yet" caveat as sttModel. */
+  ttsModel: string;
   /** Present once known (after a successful `preload()`) - whether the chat model is running on a remote provider or locally. Absent while idle/loading/error, or if delegation status couldn't be confirmed. */
   delegation?: LoadedModelDelegationInfo;
   /** Whether a delegation-recovery reload is in flight right now (see `QvacChatSession.isRecovering()`). Always present (never `undefined`) - simpler for the frontend to read than a third "unknown" state, and it's meaningfully `false` even when no delegate is configured at all. */
@@ -63,6 +67,8 @@ export interface InvokeResult {
   thinkingText?: string;
   /** RAG chunks retrieved for this turn and passed to the model as grounding context. */
   chunks: RetrievedChunk[];
+  /** Names of the tools (e.g. "lookup_stock", "list_documents") the agent actually invoked and got a result from during this turn, deduplicated, in no particular order. Empty when the answer used only RAG/the model's own reasoning. */
+  toolsUsed: string[];
   /** Source documents for `answer`, in the evaluator's `{ file, score }` shape. Empty when the answer wasn't grounded - see `selectCitations`. */
   citations: Citation[];
 }
@@ -78,6 +84,8 @@ export class AgentService {
   private readonly chatSession: QvacChatSession;
   private readonly graph: ReturnType<typeof createGraph>;
   private readonly modelInfo: { name: string; quantization: string };
+  private readonly sttModel: string;
+  private readonly ttsModel: string;
   private status: AgentStatus = "idle";
   private statusError: string | undefined;
   //private readonly corpusContext: Promise<string>;
@@ -99,6 +107,8 @@ export class AgentService {
     const { modelSource, modelName, quantization, temperature, ctxSize, kvCacheEnabled } =
       selectedModel;
     this.modelInfo = { name: modelName, quantization };
+    this.sttModel = WHISPER_MODEL_NAMES_BY_TIER[this.tier];
+    this.ttsModel = TTS_MODEL_NAMES_BY_TIER[this.tier];
     this.chatSession = new QvacChatSession({
       service,
       modelSource,
@@ -128,6 +138,8 @@ export class AgentService {
       ...(this.statusError ? { error: this.statusError } : {}),
       model: this.modelInfo,
       hardwareTier: this.tier,
+      sttModel: this.sttModel,
+      ttsModel: this.ttsModel,
       ...(delegation ? { delegation } : {}),
       recovering: this.chatSession.isRecovering(),
       ...(this.healthMonitor ? { providerHealth: this.healthMonitor.getHealth() } : {}),
@@ -349,11 +361,19 @@ export class AgentService {
 
     const thinkingText = lastAIMessage?.additional_kwargs.thinkingText;
     const chunks = finalState?.chunks ?? [];
+    const toolsUsed = [...new Set(
+      (finalState?.messages ?? [])
+        .filter((message): message is ToolMessage => ToolMessage.isInstance(message))
+        .filter((message) => message.status !== "error")
+        .map((message) => message.name)
+        .filter((name): name is string => typeof name === "string" && name.length > 0),
+    )];
 
     return {
       answer,
       thinkingText: typeof thinkingText === "string" ? thinkingText : undefined,
       chunks,
+      toolsUsed,
       citations: selectCitations(answer, chunks),
     };
   }

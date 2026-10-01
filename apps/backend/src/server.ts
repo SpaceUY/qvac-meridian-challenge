@@ -71,8 +71,6 @@ const agentService = new AgentService(
   ragService,
   documentRepository,
 );
-app.use("/api/chat", createChatStatusRouter(agentService));
-app.use("/v1/chat", createCompletionsRouter(agentService));
 
 // Auto-preload so `GET /health` can signal readiness without a separate
 // POST /api/chat/preload call - required for qvac-eval.json's "start must
@@ -91,8 +89,14 @@ app.use("/v1/chat", createCompletionsRouter(agentService));
 // `warmUpEmbedding()` below mirrors `QvacEmbeddingService.ensureModel()`'s own
 // cached-promise-cleared-on-failure pattern so a later call actually retries
 // instead of reusing a rejected promise forever.
+//
+// Constructed here, before the chat status router below, so GET
+// /api/chat/status can merge embeddingReady into the same payload the
+// engine panel already polls - one readiness signal, not two.
 const readiness = new ReadinessService(agentService, embeddingPort);
 readiness.start();
+app.use("/api/chat", createChatStatusRouter(agentService, readiness));
+app.use("/v1/chat", createCompletionsRouter(agentService));
 app.use(createHealthRouter(readiness));
 app.use(createPublicModelsRouter(readiness));
 

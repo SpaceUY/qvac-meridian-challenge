@@ -26,6 +26,7 @@ type ChatStore = {
   ) => void
   chunkReceived: (id: string, delta: string) => void
   citationsReceived: (id: string, citations: Citation[]) => void
+  toolsReceived: (id: string, tools: string[]) => void
   responseFinished: (id: string) => void
   responseFailed: (id: string, reason: string) => void
   imagesDropped: (id: string) => void
@@ -62,6 +63,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   citationsReceived: (id, citations) =>
     set((state) => ({
       history: withMessage(state.history, id, (m) => ({ ...m, citations })),
+    })),
+
+  toolsReceived: (id, tools) =>
+    set((state) => ({
+      history: withMessage(state.history, id, (m) => ({ ...m, tools })),
     })),
 
   responseFinished: (id) =>
@@ -141,7 +147,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
 /** A newborn message, without citations yet. It cannot be born failed. */
 function createMessage(id: string, role: Role, text: string, status: 'done' | 'streaming'): Message {
-  return { id, role, text, citations: [], status: { type: status } }
+  return { id, role, text, citations: [], tools: [], status: { type: status } }
 }
 
 /**

@@ -3,6 +3,14 @@ export type ModelInfo = { name: string; quantization: string }
 export type ResourceTier = 'low' | 'medium' | 'high'
 /** Present once known (after the model has loaded) - whether the chat model is running on a remote provider or locally. */
 export type DelegationInfo = { isDelegated: boolean; providerPublicKey?: string }
+export type ProviderHealthState = 'up' | 'down'
+/** Heartbeat state of the configured delegate, as tracked by the backend's hysteresis-based health monitor. Present only once a delegate is configured and its health monitor has started. */
+export type ProviderHealth = {
+  state: ProviderHealthState
+  consecutiveFailures: number
+  lastSuccessAt?: string
+  lastLatencyMs?: number
+}
 export type ModelStatusResponse = {
   status: ModelStatus
   error?: string
@@ -10,6 +18,10 @@ export type ModelStatusResponse = {
   hardwareTier: ResourceTier
   delegation?: DelegationInfo
   recovering: boolean
+  providerHealth?: ProviderHealth
+  sttModel: string
+  ttsModel: string
+  embeddingReady: boolean
 }
 
 export async function fetchModelStatus(): Promise<ModelStatusResponse> {

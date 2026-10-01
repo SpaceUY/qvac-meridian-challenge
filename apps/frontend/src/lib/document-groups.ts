@@ -39,3 +39,8 @@ const FORMAT_LABEL: Record<string, string> = { MARKDOWN: 'MD', CSV: 'CSV', JSON:
 export function formatLabel(format: string): string {
   return FORMAT_LABEL[format] ?? format
 }
+
+/** "2026-01-15T00:00:00.000Z" -> "Jan 15, 2026". Fixed "en-US"/UTC formatting (not the viewer's locale or timezone) so this reads the same for every reviewer of this demo, same reasoning citation-label.ts's comparePaths gives for avoiding locale-dependent output. */
+export function formatUpdatedAt(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
+}

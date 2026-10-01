@@ -1,0 +1,32 @@
+// Human-readable names for a tool the agent used this turn. The API sends
+// only the machine name (e.g. "lookup_stock") - this is the one place that
+// turns it into the short badge label and the longer hover description.
+
+type ToolCopy = { label: string; description: string }
+
+const KNOWN_TOOLS: Record<string, ToolCopy> = {
+  lookup_stock: {
+    label: 'Checked inventory',
+    description: 'Looked up live stock and pricing data for this answer.',
+  },
+  list_documents: {
+    label: 'Reviewed documents',
+    description: 'Looked at the corpus inventory for this answer.',
+  },
+}
+
+/** "check_weather" -> "Check weather" - used only as a fallback for a tool this file doesn't know about yet, so a new tool never breaks the badge row, it just reads a bit more literally. */
+function titleCaseFromSnakeCase(name: string): string {
+  const [first, ...rest] = name.split('_')
+  if (!first) return name
+  return [first[0].toUpperCase() + first.slice(1), ...rest].join(' ')
+}
+
+export function toolLabel(name: string): ToolCopy {
+  return (
+    KNOWN_TOOLS[name] ?? {
+      label: titleCaseFromSnakeCase(name),
+      description: `Used the ${name} tool for this answer.`,
+    }
+  )
+}
