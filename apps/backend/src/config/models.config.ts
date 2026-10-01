@@ -1,4 +1,5 @@
 import {
+  EMBEDDINGGEMMA_300M_Q4_0,
   MMPROJ_QWEN3VL_2B_MULTIMODAL_Q4_K,
   QWEN3_600M_INST_Q4,
   QWEN3VL_2B_MULTIMODAL_Q4_K,
@@ -83,12 +84,6 @@ const QWEN3VL_2B_MODEL_SOURCE: ModelSource = {
  * for this specific model, test tool calling explicitly before relying on
  * it (pass `toolDialect` explicitly in `engineConfig` below to override if
  * it turns out hermes doesn't parse reliably).
- *
- * Note: the pipeline can't send images through yet -
- * `ai/orchestrator/qvacChatModel.ts`'s `toChatMessage()` only forwards
- * `.text`, so loading this model doesn't turn on vision end-to-end by
- * itself - only completion/tool-calling behavior is actually exercised
- * today.
  */
 export const LOW_RESOURCE_MODEL: AgentModelConfig = {
   modelSource: QWEN3VL_2B_MODEL_SOURCE,
@@ -138,30 +133,24 @@ export const LLAMA_TOOL_CALLING_1B_INST_Q4_K_MODEL_NAME = 'LLAMA_TOOL_CALLING_1B
  * Embeddings models
  * ========================================================================== */
 
-/**
- * Preloaded in `qvac.config.json` ("embeddinggemma-300m-q4-0") but not
- * wired to an `EmbeddingPort` implementation - `NOMIC_EMBED_TEXT_V1_5`
- * below is the active embedding model instead (`rag/service/
- * qvacEmbeddingService.ts`). Kept as a catalog-name string rather than an
- * `@qvac/sdk` import since nothing currently loads it.
- */
-export const EMBEDDINGGEMMA_300M_Q4_0_MODEL_NAME = 'EMBEDDINGGEMMA_300M_Q4_0';
-
-/** Only literal `modelType` the SDK's llama.cpp embedding addon accepts (`@qvac/sdk`'s `dist/schemas/common.d.ts`). */
+/** The only embeddings engine this backend targets. Must be set explicitly: `QvacRuntimeAdapter.load()` falls back to `DEFAULT_MODEL_TYPE` ('llamacpp-completion') otherwise, which loads the wrong engine for an embeddings model. */
 export const EMBEDDING_MODEL_TYPE = 'llamacpp-embedding';
 
 /**
- * nomic-embed-text-v1.5, Q4_K_M quantization (~84MB). Not in `@qvac/sdk`'s
- * registry catalog (only the `EMBEDDINGGEMMA_*` family is), so this loads
- * directly from its HuggingFace GGUF file via a `url` source instead of a
- * `registry` one - same mechanism `HTTP_MODEL_URL` above already uses.
- * Verified reachable at the time this was added; if HuggingFace moves the
- * file, re-resolve `nomic-ai/nomic-embed-text-v1.5-GGUF`'s file listing.
+ * Embedding model backing the RAG pipeline: EmbeddingGemma 300M, Q4_0,
+ * ~277MB on disk, 768-dimensional output (measured, see
+ * `EMBEDDING_DIMENSIONS` in `rag.config.ts`). Already preloaded in
+ * `qvac.config.json` as "embeddinggemma-300m-q4-0". Passed to
+ * `rag/service/qvacEmbeddingService.ts` by the ingest CLI and the server. Whatever queries
+ * the table must use this same model: a different embedding model can emit
+ * the same 768 dimensions, so a mismatch returns wrong chunks instead of
+ * failing.
  */
-export const NOMIC_EMBED_TEXT_V1_5_MODEL_SOURCE: ModelSource = {
-  kind: 'url',
-  url: 'https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q4_K_M.gguf',
-  modelType: EMBEDDING_MODEL_TYPE,
+export const EMBEDDING_MODEL_SOURCE: ModelSource = {
+  kind: 'registry',
+  registryPath: EMBEDDINGGEMMA_300M_Q4_0.registryPath,
+  registrySource: EMBEDDINGGEMMA_300M_Q4_0.registrySource,
+  modelType: EMBEDDING_MODEL_TYPE
 };
 
 /**

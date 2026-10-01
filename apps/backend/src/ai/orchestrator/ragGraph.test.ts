@@ -13,19 +13,30 @@ import { GROUNDING_INSTRUCTIONS, INSUFFICIENT_CONTEXT_MESSAGE } from "./ragGraph
 
 describe("routeOnEvidence", () => {
   it("routes to insufficientContext when hasEvidence is false", () => {
-    expect(routeOnEvidence({ messages: [], chunks: [], hasEvidence: false }, {})).toBe(
-      "insufficientContext",
-    );
+    expect(
+      routeOnEvidence({ messages: [], chunks: [], hasEvidence: false, hasVisualInput: false }, {}),
+    ).toBe("insufficientContext");
   });
 
   it("routes to llm when hasEvidence is true", () => {
-    expect(routeOnEvidence({ messages: [], chunks: [], hasEvidence: true }, {})).toBe("llm");
+    expect(
+      routeOnEvidence({ messages: [], chunks: [], hasEvidence: true, hasVisualInput: false }, {}),
+    ).toBe("llm");
+  });
+
+  it("routes to llm when there is no RAG evidence but there is visual input", () => {
+    expect(
+      routeOnEvidence({ messages: [], chunks: [], hasEvidence: false, hasVisualInput: true }, {}),
+    ).toBe("llm");
   });
 });
 
 describe("insufficientContextNode", () => {
   it("returns the fixed insufficient-context message without calling any model", async () => {
-    const update = (await insufficientContextNode({ messages: [], chunks: [], hasEvidence: false }, {})) as {
+    const update = (await insufficientContextNode(
+      { messages: [], chunks: [], hasEvidence: false, hasVisualInput: false },
+      {},
+    )) as {
       messages: AIMessage[];
     };
 
@@ -48,12 +59,13 @@ describe("buildRetrieveNode", () => {
         messages: [new HumanMessage("What is the enterprise P1 SLA?")],
         chunks: [],
         hasEvidence: false,
+        hasVisualInput: false,
       },
       {},
     );
 
     expect(retrieve).toHaveBeenCalledWith("What is the enterprise P1 SLA?");
-    expect(update).toEqual({ chunks, hasEvidence: true });
+    expect(update).toEqual({ chunks, hasEvidence: true, hasVisualInput: false });
   });
 
   it("returns no evidence when there is no human message in state", async () => {
@@ -61,10 +73,51 @@ describe("buildRetrieveNode", () => {
     const ragService = { retrieve } as unknown as RagRetrievalService;
 
     const node = buildRetrieveNode(ragService);
-    const update = await node({ messages: [], chunks: [], hasEvidence: false }, {});
+    const update = await node(
+      { messages: [], chunks: [], hasEvidence: false, hasVisualInput: false },
+      {},
+    );
 
     expect(retrieve).not.toHaveBeenCalled();
-    expect(update).toEqual({ chunks: [], hasEvidence: false });
+    expect(update).toEqual({ chunks: [], hasEvidence: false, hasVisualInput: false });
+  });
+
+  it("returns hasVisualInput true and skips RAG search when the question is image-only (empty text)", async () => {
+    const retrieve = vi.fn();
+    const ragService = { retrieve } as unknown as RagRetrievalService;
+
+    const node = buildRetrieveNode(ragService);
+    const imageMessage = new HumanMessage({
+      content: [{ type: "image", mimeType: "image/jpeg", data: new Uint8Array([0xff, 0xd8]) }],
+    });
+    const update = await node(
+      { messages: [imageMessage], chunks: [], hasEvidence: false, hasVisualInput: false },
+      {},
+    );
+
+    expect(retrieve).not.toHaveBeenCalled();
+    expect(update).toEqual({ chunks: [], hasEvidence: false, hasVisualInput: true });
+  });
+
+  it("returns hasVisualInput true alongside real RAG evidence when both are present", async () => {
+    const chunks: RetrievedChunk[] = [{ id: "a", content: "Chunk A", score: 0.9 }];
+    const retrieve = vi.fn().mockResolvedValue({ chunks, hasEvidence: true });
+    const ragService = { retrieve } as unknown as RagRetrievalService;
+
+    const node = buildRetrieveNode(ragService);
+    const message = new HumanMessage({
+      content: [
+        { type: "text", text: "what's wrong with this?" },
+        { type: "image", mimeType: "image/jpeg", data: new Uint8Array([0xff, 0xd8]) },
+      ],
+    });
+    const update = await node(
+      { messages: [message], chunks: [], hasEvidence: false, hasVisualInput: false },
+      {},
+    );
+
+    expect(retrieve).toHaveBeenCalledWith("what's wrong with this?");
+    expect(update).toEqual({ chunks, hasEvidence: true, hasVisualInput: true });
   });
 });
 
@@ -83,7 +136,10 @@ describe("buildLlmNode", () => {
 
     const node = buildLlmNode(model);
     const humanMessage = new HumanMessage("What is the enterprise P1 SLA?");
-    const update = (await node({ messages: [humanMessage], chunks, hasEvidence: true }, {})) as {
+    const update = (await node(
+      { messages: [humanMessage], chunks, hasEvidence: true, hasVisualInput: false },
+      {},
+    )) as {
       messages: AIMessage[];
     };
 

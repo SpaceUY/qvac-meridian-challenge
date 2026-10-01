@@ -9,13 +9,40 @@
 import type { Citation, Message } from '@/lib/chat-types'
 import { CONFIG } from '@/lib/config'
 import { readSSEEvents } from '@/lib/parse-sse'
+import { readFileAsDataUrl } from '@/lib/image-attachments'
 
-/** The "wire" format: how messages travel over the network (OpenAI style). */
-export type OpenAIMessage = { role: 'user' | 'assistant'; content: string }
+/** OpenAI Vision-style content part - the same shape the backend's chat.router.helpers.ts parses. */
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+
+/** The "wire" format: how messages travel over the network (OpenAI style). `content` stays a plain string for text-only turns (unchanged wire shape); only a turn with images gets the content-parts array. */
+export type OpenAIMessage = { role: 'user' | 'assistant'; content: string | ContentPart[] }
 export type ChatDelta = { text?: string; citations?: Citation[] }
 
-export function toOpenAIMessages(messages: Pick<Message, 'role' | 'text'>[]): OpenAIMessage[] {
-  return messages.map((m) => ({ role: m.role, content: m.text }))
+/**
+ * Async because building an image turn's wire content means reading each
+ * attached File into a base64 data URL - deliberately deferred to exactly
+ * this point (see image-attachments.ts) rather than done once and cached,
+ * so a long conversation with several attached images never holds more
+ * than one turn's worth of base64 in memory at a time.
+ */
+export async function toOpenAIMessages(messages: Pick<Message, 'role' | 'text' | 'images'>[]): Promise<OpenAIMessage[]> {
+  return Promise.all(
+    messages.map(async (m): Promise<OpenAIMessage> => {
+      if (!m.images?.length) return { role: m.role, content: m.text }
+
+      const imageParts = await Promise.all(
+        m.images.map(
+          async (image): Promise<ContentPart> => ({
+            type: 'image_url',
+            image_url: { url: await readFileAsDataUrl(image.file) },
+          }),
+        ),
+      )
+      return { role: m.role, content: [{ type: 'text', text: m.text }, ...imageParts] }
+    }),
+  )
 }
 
 export class EngineError extends Error {
@@ -49,10 +76,17 @@ export async function requestCompletion({
     signal,
   })
 
-  if (!res.ok) throw new EngineError(`the server responded ${res.status}`, res.status)
+  if (!res.ok) throw new EngineError(await readErrorMessage(res), res.status)
   if (!res.body) throw new EngineError('the server responded with no body')
 
   return res.body
+}
+
+/** The backend's own `{ error: "..." }` body (chat.router.ts's 400s carry a specific, human-readable reason - e.g. "Only JPEG or PNG images are supported") - falls back to the generic status-code message only if the body isn't that shape. Exported: voice-client.ts's requestVoiceCompletion hits the same backend error shape on its own 400s. */
+export async function readErrorMessage(res: Response): Promise<string> {
+  const body = safeJsonParse(await res.text())
+  if (isObject(body) && typeof body.error === 'string' && body.error !== '') return body.error
+  return `the server responded ${res.status}`
 }
 
 export async function* readDeltas(body: ReadableStream<Uint8Array>): AsyncGenerator<ChatDelta> {

@@ -2,6 +2,8 @@
 // component that only needs to know "what shape a Message has" does not have
 // to drag in the logic of how the state changes.
 
+import type { ImageAttachment } from '@/lib/image-attachments'
+
 export type Role = 'user' | 'assistant'
 
 export type Citation = {
@@ -28,6 +30,8 @@ export type Message = {
   status: MessageStatus
   /** Present only on assistant messages that came from a voice turn with a successful TTS synthesis. */
   audio?: { dataUrl: string }
+  /** Images attached to this turn (user messages only). Set once at creation and never mutated afterwards - see chat-store.ts's turnStarted. */
+  images?: ImageAttachment[]
 }
 
 /**

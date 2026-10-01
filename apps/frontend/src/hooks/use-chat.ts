@@ -10,14 +10,13 @@
 import { useCallback, useRef } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useMirrorRef } from '@/hooks/use-mirror-ref'
-import {
-  toOpenAIMessages,
-  EngineError,
-  readDeltas,
-  requestCompletion,
-  type OpenAIMessage,
-} from '@/lib/chat-client'
+import { toOpenAIMessages, EngineError, readDeltas, requestCompletion } from '@/lib/chat-client'
 import { useChatStore, isWaitingForFirstChunk, isStreaming } from '@/lib/chat-store'
+import type { Message } from '@/lib/chat-types'
+import { revokeAttachments, type ImageAttachment } from '@/lib/image-attachments'
+
+/** What a turn needs to be re-serialized to the wire format - never the full Message (citations/status are UI-only, irrelevant to the request). */
+type HistoryEntry = Pick<Message, 'role' | 'text' | 'images'>
 
 function useSessionId(): string {
   const ref = useRef<string | null>(null)
@@ -35,28 +34,29 @@ export function useChat() {
   const abortRef = useRef<AbortController | null>(null)
 
   const turnMutation = useMutation({
-    mutationFn: (args: { openAIMessages: OpenAIMessage[]; assistantMessageId: string; signal: AbortSignal }) =>
-      runTurn({ ...args, sessionId }),
+    mutationFn: (args: {
+      history: HistoryEntry[]
+      userMessageId: string
+      assistantMessageId: string
+      signal: AbortSignal
+    }) => runTurn({ ...args, sessionId }),
   })
 
-  const sendMessage = useCallback((rawText: string) => {
+  const sendMessage = useCallback((rawText: string, images: ImageAttachment[] = []) => {
     const text = rawText.trim()
-    if (!text || abortRef.current) return
-
-    const openAIMessages: OpenAIMessage[] = [
-      ...toOpenAIMessages(historyRef.current),
-      { role: 'user', content: text },
-    ]
+    if ((!text && images.length === 0) || abortRef.current) return
 
     const userMessageId = crypto.randomUUID()
     const assistantMessageId = crypto.randomUUID()
-    useChatStore.getState().turnStarted(userMessageId, assistantMessageId, text)
+    useChatStore.getState().turnStarted(userMessageId, assistantMessageId, text, images)
+
+    const history: HistoryEntry[] = [...historyRef.current, { role: 'user', text, images }]
 
     const controller = new AbortController()
     abortRef.current = controller
 
     turnMutation.mutate(
-      { openAIMessages, assistantMessageId, signal: controller.signal },
+      { history, userMessageId, assistantMessageId, signal: controller.signal },
       { onSettled: () => { abortRef.current = null } },
     )
   }, []) // no dependencies: reads everything from refs, same as before
@@ -77,14 +77,18 @@ export function useChat() {
 const CHUNKS_PER_BATCH = 2
 
 async function runTurn(args: {
-  openAIMessages: OpenAIMessage[]
+  history: HistoryEntry[]
   sessionId: string
+  userMessageId: string
   assistantMessageId: string
   signal: AbortSignal
 }) {
-  const { openAIMessages, sessionId, assistantMessageId, signal } = args
+  const { history, sessionId, userMessageId, assistantMessageId, signal } = args
   const buffer = createChunkBuffer(assistantMessageId)
   try {
+    // Reads any attached File(s) into base64 here, right before the
+    // request goes out - not earlier (see toOpenAIMessages's own doc).
+    const openAIMessages = await toOpenAIMessages(history)
     const body = await requestCompletion({ messages: openAIMessages, sessionId, signal })
     for await (const delta of readDeltas(body)) {
       if (delta.text !== undefined) buffer.add(delta.text)
@@ -99,6 +103,17 @@ async function runTurn(args: {
     if (err instanceof DOMException && err.name === 'AbortError') {
       useChatStore.getState().responseFinished(assistantMessageId) // cancelled on purpose: not an error
       return
+    }
+    // A 400 means THIS request, as constructed, will never succeed by
+    // retrying it - e.g. an image the backend's real (magic-byte) check
+    // rejected. Every future turn resends the whole history, so leaving a
+    // known-bad image in place would fail every turn after this one
+    // forever (text or voice alike, since both read the same history) -
+    // drop it now, once, right after the request that proved it's bad.
+    if (err instanceof EngineError && err.status === 400) {
+      const images = useChatStore.getState().history.find((m) => m.id === userMessageId)?.images
+      if (images?.length) revokeAttachments(images)
+      useChatStore.getState().imagesDropped(userMessageId)
     }
     const reason = err instanceof EngineError ? err.message : 'could not reach the model'
     useChatStore.getState().responseFailed(assistantMessageId, reason)

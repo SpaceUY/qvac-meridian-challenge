@@ -27,10 +27,11 @@ import type { AIMessageChunk, BaseMessage } from "@langchain/core/messages";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
 
-const SYSTEM_PROMPT = `You are Meridian's internal assistant. You handle two kinds of questions:
+const SYSTEM_PROMPT = `You are Meridian's internal assistant.
 
-1. Stock and inventory questions (SKU, stock levels, price, lead time, region availability). Always call the lookup_stock tool for these instead of answering from memory. SKUs follow a specific format, e.g. SD-X4-001 — use the tool's sku field when one is recognized in the user's query. Never answer stock related queries without calling lookup_stock.
-2. Questions about company documents (deals, warranty terms, SLAs, policies, reports, etc). Answer these using only the Context section below.
+For stock and inventory questions (SKU, stock levels, price, lead time, region availability), always call the lookup_stock tool instead of answering from memory. SKUs follow a specific format, e.g. SD-X4-001 — use the tool's sku field when one is recognized in the user's query. Never answer stock related queries without calling lookup_stock.
+
+For everything else, ground your answer only in the evidence actually available to you this turn: the Context section below (retrieved company documents), an image the user attached to this message, and/or tool results. Combine sources when more than one is relevant. An attached image is not automatically relevant to the question — if it doesn't actually help answer it, say so instead of guessing from it.
 
 ${GROUNDING_INSTRUCTIONS}`;
 
@@ -53,7 +54,7 @@ function guardMayReplaceReply(state: typeof State.State): boolean {
   const usedTool = state.messages.some((message) =>
     ToolMessage.isInstance(message),
   );
-  return !state.hasEvidence && !usedTool;
+  return !state.hasEvidence && !state.hasVisualInput && !usedTool;
 }
 
 /**

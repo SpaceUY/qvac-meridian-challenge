@@ -10,7 +10,7 @@ import {
   HumanMessage,
   SystemMessage,
 } from "@langchain/core/messages";
-import type { ChatQVAC } from "./qvacChatModel.js";
+import { hasImageContent, type ChatQVAC } from "./qvacChatModel.js";
 import type { RagRetrievalService } from "../../rag/service/rag.service.js";
 import { buildGroundedContext } from "../../rag/service/contextBuilder.js";
 import {
@@ -31,11 +31,21 @@ export function buildRetrieveNode(
       );
 
     if (!lastHuman) {
-      return { chunks: [], hasEvidence: false };
+      return { chunks: [], hasEvidence: false, hasVisualInput: false };
     }
 
-    const result = await ragService.retrieve(lastHuman.text);
-    return { chunks: result.chunks, hasEvidence: result.hasEvidence };
+    const hasVisualInput = hasImageContent(lastHuman);
+    const query = lastHuman.text.trim();
+    if (!query) {
+      // An embedding search on an empty string returns meaningless
+      // results - an image-only turn (or one with only whitespace text)
+      // skips RAG entirely rather than risk surfacing chunks that look
+      // like real evidence but aren't.
+      return { chunks: [], hasEvidence: false, hasVisualInput };
+    }
+
+    const result = await ragService.retrieve(query);
+    return { chunks: result.chunks, hasEvidence: result.hasEvidence, hasVisualInput };
   };
 }
 
@@ -43,7 +53,7 @@ export function buildRetrieveNode(
 export const routeOnEvidence: ConditionalEdgeRouter<{
   InputSchema: typeof State;
   Nodes: "llm" | "insufficientContext";
-}> = (state) => (state.hasEvidence ? "llm" : "insufficientContext");
+}> = (state) => (state.hasEvidence || state.hasVisualInput ? "llm" : "insufficientContext");
 
 export const insufficientContextNode: GraphNode<typeof State> = async () => ({
   messages: [new AIMessage(INSUFFICIENT_CONTEXT_MESSAGE)],

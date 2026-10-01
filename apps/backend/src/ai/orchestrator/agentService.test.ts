@@ -272,7 +272,17 @@ describe("AgentService.invoke", () => {
 
     const embeddingPort = new FakeEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
-    const ragService = new RagRetrievalService(embeddingPort, vectorStore);
+    // DEFAULT_RAG_CONFIG's minScore (0.65) is calibrated for the real
+    // embedding model - FakeEmbeddingPort's crude hashed bag-of-words only
+    // scores ~0.14 for this query against the actually-relevant chunk, so
+    // this test needs its own lower threshold to exercise real evidence
+    // instead of always falling through to "no evidence".
+    const ragService = new RagRetrievalService(embeddingPort, vectorStore, {
+      topK: 5,
+      minScore: 0.1,
+      maxContextChunks: 4,
+      dedupeExactContent: true,
+    });
 
     const agentService = new AgentService(
       modelService,
@@ -289,7 +299,10 @@ describe("AgentService.invoke", () => {
       history.some(
         (message) =>
           message.role === "system" &&
-          message.content.includes("Standard warranty"),
+          // CORPUS_CHUNK_FIXTURES' actual wording (not "Standard warranty
+          // covers 24 months." - that's FAKE_DOCUMENTS' text, used by the
+          // list_documents test below, a different fixture entirely).
+          message.content.includes("Standard hardware warranty"),
       ),
     ).toBe(true);
   });
@@ -327,6 +340,34 @@ describe("AgentService.invoke", () => {
     );
     expect(toolMessage?.content).toContain("policies/warranty-terms.md");
     expect(toolMessage?.content).toContain("faqs/support-sla-faq.html");
+  });
+
+  it("forwards an attached image through the graph to the model", async () => {
+    const runtime = new FakeModelRuntime();
+    const modelService = new ModelManagementService(runtime, runtime);
+
+    const embeddingPort = new FakeEmbeddingPort();
+    const vectorStore = await buildFixtureVectorStore(embeddingPort);
+    const ragService = new RagRetrievalService(embeddingPort, vectorStore);
+
+    const agentService = new AgentService(
+      modelService,
+      ragService,
+      new FakeDocumentRepository([]),
+    );
+
+    const imageBytes = Buffer.from([0xff, 0xd8, 0xff, 0xdb]);
+    await agentService.invoke([
+      {
+        role: "user",
+        message: "what's wrong with this part?",
+        images: [{ mimeType: "image/jpeg", data: imageBytes }],
+      },
+    ]);
+
+    const history = runtime.lastChatRequest?.history ?? [];
+    const humanEntry = history.find((entry) => entry.role === "user");
+    expect(humanEntry?.images).toEqual([{ mimeType: "image/jpeg", data: imageBytes }]);
   });
 
   it("cancels an in-flight invoke without leaving the model unusable for a follow-up invoke", async () => {

@@ -100,7 +100,7 @@ export function useVoiceTurn() {
       }
 
       const audioBase64 = await blobToBase64(blob)
-      const messages = toOpenAIMessages(useChatStore.getState().history)
+      const messages = await toOpenAIMessages(useChatStore.getState().history)
       const result = await requestVoiceCompletion({ messages, audioBase64, signal: controller.signal })
 
       useChatStore.getState().voiceTurnAdded({

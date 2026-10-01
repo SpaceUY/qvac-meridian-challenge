@@ -7,9 +7,9 @@
 export const INSUFFICIENT_CONTEXT_PREFIX =
   "The available documents do not contain enough information";
 
-export const GROUNDING_INSTRUCTIONS = `Answer using only the provided context.
+export const GROUNDING_INSTRUCTIONS = `Answer using only the evidence available to you this turn — retrieved context, an attached image, and/or tool results.
 
-If the answer cannot be supported by the retrieved context, state that the available documents do not contain enough information.
+If none of those sources support an answer, state that the available documents do not contain enough information instead of guessing. The presence of an attached image doesn't by itself mean it's relevant — only rely on it if it actually informs the answer.
 
 Do not invent unsupported facts.`;
 
