@@ -73,8 +73,8 @@ describe('RagRetrievalService', () => {
     const result = await service.retrieve('a query');
 
     expect(result.chunks).toEqual([
-      { id: 'a', content: 'First label', score: 0.9 },
-      { id: 'b', content: 'Chunk B', score: 0.7 }
+      { id: 'a', content: 'First label', score: 0.9, metadata: { authority: 'informal-notes', status: 'current' } },
+      { id: 'b', content: 'Chunk B', score: 0.7, metadata: { authority: 'informal-notes', status: 'current' } }
     ]);
   });
 
@@ -130,13 +130,13 @@ describe('RagRetrievalService', () => {
     expect(result.chunks.map((c) => c.id)).toEqual(['a', 'b']);
   });
 
-  it('preserves source and metadata unchanged on each returned chunk', async () => {
+  it('preserves source and pre-existing metadata, adding authority/status from the rerank step', async () => {
     const chunk: RetrievedChunk = {
       id: 'a',
       content: 'Chunk A',
       score: 0.9,
-      source: 'support-sla-faq.html',
-      metadata: { documentType: 'FAQ', title: 'Support SLA - Internal FAQ' }
+      source: 'faqs/support-sla-faq.html',
+      metadata: { documentType: 'faqs', title: 'Support SLA - Internal FAQ' }
     };
     const service = new RagRetrievalService(new FakeEmbedding(), new FakeVectorStore([chunk]), {
       topK: 5,
@@ -147,7 +147,10 @@ describe('RagRetrievalService', () => {
 
     const result = await service.retrieve('a query');
 
-    expect(result.chunks[0]).toEqual(chunk);
+    expect(result.chunks[0]).toEqual({
+      ...chunk,
+      metadata: { ...chunk.metadata, authority: 'internal-reference', status: 'current' }
+    });
   });
 
   it('returns hasEvidence: false and an empty chunk list when the store finds nothing', async () => {

@@ -1,5 +1,8 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { RagRetrievalConfig } from '../rag/domain/types.js';
+
+/** Every RAG tuning knob (chunking, retrieval sizing, rerank weights) lives in this file. */
 
 const configDir = path.dirname(fileURLToPath(import.meta.url));
 /** `src/config` -> `src` -> `backend` -> `apps` -> repo root. */
@@ -23,20 +26,16 @@ export const CHUNKS_TABLE = 'chunks';
 export const TEXT_EXTENSIONS = new Set(['.md', '.txt', '.html', '.json', '.csv']);
 
 /**
- * Chunking options passed to `ragChunk()`. `chunkSize: 600` was chosen in
- * Lab 4 after comparing 150 / 600 / 2000 against the real corpus - 150 gave
- * a BETTER raw distance score but all 3 top results came from the same
- * document (the winning phrase cut mid-sentence); 600 gave the 3 top
- * results from 3 different files, a more useful answer even at a worse
- * score. A qualitative choice, backed by one measured comparison - not yet
- * validated with a `recall@k` sweep across the full `preguntas-eval.json`
- * set - that sweep is future work, not covered by this plan.
+ * `chunkSize`/`chunkOverlap` are in WORDS (`splitStrategy: 'word'`) - not
+ * characters. Least-validated of the three tuned retrieval knobs: the size
+ * sweep (90/180/270/360) ran before an embedding prefix fix and wasn't
+ * repeated after.
  */
 export const CHUNK_OPTIONS = {
-  chunkSize: 600,
-  chunkOverlap: 100,
+  chunkSize: 180,
+  chunkOverlap: 40,
   chunkStrategy: 'paragraph',
-  splitStrategy: 'character'
+  splitStrategy: 'word'
 } as const;
 
 /**
@@ -47,3 +46,66 @@ export const CHUNK_OPTIONS = {
  * instead of silently writing a table nothing can query.
  */
 export const EMBEDDING_DIMENSIONS = 768;
+
+/**
+ * `topK` is the search pool feeding `metadataRerank()`, not the final
+ * count - `maxContextChunks` is what reaches the LLM. `minScore` is a flat
+ * 0.54 (no EN/ES routing exists) assuming `metadataRerank()` runs as a
+ * second layer, not retrieval alone.
+ */
+export const DEFAULT_RAG_CONFIG: RagRetrievalConfig = {
+  topK: 8,
+  minScore: 0.54,
+  maxContextChunks: 3,
+  dedupeExactContent: true
+};
+
+/**
+ * Tunable data for `metadataRerank()` (`../rag/service/metadataRerank.ts`).
+ * `AUTHORITY_WEIGHT`/`SUPERSEDED_PENALTY` were tuned pre-embedding-prefix-fix
+ * and not re-validated after - the post-fix holdout showed English Recall@3
+ * drop from 100% to 92.3%.
+ */
+export type AuthorityLabel =
+  | 'official-policy'
+  | 'official-reference'
+  | 'operational-email'
+  | 'system-of-record'
+  | 'aggregated-report'
+  | 'internal-reference'
+  | 'informal-notes';
+
+export const AUTHORITY_RANK: Record<AuthorityLabel, number> = {
+  'official-policy': 4,
+  'official-reference': 4,
+  'operational-email': 3,
+  'system-of-record': 3,
+  'aggregated-report': 2,
+  'internal-reference': 2,
+  'informal-notes': 1
+};
+
+/** Top-ranked search candidates `metadataRerank()` reorders; the rest pass through untouched. */
+export const RERANK_CANDIDATE_POOL = 8;
+/** Score bonus per authority tier above `informal-notes`. */
+export const AUTHORITY_WEIGHT = 0.03;
+/** Score penalty for a source listed in `SUPERSEDED_SOURCES`. */
+export const SUPERSEDED_PENALTY = 0.05;
+
+/** `documentType` (corpus top-level folder) -> authority label. No `pictures` entry: `ragChunk()` never processes binaries. */
+export const AUTHORITY_BY_DOCUMENT_TYPE: Record<string, AuthorityLabel> = {
+  policies: 'official-policy',
+  data: 'system-of-record',
+  emails: 'operational-email',
+  reports: 'aggregated-report',
+  faqs: 'internal-reference',
+  transcripts: 'informal-notes'
+};
+
+/**
+ * Corpus-relative `source` paths known to be superseded. Deliberately
+ * empty: nothing in `corpus/` self-declares supersession, and guessing
+ * would inject an unverified claim into grounded answers. Populate once
+ * there's a real signal for it.
+ */
+export const SUPERSEDED_SOURCES: ReadonlySet<string> = new Set();
