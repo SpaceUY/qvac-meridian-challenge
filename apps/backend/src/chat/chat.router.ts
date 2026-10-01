@@ -1,7 +1,18 @@
 import { Router, type Request, type Response } from "express";
 import type { AgentService } from "../ai/orchestrator/agentService.js";
 import { EmptyTranscriptError, type VoiceAgentService } from "../ai/orchestrator/voiceAgentService.js";
-import { parseMessages, parseHistory, parseAudioBase64, toTextChunk, toDoneChunk } from "./chat.router.helpers.js";
+import {
+  parseMessages,
+  parseHistory,
+  parseAudioBase64,
+  createEnvelope,
+  wantsStream,
+  toCompletionResponse,
+  toRoleChunk,
+  toTextChunk,
+  toCitationsChunk,
+  toDoneChunk,
+} from "./chat.router.helpers.js";
 import {
   SSE_HEADERS,
   MODEL_NOT_READY_ERROR,
@@ -46,8 +57,11 @@ export function createChatStatusRouter(agentService: AgentService): Router {
   return router;
 }
 
-/** `POST /completions`, mounted at `/v1/chat`. Always SSE, even a single chunk (spec §2). */
-export function createCompletionsRouter(agentService: AgentService): Router {
+/** What the completions route needs from the orchestrator - narrower than AgentService, so a test can pass a fake. Includes `cancel` (unlike the plan's original cut) because the streaming path below still cancels on client disconnect. */
+export type CompletionAgent = Pick<AgentService, "getStatus" | "invoke" | "cancel">;
+
+/** `POST /completions`, mounted at `/v1/chat`. JSON by default (OpenAI's default); SSE only for an explicit `stream: true`. */
+export function createCompletionsRouter(agent: CompletionAgent): Router {
   const router = Router();
 
   router.post("/completions", async (req: Request, res: Response) => {
@@ -56,8 +70,22 @@ export function createCompletionsRouter(agentService: AgentService): Router {
       res.status(400).json({ error: INVALID_MESSAGES_ERROR });
       return;
     }
-    if (agentService.getStatus().status !== "ready") {
+    if (agent.getStatus().status !== "ready") {
       res.status(503).json({ error: MODEL_NOT_READY_ERROR });
+      return;
+    }
+
+    const envelope = createEnvelope(req.body);
+
+    // The path the QVAC evaluator uses: one JSON object, citations on the message.
+    if (!wantsStream(req.body)) {
+      try {
+        const result = await agent.invoke(messages);
+        res.json(toCompletionResponse(envelope, result.answer, result.citations));
+      } catch (err) {
+        console.error("[chat:completions]", err);
+        res.status(500).json({ error: COMPLETION_ERROR });
+      }
       return;
     }
 
@@ -67,10 +95,9 @@ export function createCompletionsRouter(agentService: AgentService): Router {
     // is actually established (and abortable) before the first token,
     // which may be seconds away.
     res.flushHeaders();
-    // NOTE: chunks (the RAG citations) aren't wired into the SSE response
-    // yet — pending, see the team doc on the citations format.
-    const pending = agentService.invoke(messages, (textDelta) => {
-      res.write(toTextChunk(textDelta));
+    res.write(toRoleChunk(envelope));
+    const pending = agent.invoke(messages, (textDelta) => {
+      res.write(toTextChunk(envelope, textDelta));
     });
 
     // OpenAI's API has no dedicated cancel endpoint for chat completions -
@@ -83,21 +110,24 @@ export function createCompletionsRouter(agentService: AgentService): Router {
     // own already-settled requestId.
     const cancelOnDisconnect = () => {
       if (res.writableEnded) return;
-      agentService.cancel(pending.requestId).catch((err: unknown) => {
+      agent.cancel(pending.requestId).catch((err: unknown) => {
         console.error("[chat:completions:cancel]", err);
       });
     };
     res.on("close", cancelOnDisconnect);
 
     try {
-      await pending;
+      const result = await pending;
+      // Last, once the answer is final: whether to cite at all depends on
+      // what the model said (see selectCitations).
+      res.write(toCitationsChunk(envelope, result.citations));
     } catch (err) {
       console.error("[chat:completions]", err);
-      if (!res.writableEnded && !res.destroyed) res.write(toTextChunk(COMPLETION_ERROR));
+      if (!res.writableEnded && !res.destroyed) res.write(toTextChunk(envelope, COMPLETION_ERROR));
     } finally {
       res.off("close", cancelOnDisconnect);
       if (!res.writableEnded && !res.destroyed) {
-        res.write(toDoneChunk());
+        res.write(toDoneChunk(envelope));
         res.end();
       }
     }
@@ -106,8 +136,11 @@ export function createCompletionsRouter(agentService: AgentService): Router {
   return router;
 }
 
+/** What the voice route needs - narrower than VoiceAgentService, so a test can pass a fake. */
+export type VoiceAgent = Pick<VoiceAgentService, "invoke">;
+
 /** `POST /voice-completions`, mounted at `/v1/chat`. One full audio turn in, JSON out — never SSE, the client needs a complete synthesized-audio buffer, not incremental text. */
-export function createVoiceCompletionsRouter(agentService: AgentService, voiceAgentService: VoiceAgentService): Router {
+export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatus">, voiceAgent: VoiceAgent): Router {
   const router = Router();
 
   router.post("/voice-completions", async (req: Request, res: Response) => {
@@ -121,16 +154,17 @@ export function createVoiceCompletionsRouter(agentService: AgentService, voiceAg
       res.status(400).json({ error: INVALID_AUDIO_ERROR });
       return;
     }
-    if (agentService.getStatus().status !== "ready") {
+    if (agent.getStatus().status !== "ready") {
       res.status(503).json({ error: MODEL_NOT_READY_ERROR });
       return;
     }
 
     try {
-      const result = await voiceAgentService.invoke(history, audio);
+      const result = await voiceAgent.invoke(history, audio);
       res.json({
         transcript: result.transcript,
         answer: result.answer,
+        citations: result.citations,
         ...(result.audio ? { audioBase64: result.audio.toString("base64"), sampleRate: result.sampleRate } : {}),
       });
     } catch (err) {

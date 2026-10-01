@@ -1,4 +1,4 @@
-import type { RetrievedChunk } from "../../rag/domain/types.js";
+import type { Citation, RetrievedChunk } from "../../rag/domain/types.js";
 import type { AgentService, ConversationMessage } from "./agentService.js";
 import type { TranscriptionService } from "../../speech/service/transcription.service.js";
 import type { TtsService } from "../../tts/service/tts.service.js";
@@ -18,6 +18,8 @@ export interface VoiceInvokeResult {
   thinkingText?: string;
   /** RAG chunks retrieved for this turn and passed to the model as grounding context. */
   chunks: RetrievedChunk[];
+  /** Same citations AgentService computed for this turn - voice and text answers cite identically. */
+  citations: Citation[];
   /** Undefined when TTS synthesis fails — the turn still succeeds as text-only. */
   audio?: Buffer;
   sampleRate?: number;
@@ -63,6 +65,7 @@ export class VoiceAgentService {
       answer: result.answer,
       thinkingText: result.thinkingText,
       chunks: result.chunks,
+      citations: result.citations,
       ...synthesis,
     };
   }

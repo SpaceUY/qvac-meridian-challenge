@@ -1,4 +1,7 @@
+import { randomUUID } from "node:crypto";
 import type { ConversationMessage } from "../ai/orchestrator/agentService.js";
+import type { Citation } from "../rag/domain/types.js";
+import { PUBLIC_CHAT_MODEL } from "./chat.router.const.js";
 
 /**
  * Parses the OpenAI-shaped `messages` array, dropping any `system` role — the
@@ -47,12 +50,72 @@ export function parseAudioBase64(body: unknown): Buffer | undefined {
   return Buffer.from(body.audioBase64, "base64");
 }
 
-/** One OpenAI-shaped SSE chunk carrying the full text as a single delta. */
-export function toTextChunk(text: string): string {
-  return `data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`;
+/** The fields every object of ONE completion shares: OpenAI repeats the same id/created/model on each stream chunk. */
+export interface CompletionEnvelope {
+  id: string;
+  /** Unix time in SECONDS, as OpenAI sends it. */
+  created: number;
+  model: string;
+}
+
+/** Echoes the requested `model` (validating the alias is Ticket 4's job), or the public alias if absent. */
+export function createEnvelope(body: unknown, now: Date = new Date()): CompletionEnvelope {
+  const requested = isRecord(body) && typeof body.model === "string" && body.model !== "" ? body.model : undefined;
+  return {
+    id: `chatcmpl-${randomUUID()}`,
+    created: Math.floor(now.getTime() / 1000),
+    model: requested ?? PUBLIC_CHAT_MODEL,
+  };
+}
+
+/** OpenAI's default is NOT streaming: only an explicit `stream: true` gets SSE. */
+export function wantsStream(body: unknown): boolean {
+  return isRecord(body) && body.stream === true;
+}
+
+/** The `stream: false` response: a whole `chat.completion`. `citations` sits on the message - where the evaluator reads it. */
+export function toCompletionResponse(envelope: CompletionEnvelope, answer: string, citations: Citation[]) {
+  return {
+    ...envelope,
+    object: "chat.completion",
+    choices: [
+      {
+        index: 0,
+        message: { role: "assistant", content: answer, refusal: null, citations },
+        logprobs: null,
+        finish_reason: "stop",
+      },
+    ],
+  };
+}
+
+type StreamDelta = { role?: "assistant"; content?: string; citations?: Citation[] };
+
+/** One `chat.completion.chunk` as an SSE event. */
+function toChunkEvent(envelope: CompletionEnvelope, delta: StreamDelta, finishReason: "stop" | null = null): string {
+  const chunk = {
+    ...envelope,
+    object: "chat.completion.chunk",
+    choices: [{ index: 0, delta, logprobs: null, finish_reason: finishReason }],
+  };
+  return `data: ${JSON.stringify(chunk)}\n\n`;
+}
+
+/** First chunk: announces the role with empty content, as OpenAI does. */
+export function toRoleChunk(envelope: CompletionEnvelope): string {
+  return toChunkEvent(envelope, { role: "assistant", content: "" });
+}
+
+export function toTextChunk(envelope: CompletionEnvelope, text: string): string {
+  return toChunkEvent(envelope, { content: text });
+}
+
+/** The last content chunk, sent once the answer is final (what to cite depends on it). Sent even when empty, so "none" is explicit. */
+export function toCitationsChunk(envelope: CompletionEnvelope, citations: Citation[]): string {
+  return toChunkEvent(envelope, { citations });
 }
 
 /** The closing chunk (empty delta + finish_reason) followed by the SSE terminator. */
-export function toDoneChunk(): string {
-  return `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`;
+export function toDoneChunk(envelope: CompletionEnvelope): string {
+  return `${toChunkEvent(envelope, {}, "stop")}data: [DONE]\n\n`;
 }

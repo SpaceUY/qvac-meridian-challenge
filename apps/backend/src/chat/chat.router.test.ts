@@ -1,9 +1,16 @@
 import * as http from "node:http";
 import type { AddressInfo } from "node:net";
 import express from "express";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import OpenAI from "openai";
 import type { AgentService, AgentStatusPayload, ConversationMessage, InvokeResult } from "../ai/orchestrator/agentService.js";
-import { createChatStatusRouter, createCompletionsRouter } from "./chat.router.js";
+import {
+  createChatStatusRouter,
+  createCompletionsRouter,
+  createVoiceCompletionsRouter,
+  type CompletionAgent,
+  type VoiceAgent,
+} from "./chat.router.js";
 
 /**
  * Stands in for `AgentService` for router-level tests: `invoke()` never
@@ -11,7 +18,7 @@ import { createChatStatusRouter, createCompletionsRouter } from "./chat.router.j
  * request open long enough to abort it client-side and observe the
  * server's reaction, without a real model/graph.
  */
-const FAKE_INVOKE_RESULT: InvokeResult = { answer: "ok", chunks: [] };
+const FAKE_INVOKE_RESULT: InvokeResult = { answer: "ok", chunks: [], citations: [] };
 
 class FakeAgentService {
   readonly cancelledRequestIds: string[] = [];
@@ -77,7 +84,7 @@ describe("POST /completions - client disconnect", () => {
     const response = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: [{ role: "user", content: "hello" }] }),
+      body: JSON.stringify({ messages: [{ role: "user", content: "hello" }], stream: true }),
       signal: controller.signal,
     });
     expect(response.status).toBe(200);
@@ -103,7 +110,7 @@ describe("POST /completions - client disconnect", () => {
     const response = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: [{ role: "user", content: "hello" }] }),
+      body: JSON.stringify({ messages: [{ role: "user", content: "hello" }], stream: true }),
     });
     const body = await response.text();
 
@@ -148,5 +155,103 @@ describe("POST /preload/cancel", () => {
     const response = await fetch(`http://127.0.0.1:${port}/api/chat/preload/cancel`, { method: "POST" });
 
     expect(response.status).toBe(500);
+  });
+});
+
+const ANSWER = "Q2 2026 total revenue was $18.4M.";
+const CITATIONS = [{ file: "reports/q2-2026-sales-performance-report.md", score: 0.83 }];
+const QUESTION = [{ role: "user" as const, content: "What was Q2 2026 revenue?" }];
+
+/** Orchestrator stand-in: streams the answer in two deltas, like the real one streams tokens. */
+const fakeAgent: CompletionAgent = {
+  getStatus: () => ({ status: "ready", model: { name: "fake", quantization: "none" } }),
+  invoke: (_messages, onToken) => {
+    const promise = (async () => {
+      onToken?.("Q2 2026 total revenue ");
+      onToken?.("was $18.4M.");
+      return { answer: ANSWER, chunks: [], citations: CITATIONS };
+    })();
+    return Object.assign(promise, { requestId: "req-fake" });
+  },
+  cancel: async () => {},
+};
+
+const fakeVoiceAgent: VoiceAgent = {
+  invoke: async () => ({ transcript: "What was Q2 revenue?", answer: ANSWER, chunks: [], citations: CITATIONS }),
+};
+
+/** `citations` is our extension to the OpenAI shape, so the SDK's types don't declare it. */
+function citationsOf(value: object): unknown {
+  return (value as { citations?: unknown }).citations;
+}
+
+// Shared by both describes below: one server, one stock OpenAI client, pointed at both routes.
+let contractServer: http.Server;
+let client: OpenAI;
+
+beforeAll(async () => {
+  const app = express();
+  app.use(express.json());
+  app.use("/v1/chat", createCompletionsRouter(fakeAgent));
+  app.use("/v1/chat", createVoiceCompletionsRouter(fakeAgent, fakeVoiceAgent));
+  contractServer = await new Promise<http.Server>((resolve) => {
+    const listening = app.listen(0, "127.0.0.1", () => resolve(listening));
+  });
+  const { port } = contractServer.address() as AddressInfo;
+  // A stock OpenAI client - the same kind the QVAC evaluator points at the API.
+  client = new OpenAI({ baseURL: `http://127.0.0.1:${port}/v1`, apiKey: "not-needed" });
+});
+
+afterAll(() => new Promise<void>((resolve) => contractServer.close(() => resolve())));
+
+describe("POST /v1/chat/completions - contract with the stock OpenAI SDK", () => {
+  it("stream omitted: a chat.completion with message.citations", async () => {
+    const completion = await client.chat.completions.create({ model: "meridian-assistant", messages: QUESTION });
+
+    expect(completion.object).toBe("chat.completion");
+    expect(completion.id).toMatch(/^chatcmpl-/);
+    expect(completion.model).toBe("meridian-assistant");
+    expect(completion.choices[0].finish_reason).toBe("stop");
+    expect(completion.choices[0].message.content).toBe(ANSWER);
+    expect(citationsOf(completion.choices[0].message)).toEqual(CITATIONS);
+  });
+
+  it("stream: true: text as deltas, one id throughout, citations in the last content chunk", async () => {
+    const stream = await client.chat.completions.create({ model: "meridian-assistant", messages: QUESTION, stream: true });
+
+    const ids = new Set<string>();
+    let text = "";
+    let citations: unknown;
+    for await (const chunk of stream) {
+      ids.add(chunk.id);
+      expect(chunk.object).toBe("chat.completion.chunk");
+      text += chunk.choices[0].delta.content ?? "";
+      citations = citationsOf(chunk.choices[0].delta) ?? citations;
+    }
+
+    expect(ids.size).toBe(1);
+    expect(text).toBe(ANSWER);
+    expect(citations).toEqual(CITATIONS);
+  });
+
+  it("stream helper: the accumulated final message keeps citations", async () => {
+    const runner = client.chat.completions.stream({ model: "meridian-assistant", messages: QUESTION });
+    const final = await runner.finalChatCompletion();
+    expect(citationsOf(final.choices[0].message)).toEqual(CITATIONS);
+  });
+});
+
+describe("POST /v1/chat/voice-completions", () => {
+  it("returns the same citations array as the text endpoint", async () => {
+    const res = await fetch(`${client.baseURL}/chat/voice-completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [], audioBase64: Buffer.from("fake-wav").toString("base64") }),
+    });
+
+    expect(res.status).toBe(200);
+    // Node's fetch types `json()` as `Promise<unknown>`: narrow before reading a field, or `tsc` fails.
+    const body = (await res.json()) as { citations?: unknown };
+    expect(body.citations).toEqual(CITATIONS);
   });
 });

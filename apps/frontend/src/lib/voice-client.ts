@@ -7,13 +7,16 @@
 // store are.
 
 import type { OpenAIMessage } from '@/lib/chat-client'
-import { EngineError } from '@/lib/chat-client'
+import { EngineError, parseCitations } from '@/lib/chat-client'
+import type { Citation } from '@/lib/chat-types'
 
 const VOICE_COMPLETIONS_ENDPOINT = '/v1/chat/voice-completions'
 
 export type VoiceCompletionResult = {
   transcript: string
   answer: string
+  /** Same shape and meaning as the text endpoint's citations. Empty when the answer wasn't grounded. */
+  citations: Citation[]
   /** `data:audio/wav;base64,...` ready for an <audio src>. Absent if TTS synthesis failed server-side - the turn is still valid. */
   audioDataUrl?: string
 }
@@ -47,7 +50,7 @@ function parseVoiceCompletionBody(body: unknown): VoiceCompletionResult {
     throw new EngineError('the server responded with an unexpected shape')
   }
   const audioDataUrl = typeof body.audioBase64 === 'string' ? `data:audio/wav;base64,${body.audioBase64}` : undefined
-  return { transcript: body.transcript, answer: body.answer, audioDataUrl }
+  return { transcript: body.transcript, answer: body.answer, citations: parseCitations(body.citations), audioDataUrl }
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {

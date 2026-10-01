@@ -2,11 +2,11 @@ import * as os from "node:os";
 import { randomUUID } from "node:crypto";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type { RagRetrievalService } from "../../rag/service/rag.service.js";
-import type { RetrievedChunk } from "../../rag/domain/types.js";
+import type { Citation, RetrievedChunk } from "../../rag/domain/types.js";
+import { selectCitations } from "./citationPolicy.js";
 import { ChatQVAC } from "./qvacChatModel.js";
 import { createGraph } from "./graph.js";
 import { State } from "./domain.js";
-import { loadCorpusContext } from "../context/fullCorpusContext.js";
 import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
 import type { ModelManagementService } from "../../models/service/models.service.js";
 import { isCancellationError } from "../../models/domain/errors.js";
@@ -38,6 +38,8 @@ export interface InvokeResult {
   thinkingText?: string;
   /** RAG chunks retrieved for this turn and passed to the model as grounding context. */
   chunks: RetrievedChunk[];
+  /** Source documents for `answer`, in the evaluator's `{ file, score }` shape. Empty when the answer wasn't grounded - see `selectCitations`. */
+  citations: Citation[];
 }
 
 /**
@@ -61,8 +63,14 @@ export class AgentService {
     ragService: RagRetrievalService,
     documentRepository: DocumentRepository,
   ) {
-    const { modelSource, modelName, quantization, temperature, ctxSize, engineConfig } =
-      this.selectModelConfig();
+    const {
+      modelSource,
+      modelName,
+      quantization,
+      temperature,
+      ctxSize,
+      engineConfig,
+    } = this.selectModelConfig();
     this.modelInfo = { name: modelName, quantization };
     this.chatModel = new ChatQVAC({
       service,
@@ -173,17 +181,12 @@ export class AgentService {
     messages: ConversationMessage[],
     onToken?: (textDelta: string) => void,
   ): Promise<InvokeResult> {
-    //const corpusContext = await this.corpusContext;
-
     const langchainMessages = messages.map(({ role, message }) =>
       role === "user" ? new HumanMessage(message) : new AIMessage(message),
     );
 
     const stream = await this.graph.stream(
       {
-        // new SystemMessage(
-        //   `Reference documents. Use them to answer questions and cite the source path when relevant:\n\n${corpusContext}`,
-        // ),
         messages: langchainMessages,
       },
       { streamMode: ["messages", "values"] },
@@ -215,12 +218,13 @@ export class AgentService {
     if (!streamedAnyToken && answer) onToken?.(answer);
 
     const thinkingText = lastAIMessage?.additional_kwargs.thinkingText;
+    const chunks = finalState?.chunks ?? [];
 
     return {
       answer,
-      thinkingText:
-        typeof thinkingText === "string" ? thinkingText : undefined,
-      chunks: finalState?.chunks ?? [],
+      thinkingText: typeof thinkingText === "string" ? thinkingText : undefined,
+      chunks,
+      citations: selectCitations(answer, chunks),
     };
   }
 }

@@ -1,7 +1,8 @@
 import { Markdown } from '@/components/markdown'
 import { AudioPlayback } from '@/components/audio-playback'
+import { CitationSources } from '@/components/citation-sources'
 import { parseThinking } from '@/lib/parse-thinking'
-import type { Citation, History, Message } from '@/lib/chat-types'
+import type { History, Message } from '@/lib/chat-types'
 
 type Props = { history: History }
 
@@ -38,7 +39,7 @@ function MessageBubble({ message }: { message: Message }) {
 
       {message.status.type === 'error' && <p className="mt-1 text-xs text-destructive">{message.status.reason}</p>}
       {message.audio && <AudioPlayback audio={message.audio} autoPlay />}
-      {message.citations.length > 0 && <CitationList citations={message.citations} />}
+      <CitationSources citations={message.citations} />
     </div>
   )
 }
@@ -57,14 +58,3 @@ function Cursor() {
   return <span className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse bg-foreground align-middle" />
 }
 
-function CitationList({ citations }: { citations: Citation[] }) {
-  return (
-    <div className="mt-1.5 flex flex-wrap gap-1">
-      {citations.map((citation, i) => (
-        <span key={`${citation.file}-${i}`} className="rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-          {citation.file}
-        </span>
-      ))}
-    </div>
-  )
-}
