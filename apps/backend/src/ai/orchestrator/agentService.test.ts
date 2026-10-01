@@ -399,3 +399,45 @@ describe("AgentService.invoke", () => {
     expect(agentService.getStatus().status).toBe("ready");
   });
 });
+
+/** Lets every fixture chunk through: these tests are about what AgentService does WITH chunks, not about the threshold (FakeEmbeddingPort scores are not real similarities). */
+const PERMISSIVE_RAG_CONFIG = { topK: 5, minScore: -1, maxContextChunks: 4, dedupeExactContent: true };
+
+async function buildAgentWithPermissiveRag(runtime: FakeModelRuntime): Promise<AgentService> {
+  const embeddingPort = new FakeEmbeddingPort();
+  const vectorStore = await buildFixtureVectorStore(embeddingPort);
+  return new AgentService(
+    new ModelManagementService(runtime, runtime),
+    new RagRetrievalService(embeddingPort, vectorStore, PERMISSIVE_RAG_CONFIG),
+    new FakeDocumentRepository([]),
+  );
+}
+
+describe("AgentService.invoke citations", () => {
+  it("returns one citation per retrieved document for a grounded answer", async () => {
+    const runtime = new FakeModelRuntime([{ text: "Enterprise P1 SLA is 4 hours.", toolCalls: [] }]);
+    const agent = await buildAgentWithPermissiveRag(runtime);
+
+    const result = await agent.invoke([{ role: "user", message: "What is the P1 SLA?" }]);
+
+    const retrievedFiles = new Set(result.chunks.map((chunk) => chunk.source));
+    expect(result.citations.length).toBeGreaterThan(0);
+    expect(result.citations).toHaveLength(retrievedFiles.size);
+    for (const citation of result.citations) {
+      expect(retrievedFiles.has(citation.file)).toBe(true);
+      expect(typeof citation.score).toBe("number");
+    }
+  });
+
+  it("returns no citations when the model answers that the documents don't cover it", async () => {
+    const runtime = new FakeModelRuntime([
+      { text: "The available documents do not contain enough information to answer this question.", toolCalls: [] },
+    ]);
+    const agent = await buildAgentWithPermissiveRag(runtime);
+
+    const result = await agent.invoke([{ role: "user", message: "Who is the CEO?" }]);
+
+    expect(result.chunks.length).toBeGreaterThan(0); // retrieval DID find something...
+    expect(result.citations).toEqual([]); // ...but the answer used none of it
+  });
+});

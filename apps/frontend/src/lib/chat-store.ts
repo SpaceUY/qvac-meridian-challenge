@@ -17,6 +17,7 @@ type ChatStore = {
     transcript: string
     assistantMessageId: string
     answer: string
+    citations: Citation[]
     audio?: { dataUrl: string }
   }) => void
 }
@@ -53,12 +54,12 @@ export const useChatStore = create<ChatStore>((set) => ({
       history: withMessage(state.history, id, (m) => ({ ...m, status: { type: 'error', reason } })),
     })),
 
-  voiceTurnAdded: ({ userMessageId, transcript, assistantMessageId, answer, audio }) =>
+  voiceTurnAdded: ({ userMessageId, transcript, assistantMessageId, answer, citations, audio }) =>
     set((state) => ({
       history: [
         ...state.history,
         createMessage(userMessageId, 'user', transcript, 'done'),
-        { ...createMessage(assistantMessageId, 'assistant', answer, 'done'), audio },
+        { ...createMessage(assistantMessageId, 'assistant', answer, 'done'), citations, audio },
       ],
     })),
 }))

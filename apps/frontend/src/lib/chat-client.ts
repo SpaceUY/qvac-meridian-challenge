@@ -74,7 +74,7 @@ function parseChunk(json: string): ChatDelta | null {
   if (!isObject(delta)) return null
 
   const text = typeof delta.content === 'string' && delta.content !== '' ? delta.content : undefined
-  const citations = Array.isArray(delta.citations) ? delta.citations.filter(isCitation) : []
+  const citations = parseCitations(delta.citations)
 
   if (text === undefined && citations.length === 0) return null
 
@@ -93,6 +93,11 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null
 }
 
+/** Keeps only well-formed citations. Exported for voice-client.ts: the voice endpoint carries the same array. */
+export function parseCitations(value: unknown): Citation[] {
+  return Array.isArray(value) ? value.filter(isCitation) : []
+}
+
 function isCitation(v: unknown): v is Citation {
-  return isObject(v) && typeof v.file === 'string'
+  return isObject(v) && typeof v.file === 'string' && (v.score === undefined || typeof v.score === 'number')
 }

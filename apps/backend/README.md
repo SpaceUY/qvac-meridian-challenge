@@ -18,6 +18,7 @@ Run from the repo root, or with `--workspace=apps/backend`:
 |---|---|
 | `npm run dev:server` | Starts the Express server on `:3001` (`tsx watch`) |
 | `npm run model-lifecycle-demo --workspace=apps/backend` | Runs the full lifecycle for real, both sources, no HTTP — see [Demo script](#demo-script) |
+| `npm run ingest --workspace=apps/backend` | Builds or updates the vector store in `.lancedb/` from `corpus/` — see [RAG: corpus ingestion](#rag-corpus-ingestion) |
 
 Only run **one** QVAC-backed process at a time (`dev:server` *or* the demo script) — the SDK locks its local storage to a single process; running both concurrently fails with `File descriptor could not be locked`.
 
@@ -43,6 +44,27 @@ src/
       models.router.helpers.ts  Request parsers + error-to-HTTP mapping
     demo.ts                     End-to-end proof script (see below)
     demo.const.ts
+  rag/
+    domain/                    Types and ports (EmbeddingPort, VectorStorePort, VectorStoreWriterPort, ChunkerPort)
+    infra/
+      lanceDbVectorStore.ts    The real vector store: read side (server) + write side (ingest only)
+      qvacEmbeddingAdapter.ts  SDK embed() calls
+      qvacChunker.adapter.ts   SDK ragChunk() calls
+      inMemoryVectorStore.ts   Test doubles: in-memory store + fake embedder + fixtures
+      fakeEmbedding.adapter.ts
+      fixtures/
+    ingest/
+      corpusReader.ts          Walks corpus/, hashes each text file
+      corpusIngest.service.ts  Incremental ingest: diff by hash -> chunk -> embed -> write
+      ingest.cli.ts            `npm run ingest`
+    service/
+      qvacEmbeddingService.ts  The one embedder (EmbeddingGemma): load, queue, batch, validate
+      rag.service.ts           Retrieval: embed the question -> search -> dedupe -> rerank -> filter by minScore
+      metadataRerank.ts        Deterministic reorder by document authority + supersession (algorithm only - see config/rag.config.ts for the tunable weights)
+      contextBuilder.ts        Formats retrieved chunks into the prompt's context block
+  config/
+    rag.config.ts              Every RAG tuning knob in one place: CHUNK_OPTIONS, DEFAULT_RAG_CONFIG (topK/minScore/maxContextChunks), metadataRerank's weights
+    models.config.ts           Model registry entries/sources, shared across pipelines
 qvac.config.mjs                  @qvac/sdk cache location, computed relative to the repo root
 postman/                         Postman collection for manual endpoint testing
 ```
@@ -167,6 +189,84 @@ locally, then starts a longer synthesis and cancels it mid-flight to prove
 the stop control actually interrupts local synthesis — no cloud service
 involved anywhere in the path. Same "only one QVAC-backed process at a
 time" constraint as the other demo scripts applies.
+
+## RAG: corpus ingestion
+
+The vector store is file-backed (LanceDB) and lives in `.lancedb/` at the
+repo root. It is **derived data**: gitignored, and rebuilt by
+
+    npm run ingest --workspace=apps/backend
+
+Run it before starting the server: the server only reads the table and
+refuses to start without it. It never ingests on its own, so restarting it
+never re-embeds the corpus.
+
+Ingestion is incremental. Every document is hashed (SHA-256 of its content)
+and the hash is stored on each of its chunk rows, so the table itself is the
+record of what has been ingested - there is no separate state file to drift
+out of sync. A document whose hash is unchanged is never re-chunked and never
+re-embedded. A changed document has its own chunks replaced, by `source`,
+without touching the others. A document deleted from `corpus/` has its chunks
+removed on the next run. To force a full rebuild: `rm -rf .lancedb`.
+
+Paths stored in the table (and therefore in citations) are relative to
+`corpus/` — `reports/q1-2026-sales-summary.md`, never `corpus/reports/...`.
+
+Embeddings come from `EMBEDDINGGEMMA_300M_Q4_0` (768 dimensions) through the
+SDK's `embed()`; chunking through `ragChunk()`. The SDK's own RAG workspace
+(`ragIngest()`/`ragSearch()`) is deliberately not used — the challenge
+excludes it for this requirement.
+
+### Known limitations
+
+- **Changing `CHUNK_OPTIONS` or the embedding model is not detected.** The
+  ingest state tracks document content only, so unchanged documents are
+  skipped even if they would now be chunked or embedded differently. After
+  changing either one: `rm -rf .lancedb && npm run ingest --workspace=apps/backend`.
+- **The server does not see a re-ingest until it restarts.** LanceDB is
+  opened without `readConsistencyInterval`, so writes from another process
+  are not picked up by an already-open table.
+- **The embedding model loads on the first question**, not in
+  `POST /api/chat/preload`: that first answer is a few seconds slower, and
+  `/api/chat/status` reports `ready` once the chat model alone is loaded.
+- `.csv`/`.json` files are chunked as raw text, and `.html` keeps its tags.
+- An empty document produces no chunks and therefore no rows, so every run
+  re-reads it and reports it as `added` (it is never embedded - there is
+  nothing to embed). The corpus has no empty documents today.
+- `corpus/pictures/` is not ingested: `ragChunk()` takes text only. Both
+  images have some visible text (a logo, small equipment labels), but
+  nothing that answers a business question, so nothing answerable is lost
+  today — checked by eye, not by OCR. A corpus with scanned documents or
+  photographed text would need OCR to be searchable.
+- `ai/demo.ts` and `speech/demo.ts` still use the in-memory fixture store.
+
+## Citations
+
+Every `POST /v1/chat/completions` answer carries `citations` - the array the QVAC
+evaluator checks. Each entry is exactly `{ "file": "<corpus-relative path>", "score": <number> }`.
+
+- **Where:** `choices[0].message.citations` without streaming (the default - `stream`
+  omitted or `false`); with `stream: true`, in the last content chunk's
+  `delta.citations`, right before the `finish_reason: "stop"` chunk. A stock OpenAI SDK
+  client keeps it in all three reading modes (`chat.router.test.ts`).
+- **What is cited:** one entry per source *document*, not per chunk, carrying the best
+  chunk score. `score` is cosine similarity (higher is closer), rounded to 4 decimals.
+  Sorted best-first, ties by path, so identical runs give identical arrays.
+- **Only what contributed:** chunks below `minScore` never reach the model (retrieval),
+  and if the answer *starts with* the insufficient-context sentence
+  (`INSUFFICIENT_CONTEXT_PREFIX`), citations are `[]` - a refusal used no source.
+  One function decides this: `selectCitations` (`ai/orchestrator/citationPolicy.ts`).
+- **Why no titles or snippets in the array:** the evaluator fixes the contract; the UI
+  derives a readable name from `file` instead (`frontend/src/lib/citation-label.ts`).
+
+### Known limitations
+
+- A refusal worded differently (e.g. in Spanish, or "Sorry, ...") is not detected and
+  keeps its citations.
+- Retrieval runs on every question, so an answer produced by `lookup_stock` still cites
+  any corpus chunks that passed `minScore`.
+- Citations are per answer, not per sentence: a small model can't reliably mark which
+  sentence came from which chunk.
 
 ## Conventions
 

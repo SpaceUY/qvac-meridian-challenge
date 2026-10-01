@@ -108,6 +108,7 @@ export function useVoiceTurn() {
         transcript: result.transcript,
         assistantMessageId: crypto.randomUUID(),
         answer: result.answer,
+        citations: result.citations,
         audio: result.audioDataUrl ? { dataUrl: result.audioDataUrl } : undefined,
       })
       if (mountedRef.current) setPhase({ type: 'idle' })
