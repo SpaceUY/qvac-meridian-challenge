@@ -5,6 +5,7 @@ import {
   parseMessages,
   parseHistory,
   parseAudioBase64,
+  parseGenerationOptions,
   describeParseError,
   createEnvelope,
   wantsStream,
@@ -80,7 +81,8 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
     // The path the QVAC evaluator uses: one JSON object, citations on the message.
     if (!wantsStream(req.body)) {
       try {
-        const result = await agent.invoke(messages);
+        const options = parseGenerationOptions(req.body);
+        const result = await agent.invoke(messages, options);
         res.json(toCompletionResponse(envelope, result.answer, result.citations));
       } catch (err) {
         console.error("[chat:completions]", err);
@@ -96,7 +98,8 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
     // which may be seconds away.
     res.flushHeaders();
     res.write(toRoleChunk(envelope));
-    const pending = agent.invoke(messages, (textDelta) => {
+    const options = parseGenerationOptions(req.body);
+    const pending = agent.invoke(messages, options, (textDelta) => {
       res.write(toTextChunk(envelope, textDelta));
     });
 

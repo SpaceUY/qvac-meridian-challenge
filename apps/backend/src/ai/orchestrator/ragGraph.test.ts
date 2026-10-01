@@ -12,21 +12,23 @@ import {
 import { GROUNDING_INSTRUCTIONS, INSUFFICIENT_CONTEXT_MESSAGE } from "./ragGraph.const.js";
 
 describe("routeOnEvidence", () => {
+  const BASE_STATE = { temperature: undefined, seed: undefined };
+
   it("routes to insufficientContext when hasEvidence is false", () => {
     expect(
-      routeOnEvidence({ messages: [], chunks: [], hasEvidence: false, hasVisualInput: false }, {}),
+      routeOnEvidence({ ...BASE_STATE, messages: [], chunks: [], hasEvidence: false, hasVisualInput: false }, {}),
     ).toBe("insufficientContext");
   });
 
   it("routes to llm when hasEvidence is true", () => {
     expect(
-      routeOnEvidence({ messages: [], chunks: [], hasEvidence: true, hasVisualInput: false }, {}),
+      routeOnEvidence({ ...BASE_STATE, messages: [], chunks: [], hasEvidence: true, hasVisualInput: false }, {}),
     ).toBe("llm");
   });
 
   it("routes to llm when there is no RAG evidence but there is visual input", () => {
     expect(
-      routeOnEvidence({ messages: [], chunks: [], hasEvidence: false, hasVisualInput: true }, {}),
+      routeOnEvidence({ ...BASE_STATE, messages: [], chunks: [], hasEvidence: false, hasVisualInput: true }, {}),
     ).toBe("llm");
   });
 });
@@ -34,7 +36,7 @@ describe("routeOnEvidence", () => {
 describe("insufficientContextNode", () => {
   it("returns the fixed insufficient-context message without calling any model", async () => {
     const update = (await insufficientContextNode(
-      { messages: [], chunks: [], hasEvidence: false, hasVisualInput: false },
+      { temperature: undefined, seed: undefined, messages: [], chunks: [], hasEvidence: false, hasVisualInput: false },
       {},
     )) as {
       messages: AIMessage[];
@@ -60,6 +62,8 @@ describe("buildRetrieveNode", () => {
         chunks: [],
         hasEvidence: false,
         hasVisualInput: false,
+        temperature: undefined,
+        seed: undefined,
       },
       {},
     );
@@ -74,7 +78,7 @@ describe("buildRetrieveNode", () => {
 
     const node = buildRetrieveNode(ragService);
     const update = await node(
-      { messages: [], chunks: [], hasEvidence: false, hasVisualInput: false },
+      { messages: [], chunks: [], hasEvidence: false, hasVisualInput: false, temperature: undefined, seed: undefined },
       {},
     );
 
@@ -91,7 +95,14 @@ describe("buildRetrieveNode", () => {
       content: [{ type: "image", mimeType: "image/jpeg", data: new Uint8Array([0xff, 0xd8]) }],
     });
     const update = await node(
-      { messages: [imageMessage], chunks: [], hasEvidence: false, hasVisualInput: false },
+      {
+        messages: [imageMessage],
+        chunks: [],
+        hasEvidence: false,
+        hasVisualInput: false,
+        temperature: undefined,
+        seed: undefined,
+      },
       {},
     );
 
@@ -112,7 +123,14 @@ describe("buildRetrieveNode", () => {
       ],
     });
     const update = await node(
-      { messages: [message], chunks: [], hasEvidence: false, hasVisualInput: false },
+      {
+        messages: [message],
+        chunks: [],
+        hasEvidence: false,
+        hasVisualInput: false,
+        temperature: undefined,
+        seed: undefined,
+      },
       {},
     );
 
@@ -137,7 +155,14 @@ describe("buildLlmNode", () => {
     const node = buildLlmNode(model);
     const humanMessage = new HumanMessage("What is the enterprise P1 SLA?");
     const update = (await node(
-      { messages: [humanMessage], chunks, hasEvidence: true, hasVisualInput: false },
+      {
+        messages: [humanMessage],
+        chunks,
+        hasEvidence: true,
+        hasVisualInput: false,
+        temperature: undefined,
+        seed: undefined,
+      },
       {},
     )) as {
       messages: AIMessage[];
