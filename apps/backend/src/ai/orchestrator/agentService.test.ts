@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ModelManagementError, OperationCancelledError } from "../../models/domain/errors.js";
 import { ModelManagementService } from "../../models/service/models.service.js";
 import type {
   ModelProvisioningPort,
@@ -83,6 +84,89 @@ class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
   async close() {}
 
   async cancel() {}
+}
+
+interface PendingChatCall {
+  resolve: (result: ChatCompletionResult) => void;
+  reject: (err: unknown) => void;
+}
+
+/**
+ * Like `FakeModelRuntime` above, but `chatComplete` calls stay pending until
+ * the test explicitly `settle()`s or `cancel()`s them by requestId - needed
+ * to exercise `AgentService.cancel()`, which cancels whatever chat call is
+ * currently in flight on the underlying `ChatQVAC` model.
+ */
+class ControllableModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
+  private nextRequestId = 0;
+  private readonly pending = new Map<string, PendingChatCall>();
+  private readonly chatRequestIdQueue: string[] = [];
+  private chatRequestWaiter?: (requestId: string) => void;
+
+  async searchRegistry() {
+    return [];
+  }
+
+  async listRegistry() {
+    return [];
+  }
+
+  async provision() {}
+
+  load(source: ModelSource): Promise<LoadedModel> & { requestId: string } {
+    return Object.assign(
+      Promise.resolve({ modelId: "fake-model", source, loadedAt: new Date() }),
+      { requestId: "req-load" },
+    );
+  }
+
+  infer(): Promise<InferenceResult> & { requestId: string } {
+    return Object.assign(Promise.resolve({ text: "" }), {
+      requestId: "req-infer",
+    });
+  }
+
+  chatComplete(): Promise<ChatCompletionResult> & { requestId: string } {
+    const requestId = `req-chat-${(this.nextRequestId += 1)}`;
+    const promise = new Promise<ChatCompletionResult>((resolve, reject) => {
+      this.pending.set(requestId, { resolve, reject });
+    });
+    if (this.chatRequestWaiter) {
+      this.chatRequestWaiter(requestId);
+      this.chatRequestWaiter = undefined;
+    } else {
+      this.chatRequestIdQueue.push(requestId);
+    }
+    return Object.assign(promise, { requestId });
+  }
+
+  async unload() {}
+
+  async close() {}
+
+  async cancel(requestId: string) {
+    const call = this.pending.get(requestId);
+    if (!call) return; // unknown, already-settled, or already-cancelled: safe no-op
+    this.pending.delete(requestId);
+    call.reject(new OperationCancelledError(requestId));
+  }
+
+  /** Resolves the given in-flight chat call with a fixed reply. Throws if `requestId` isn't pending. */
+  settle(requestId: string, result: ChatCompletionResult = { text: "ok", toolCalls: [] }): void {
+    const call = this.pending.get(requestId);
+    if (!call) throw new Error(`no pending chat call for requestId "${requestId}"`);
+    this.pending.delete(requestId);
+    call.resolve(result);
+  }
+
+  /** Resolves with the requestId of the next `chatComplete` call, so a test can wait for it to actually start before cancelling. */
+  nextChatRequestId(): Promise<string> {
+    const queued = this.chatRequestIdQueue.shift();
+    if (queued) return Promise.resolve(queued);
+    return new Promise((resolve) => {
+      this.chatRequestWaiter = resolve;
+    });
+  }
 }
 
 /** In-memory `DocumentRepository` fixture - lets tests control the ingested inventory directly instead of touching `corpus/` on disk. */
@@ -197,5 +281,44 @@ describe("AgentService.invoke", () => {
     );
     expect(toolMessage?.content).toContain("policies/warranty-terms.md");
     expect(toolMessage?.content).toContain("faqs/support-sla-faq.html");
+  });
+
+  it("cancels an in-flight invoke without leaving the model unusable for a follow-up invoke", async () => {
+    const runtime = new ControllableModelRuntime();
+    const modelService = new ModelManagementService(runtime, runtime);
+
+    const embeddingPort = new FakeEmbeddingPort();
+    const vectorStore = await buildFixtureVectorStore(embeddingPort);
+    const ragService = new RagRetrievalService(embeddingPort, vectorStore);
+
+    const agentService = new AgentService(
+      modelService,
+      ragService,
+      new FakeDocumentRepository([]),
+    );
+
+    const pending = agentService.invoke([
+      { role: "user", message: "What's the warranty policy?" },
+    ]);
+    const chatRequestId = await runtime.nextChatRequestId();
+
+    await agentService.cancel(pending.requestId);
+
+    await expect(pending).rejects.toBeInstanceOf(ModelManagementError);
+
+    const followUp = agentService.invoke([
+      { role: "user", message: "Ask again" },
+    ]);
+    const followUpChatRequestId = await runtime.nextChatRequestId();
+    expect(followUpChatRequestId).not.toBe(chatRequestId);
+    runtime.settle(followUpChatRequestId, { text: "hi again", toolCalls: [] });
+
+    // Not asserting on the exact answer text: the grounding fallback in
+    // graph.ts's buildLlmNode may substitute a fixed message when this
+    // fixture setup finds no RAG evidence, independent of cancellation.
+    // What matters here is that the model is still usable at all.
+    await expect(followUp).resolves.toEqual(
+      expect.objectContaining({ answer: expect.any(String) }),
+    );
   });
 });

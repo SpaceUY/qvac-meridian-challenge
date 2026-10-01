@@ -59,7 +59,7 @@ export function useChat() {
       { openAIMessages, assistantMessageId, signal: controller.signal },
       { onSettled: () => { abortRef.current = null } },
     )
-  }, []) // sin dependencias: lee todo de refs, igual que antes
+  }, []) // no dependencies: reads everything from refs, same as before
 
   const stop = useCallback(() => abortRef.current?.abort(), [])
 
@@ -72,8 +72,8 @@ export function useChat() {
   }
 }
 
-// Cuántos pedacitos de red juntamos antes de mandar el texto acumulado al
-// store, en vez de mandar uno por uno.
+// How many network chunks we batch before sending the accumulated text to
+// the store, instead of sending one at a time.
 const CHUNKS_PER_BATCH = 2
 
 async function runTurn(args: {
@@ -95,7 +95,7 @@ async function runTurn(args: {
     buffer.flush()
     useChatStore.getState().responseFinished(assistantMessageId)
   } catch (err) {
-    buffer.flush() // no perder el pedacito de texto que todavía no se mandó
+    buffer.flush() // don't lose the bit of text that hadn't been sent yet
     if (err instanceof DOMException && err.name === 'AbortError') {
       useChatStore.getState().responseFinished(assistantMessageId) // cancelled on purpose: not an error
       return
@@ -106,10 +106,10 @@ async function runTurn(args: {
 }
 
 /**
- * Junta el texto que va llegando y lo manda al store cada CHUNKS_PER_BATCH
- * pedacitos, en vez de uno por uno. Alcanza con UN buffer (no un Map por
- * mensaje, como en Rumii) porque acá nunca hay dos respuestas transmitiendo
- * al mismo tiempo.
+ * Collects incoming text and sends it to the store every CHUNKS_PER_BATCH
+ * chunks, instead of one at a time. A single buffer is enough (not a Map
+ * per message, like in Rumii) because there are never two responses
+ * streaming at the same time here.
  */
 function createChunkBuffer(messageId: string) {
   let pendingText = ''

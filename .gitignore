@@ -10,3 +10,4 @@ coverage/
 .qvac-cache/
 *.tsbuildinfo
 .lancedb/
+.claude/*

@@ -62,19 +62,20 @@ export type ModelRequestState =
   | "cancelled";
 
 /**
- * Observability for a load/inference started via `loadModel()`/`infer()`.
- * Those return as soon as a `requestId` exists, without waiting for the
- * operation to settle - `ModelManagementService.getRequestStatus()` (and
- * `GET /requests/:requestId`) is how a caller later learns whether it
- * succeeded, failed, or was cancelled.
+ * Observability for a load/inference/chat completion started via
+ * `loadModel()`/`infer()`/`chatComplete()`. Those return as soon as a
+ * `requestId` exists, without waiting for the operation to settle -
+ * `ModelManagementService.getRequestStatus()` (and `GET /requests/:requestId`)
+ * is how a caller later learns whether it succeeded, failed, or was
+ * cancelled.
  */
 export interface ModelRequestStatus {
   requestId: string;
-  kind: "load" | "inference";
+  kind: "load" | "inference" | "chat";
   state: ModelRequestState;
-  /** Present once a `load` succeeds, or always for `inference` (its input modelId, known upfront). */
+  /** Present once a `load` succeeds, or always for `inference`/`chat` (its input modelId, known upfront). */
   modelId?: string;
-  /** Present once an `inference` succeeds. */
+  /** Present once an `inference` or `chat` completion succeeds. */
   text?: string;
 }
 

@@ -1,4 +1,5 @@
 import * as os from "node:os";
+import { randomUUID } from "node:crypto";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type { RagRetrievalService } from "../../rag/service/rag.service.js";
 import type { RetrievedChunk } from "../../rag/domain/types.js";
@@ -51,6 +52,8 @@ export class AgentService {
   private status: AgentStatus = "idle";
   private statusError: string | undefined;
   //private readonly corpusContext: Promise<string>;
+  /** `requestId`s of `invoke()` calls still in flight - lets `cancel()` reject an unknown/already-settled `requestId` as a safe no-op. */
+  private readonly pendingRequests = new Set<string>();
 
   constructor(
     service: ModelManagementService,
@@ -114,8 +117,43 @@ export class AgentService {
    * Sends a conversation history through the graph, returns the assistant's
    * reply text and thinking trace. Pass `onToken` to receive the final
    * reply's text as it's generated, rather than only once this resolves.
+   *
+   * Not `async`: the returned promise carries `requestId` synchronously so
+   * a caller can pass it to `cancel()` while the invoke is still running -
+   * same convention as `ModelManagementService.loadModel()`/`infer()`.
    */
-  async invoke(
+  invoke(
+    messages: ConversationMessage[],
+    onToken?: (textDelta: string) => void,
+  ): Promise<InvokeResult> & { requestId: string } {
+    const requestId = randomUUID();
+    this.pendingRequests.add(requestId);
+
+    const result = this.runInvoke(messages, onToken).finally(() => {
+      this.pendingRequests.delete(requestId);
+    });
+    return Object.assign(result, { requestId });
+  }
+
+  /**
+   * Cancels the chat completion currently in flight for `requestId`, if
+   * it's still pending - rejecting the `invoke()` promise it belongs to.
+   * Safe to call with an unknown or already-settled `requestId`, same
+   * no-op convention as `ModelManagementService.cancel()`.
+   *
+   * Only one LLM call is ever in flight on `this.chatModel` at a time in
+   * practice (`invoke()`'s tool loop awaits each turn before starting the
+   * next, and the underlying SDK connection isn't safe for concurrent use -
+   * see `ModelManagementService.unloadAll()`), so cancelling "whatever
+   * chat call is currently active" is unambiguous as long as `requestId`
+   * is still one of `pendingRequests`.
+   */
+  async cancel(requestId: string): Promise<void> {
+    if (!this.pendingRequests.has(requestId)) return;
+    await this.chatModel.cancelActive();
+  }
+
+  private async runInvoke(
     messages: ConversationMessage[],
     onToken?: (textDelta: string) => void,
   ): Promise<InvokeResult> {

@@ -1,5 +1,11 @@
-import { OperationCancelledError, toModelManagementError } from '../domain/errors.js';
-import type { ModelProvisioningPort, ModelRuntimePort } from '../domain/ports.js';
+import {
+  OperationCancelledError,
+  toModelManagementError,
+} from "../domain/errors.js";
+import type {
+  ModelProvisioningPort,
+  ModelRuntimePort,
+} from "../domain/ports.js";
 import type {
   ChatCompletionRequest,
   ChatCompletionResult,
@@ -10,9 +16,9 @@ import type {
   ModelRequestStatus,
   ModelSource,
   RegistryModelSummary,
-  RegistrySearchQuery
-} from '../domain/types.js';
-import { UNLOAD_ALL_LOG_PREFIX } from './models.service.const.js';
+  RegistrySearchQuery,
+} from "../domain/types.js";
+import { UNLOAD_ALL_LOG_PREFIX } from "./models.service.const.js";
 
 /**
  * Orchestrates local model management: discovery, download/setup -> load ->
@@ -30,14 +36,16 @@ export class ModelManagementService {
 
   constructor(
     private readonly provisioning: ModelProvisioningPort,
-    private readonly runtime: ModelRuntimePort
+    private readonly runtime: ModelRuntimePort,
   ) {}
 
-  async searchRegistry(query: RegistrySearchQuery): Promise<RegistryModelSummary[]> {
+  async searchRegistry(
+    query: RegistrySearchQuery,
+  ): Promise<RegistryModelSummary[]> {
     try {
       return await this.runtime.searchRegistry(query);
     } catch (err) {
-      throw toModelManagementError('discovery', err);
+      throw toModelManagementError("discovery", err);
     }
   }
 
@@ -45,16 +53,19 @@ export class ModelManagementService {
     try {
       return await this.runtime.listRegistry();
     } catch (err) {
-      throw toModelManagementError('discovery', err);
+      throw toModelManagementError("discovery", err);
     }
   }
 
   /** Setup/provisioning step: downloads weights to local disk without loading them into memory. */
-  async provisionModel(source: ModelSource, onProgress?: (progress: ModelDownloadProgress) => void): Promise<void> {
+  async provisionModel(
+    source: ModelSource,
+    onProgress?: (progress: ModelDownloadProgress) => void,
+  ): Promise<void> {
     try {
       await this.provisioning.provision(source, onProgress);
     } catch (err) {
-      throw toModelManagementError('download', err);
+      throw toModelManagementError("download", err);
     }
   }
 
@@ -75,54 +86,76 @@ export class ModelManagementService {
   loadModel(
     source: ModelSource,
     options?: LoadModelOptions,
-    onProgress?: (progress: ModelDownloadProgress) => void
+    onProgress?: (progress: ModelDownloadProgress) => void,
   ): Promise<LoadedModel> & { requestId: string } {
     const pending = this.runtime.load(source, options, onProgress);
     const requestId = pending.requestId;
-    this.requests.set(requestId, { requestId, kind: 'load', state: 'pending' });
+    this.requests.set(requestId, { requestId, kind: "load", state: "pending" });
 
     const result = pending
       .then((loadedModel) => {
         this.loaded.set(loadedModel.modelId, loadedModel);
-        this.requests.set(requestId, { requestId, kind: 'load', state: 'succeeded', modelId: loadedModel.modelId });
+        this.requests.set(requestId, {
+          requestId,
+          kind: "load",
+          state: "succeeded",
+          modelId: loadedModel.modelId,
+        });
         return loadedModel;
       })
       .catch((err: unknown) => {
         this.requests.set(requestId, {
           requestId,
-          kind: 'load',
-          state: err instanceof OperationCancelledError ? 'cancelled' : 'failed'
+          kind: "load",
+          state:
+            err instanceof OperationCancelledError ? "cancelled" : "failed",
         });
-        throw toModelManagementError('load', err);
+        throw toModelManagementError("load", err);
       });
     return Object.assign(result, { requestId });
   }
 
+  // TODO: remove this endpoint ? leave chatComplete as the only infer option
   /**
    * Same `requestId`-decorated-promise and `getRequestStatus()` convention
    * as `loadModel()`. A cancelled inference rejects this promise but never
    * touches `this.loaded`, so the model stays loaded and later `infer()`
    * calls for the same `modelId` are unaffected.
    */
-  infer(modelId: string, prompt: string): Promise<InferenceResult> & { requestId: string } {
+  infer(
+    modelId: string,
+    prompt: string,
+  ): Promise<InferenceResult> & { requestId: string } {
     this.assertLoaded(modelId);
     const pending = this.runtime.infer(modelId, prompt);
     const requestId = pending.requestId;
-    this.requests.set(requestId, { requestId, kind: 'inference', state: 'pending', modelId });
+    this.requests.set(requestId, {
+      requestId,
+      kind: "inference",
+      state: "pending",
+      modelId,
+    });
 
     const result = pending
       .then((inferenceResult) => {
-        this.requests.set(requestId, { requestId, kind: 'inference', state: 'succeeded', modelId, text: inferenceResult.text });
+        this.requests.set(requestId, {
+          requestId,
+          kind: "inference",
+          state: "succeeded",
+          modelId,
+          text: inferenceResult.text,
+        });
         return inferenceResult;
       })
       .catch((err: unknown) => {
         this.requests.set(requestId, {
           requestId,
-          kind: 'inference',
-          state: err instanceof OperationCancelledError ? 'cancelled' : 'failed',
-          modelId
+          kind: "inference",
+          state:
+            err instanceof OperationCancelledError ? "cancelled" : "failed",
+          modelId,
         });
-        throw toModelManagementError('inference', err);
+        throw toModelManagementError("inference", err);
       });
     return Object.assign(result, { requestId });
   }
@@ -131,18 +164,49 @@ export class ModelManagementService {
    * Multi-turn chat completion with optional tool-calling, for chat-model
    * consumers (e.g. `ChatQVAC`). Pass `onToken` to receive incremental
    * assistant-text segments as generation proceeds - see `ModelRuntimePort`.
+   *
+   * Same `requestId`-decorated-promise and `getRequestStatus()` convention
+   * as `infer()`. A cancelled chat completion rejects this promise but never
+   * touches `this.loaded`, so the model stays loaded and later
+   * `chatComplete()` calls for the same `modelId` are unaffected.
    */
-  async chatComplete(
+  chatComplete(
     modelId: string,
     request: ChatCompletionRequest,
-    onToken?: (textDelta: string) => void
-  ): Promise<ChatCompletionResult> {
+    onToken?: (textDelta: string) => void,
+  ): Promise<ChatCompletionResult> & { requestId: string } {
     this.assertLoaded(modelId);
-    try {
-      return await this.runtime.chatComplete(modelId, request, onToken);
-    } catch (err) {
-      throw toModelManagementError('inference', err);
-    }
+    const pending = this.runtime.chatComplete(modelId, request, onToken);
+    const requestId = pending.requestId;
+    this.requests.set(requestId, {
+      requestId,
+      kind: "chat",
+      state: "pending",
+      modelId,
+    });
+
+    const result = pending
+      .then((chatCompletionResult) => {
+        this.requests.set(requestId, {
+          requestId,
+          kind: "chat",
+          state: "succeeded",
+          modelId,
+          text: chatCompletionResult.text,
+        });
+        return chatCompletionResult;
+      })
+      .catch((err: unknown) => {
+        this.requests.set(requestId, {
+          requestId,
+          kind: "chat",
+          state:
+            err instanceof OperationCancelledError ? "cancelled" : "failed",
+          modelId,
+        });
+        throw toModelManagementError("inference", err);
+      });
+    return Object.assign(result, { requestId });
   }
 
   async unloadModel(modelId: string): Promise<void> {
@@ -151,7 +215,7 @@ export class ModelManagementService {
       await this.runtime.unload(modelId);
       this.loaded.delete(modelId);
     } catch (err) {
-      throw toModelManagementError('unload', err);
+      throw toModelManagementError("unload", err);
     }
   }
 
@@ -169,7 +233,10 @@ export class ModelManagementService {
     const modelIds = [...this.loaded.keys()];
     for (const modelId of modelIds) {
       await this.unloadModel(modelId).catch((err: unknown) => {
-        console.error(`${UNLOAD_ALL_LOG_PREFIX} failed to unload "${modelId}"`, err);
+        console.error(
+          `${UNLOAD_ALL_LOG_PREFIX} failed to unload "${modelId}"`,
+          err,
+        );
       });
     }
   }
@@ -179,7 +246,7 @@ export class ModelManagementService {
     try {
       await this.runtime.close();
     } catch (err) {
-      throw toModelManagementError('close', err);
+      throw toModelManagementError("close", err);
     }
   }
 
@@ -194,7 +261,7 @@ export class ModelManagementService {
     try {
       await this.runtime.cancel(requestId);
     } catch (err) {
-      throw toModelManagementError('cancel', err);
+      throw toModelManagementError("cancel", err);
     }
   }
 
@@ -209,7 +276,10 @@ export class ModelManagementService {
 
   private assertLoaded(modelId: string): void {
     if (!this.loaded.has(modelId)) {
-      throw toModelManagementError('not-found', new Error(`Model "${modelId}" is not currently loaded`));
+      throw toModelManagementError(
+        "not-found",
+        new Error(`Model "${modelId}" is not currently loaded`),
+      );
     }
   }
 }

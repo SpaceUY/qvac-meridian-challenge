@@ -108,6 +108,19 @@ describe('TranscriptionService', () => {
     expect(port.transcribeCalls[0]?.audio).toEqual({ kind: 'filePath', path: '/audio/sample-en.wav' });
   });
 
+  it('transcribeBuffer loads the model and delegates a buffer AudioInput to the port', async () => {
+    const runtime = new FakeModelRuntime();
+    const models = new ModelManagementService(runtime, runtime);
+    const port = new FakeSpeechPort();
+    const service = new TranscriptionService(models, port);
+
+    const data = Buffer.from([1, 2, 3]);
+    const text = await service.transcribeBuffer(data);
+
+    expect(text).toBe(`transcript for ${port.transcribeCalls[0]?.modelId}`);
+    expect(port.transcribeCalls[0]?.audio).toEqual({ kind: 'buffer', data });
+  });
+
   it('transcribeLive loads the model and opens a streaming session via the port', async () => {
     const runtime = new FakeModelRuntime();
     const models = new ModelManagementService(runtime, runtime);

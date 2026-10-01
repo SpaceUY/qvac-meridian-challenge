@@ -2,7 +2,7 @@ import { toModelManagementError } from '../../models/domain/errors.js';
 import type { ModelManagementService } from '../../models/service/models.service.js';
 import type { TextToSpeechPort } from '../domain/ports.js';
 import { SynthesisInProgressError } from '../domain/errors.js';
-import type { SynthesisState } from '../domain/types.js';
+import type { SynthesisResult, SynthesisState } from '../domain/types.js';
 import { DEFAULT_SUPERTONIC_ENGINE_CONFIG, SUPERTONIC2_TTS_MODEL_SOURCE } from '../../config/models.config.js';
 
 interface SynthesisSlot {
@@ -48,6 +48,15 @@ export class TtsService {
     const modelId = await this.ensureModel();
     this.slot = { state: 'pending' };
     this.runInBackground(modelId, text);
+  }
+
+  /** Synchronous flow for callers that need the finished audio in the same call (VoiceAgentService) — bypasses the pending/cancel slot the async synthesize()/getAudio() flow uses. Still respects that slot: throws if an async synthesis is mid-flight, instead of calling the port concurrently against the one loaded Supertonic model. */
+  async synthesizeSync(text: string): Promise<SynthesisResult> {
+    if (this.slot.state === 'pending') {
+      throw new SynthesisInProgressError();
+    }
+    const modelId = await this.ensureModel();
+    return this.port.synthesize(modelId, text);
   }
 
   private runInBackground(modelId: string, text: string): void {
