@@ -60,11 +60,15 @@ class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
   }
 
   chatComplete(
-    _modelId: string,
-    _request: ChatCompletionRequest,
+    modelId: string,
+    request: ChatCompletionRequest,
     _onToken?: (textDelta: string) => void
   ): Promise<ChatCompletionResult> & { requestId: string } {
-    return Object.assign(Promise.resolve({ text: '', toolCalls: [] }), { requestId: this.newRequestId() });
+    const requestId = this.newRequestId();
+    return this.track(requestId, () => ({
+      text: `chat reply to "${request.history.at(-1)?.content}" from ${modelId}`,
+      toolCalls: []
+    }));
   }
 
   async unload(_modelId: string): Promise<void> {}
@@ -170,6 +174,33 @@ describe('ModelManagementService cancellation', () => {
       kind: 'inference',
       state: 'succeeded',
       text: `reply to "second prompt" from ${loaded.modelId}`
+    });
+  });
+
+  it('cancels an in-flight chat completion without unloading the model or breaking future chat completions', async () => {
+    const load = service.loadModel(SOURCE);
+    runtime.settle(load.requestId);
+    const loaded = await load;
+
+    const chat = service.chatComplete(loaded.modelId, { history: [{ role: 'user', content: 'first message' }] });
+    expect(service.getRequestStatus(chat.requestId)).toMatchObject({ kind: 'chat', state: 'pending', modelId: loaded.modelId });
+
+    await service.cancel(chat.requestId);
+    await expect(chat).rejects.toBeInstanceOf(ModelManagementError);
+    expect(service.isLoaded(loaded.modelId)).toBe(true);
+    expect(service.getRequestStatus(chat.requestId)).toMatchObject({
+      kind: 'chat',
+      state: 'cancelled',
+      modelId: loaded.modelId
+    });
+
+    const followUp = service.chatComplete(loaded.modelId, { history: [{ role: 'user', content: 'second message' }] });
+    runtime.settle(followUp.requestId);
+    await expect(followUp).resolves.toEqual({ text: `chat reply to "second message" from ${loaded.modelId}`, toolCalls: [] });
+    expect(service.getRequestStatus(followUp.requestId)).toMatchObject({
+      kind: 'chat',
+      state: 'succeeded',
+      text: `chat reply to "second message" from ${loaded.modelId}`
     });
   });
 

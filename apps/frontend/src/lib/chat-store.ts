@@ -1,6 +1,6 @@
-// El estado del chat, en Zustand. Reemplaza a chat-reducer.ts: cada "case" que
-// tenía el reducer ahora es una función del store, con los mismos parámetros
-// que antes venían adentro del objeto-acción.
+// The chat state, in Zustand. Replaces chat-reducer.ts: every "case" the
+// reducer used to have is now a function on the store, with the same
+// parameters that used to live inside the action object.
 
 import { create } from 'zustand'
 import type { Citation, History, Message, Role } from '@/lib/chat-types'
@@ -12,6 +12,13 @@ type ChatStore = {
   citationsReceived: (id: string, citations: Citation[]) => void
   responseFinished: (id: string) => void
   responseFailed: (id: string, reason: string) => void
+  voiceTurnAdded: (params: {
+    userMessageId: string
+    transcript: string
+    assistantMessageId: string
+    answer: string
+    audio?: { dataUrl: string }
+  }) => void
 }
 
 export const useChatStore = create<ChatStore>((set) => ({
@@ -44,6 +51,15 @@ export const useChatStore = create<ChatStore>((set) => ({
   responseFailed: (id, reason) =>
     set((state) => ({
       history: withMessage(state.history, id, (m) => ({ ...m, status: { type: 'error', reason } })),
+    })),
+
+  voiceTurnAdded: ({ userMessageId, transcript, assistantMessageId, answer, audio }) =>
+    set((state) => ({
+      history: [
+        ...state.history,
+        createMessage(userMessageId, 'user', transcript, 'done'),
+        { ...createMessage(assistantMessageId, 'assistant', answer, 'done'), audio },
+      ],
     })),
 }))
 

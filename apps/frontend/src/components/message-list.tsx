@@ -1,4 +1,5 @@
 import { Markdown } from '@/components/markdown'
+import { AudioPlayback } from '@/components/audio-playback'
 import { parseThinking } from '@/lib/parse-thinking'
 import type { Citation, History, Message } from '@/lib/chat-types'
 
@@ -36,6 +37,7 @@ function MessageBubble({ message }: { message: Message }) {
       </div>
 
       {message.status.type === 'error' && <p className="mt-1 text-xs text-destructive">{message.status.reason}</p>}
+      {message.audio && <AudioPlayback audio={message.audio} autoPlay />}
       {message.citations.length > 0 && <CitationList citations={message.citations} />}
     </div>
   )

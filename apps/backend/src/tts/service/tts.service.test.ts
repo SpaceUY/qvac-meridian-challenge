@@ -188,4 +188,37 @@ describe('TtsService', () => {
     expect(port.cancelCalls).toEqual([]);
     expect(service.getStatus()).toBe('idle');
   });
+
+  it('synthesizeSync loads the model and resolves directly with the port result, without touching the slot', async () => {
+    const { service, port } = setup();
+
+    const promise = service.synthesizeSync('hello');
+    await flushMicrotasks();
+    const audio = Buffer.from([4, 5, 6]);
+    port.resolveNext({ audio, sampleRate: 44100 });
+
+    await expect(promise).resolves.toEqual({ audio, sampleRate: 44100 });
+    expect(service.getStatus()).toBe('idle');
+    expect(service.getAudio()).toBeUndefined();
+  });
+
+  it('synthesizeSync rejects while an async synthesize() is already pending', async () => {
+    const { service, port } = setup();
+
+    await service.synthesize('first');
+
+    await expect(service.synthesizeSync('second')).rejects.toBeInstanceOf(SynthesisInProgressError);
+    expect(port.synthesizeCalls).toHaveLength(1);
+  });
+
+  it('synthesizeSync propagates a port rejection without changing the slot', async () => {
+    const { service, port } = setup();
+
+    const promise = service.synthesizeSync('hello');
+    await flushMicrotasks();
+    port.rejectNext(new Error('boom'));
+
+    await expect(promise).rejects.toThrow('boom');
+    expect(service.getStatus()).toBe('idle');
+  });
 });

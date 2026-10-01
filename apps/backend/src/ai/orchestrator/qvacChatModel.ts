@@ -124,6 +124,8 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
   private readonly temperature?: number;
   private readonly engineConfig?: Record<string, unknown>;
   private modelIdPromise?: Promise<string>;
+  /** The `requestId` of the `chatComplete` call currently in flight, if any - lets `cancelActive()` cancel it. */
+  private activeRequestId?: string;
 
   constructor(fields: QVACChatModelInput) {
     super(fields);
@@ -136,6 +138,16 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
 
   static lc_name(): string {
     return "ChatQVAC";
+  }
+
+  /**
+   * Cancels the `chatComplete` call currently in flight on this model, if
+   * any - used by `AgentService.cancel()` to stop a running `invoke()`.
+   * No-op when nothing is in flight (e.g. it already settled).
+   */
+  async cancelActive(): Promise<void> {
+    if (!this.activeRequestId) return;
+    await this.service.cancel(this.activeRequestId);
   }
 
   _llmType(): string {
@@ -180,14 +192,18 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
   ): Promise<ChatResult> {
     const modelId = await this.ensureModel();
 
-    const result: ChatCompletionResult = await this.service.chatComplete(
-      modelId,
-      {
-        history: messages.map(toChatMessage),
-        tools: options.tools,
-        temperature: this.temperature,
-      },
-    );
+    const pending = this.service.chatComplete(modelId, {
+      history: messages.map(toChatMessage),
+      tools: options.tools,
+      temperature: this.temperature,
+    });
+    this.activeRequestId = pending.requestId;
+    let result: ChatCompletionResult;
+    try {
+      result = await pending;
+    } finally {
+      this.activeRequestId = undefined;
+    }
 
     const aiMessage = new AIMessage({
       content: result.text,
@@ -231,18 +247,22 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
       notify = undefined;
     };
 
-    this.service
-      .chatComplete(
-        modelId,
-        {
-          history: messages.map(toChatMessage),
-          tools: options.tools,
-          temperature: this.temperature,
-        },
-        (textDelta) => push({ kind: "token", textDelta }),
-      )
+    const pending = this.service.chatComplete(
+      modelId,
+      {
+        history: messages.map(toChatMessage),
+        tools: options.tools,
+        temperature: this.temperature,
+      },
+      (textDelta) => push({ kind: "token", textDelta }),
+    );
+    this.activeRequestId = pending.requestId;
+    pending
       .then((result) => push({ kind: "done", result }))
-      .catch((error: unknown) => push({ kind: "error", error }));
+      .catch((error: unknown) => push({ kind: "error", error }))
+      .finally(() => {
+        this.activeRequestId = undefined;
+      });
 
     while (true) {
       const item = queue.shift();

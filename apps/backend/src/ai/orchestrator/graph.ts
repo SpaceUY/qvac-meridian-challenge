@@ -14,6 +14,7 @@ import { lookupStockTool } from "./stockTool.js";
 import { createListDocumentsTool } from "./listDocumentsTool.js";
 import { ChatQVAC } from "./qvacChatModel.js";
 import { buildGroundedContext } from "../../rag/service/contextBuilder.js";
+import { ModelManagementError, OperationCancelledError } from "../../models/domain/errors.js";
 import { State } from "./domain.js";
 import {
   GROUNDING_INSTRUCTIONS,
@@ -32,6 +33,11 @@ const SYSTEM_PROMPT = `You are Meridian's internal assistant. You handle two kin
 2. Questions about company documents (deals, warranty terms, SLAs, policies, reports, etc). Answer these using only the Context section below.
 
 ${GROUNDING_INSTRUCTIONS}`;
+
+/** A `chatComplete` call rejected because `AgentService.cancel()` cancelled it - retrying it would defeat the cancellation. */
+function isCancellation(error: unknown): boolean {
+  return error instanceof ModelManagementError && error.cause instanceof OperationCancelledError;
+}
 
 export function buildLlmNode(
   tools: BindToolsInput[],
@@ -146,7 +152,9 @@ export function createGraph(
   const toolNode: GraphNode<typeof State> = buildToolNode(toolsByName);
 
   return new StateGraph(State)
-    .addNode("llm", llmCall, { retryPolicy: { maxAttempts: 2 } })
+    .addNode("llm", llmCall, {
+      retryPolicy: { maxAttempts: 2, retryOn: (error) => !isCancellation(error) },
+    })
     .addNode("rag", ragNode)
     .addNode("toolNode", toolNode)
     .addEdge(START, "rag")

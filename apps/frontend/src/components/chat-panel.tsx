@@ -7,6 +7,7 @@ import { MessageList } from '@/components/message-list'
 import { Composer } from '@/components/composer'
 import { Button } from '@/components/ui/button'
 import { useChat } from '@/hooks/use-chat'
+import { useVoiceTurn } from '@/hooks/use-voice-turn'
 import { useElementHeight } from '@/hooks/use-element-height'
 import { useStickToBottom } from '@/hooks/use-stick-to-bottom'
 import type { ModelStatus } from '@/lib/model-status-client'
@@ -15,6 +16,7 @@ type Props = { modelStatus: ModelStatus }
 
 export function ChatPanel({ modelStatus }: Props) {
   const { history, isStreaming, sendMessage, stop } = useChat()
+  const { phase: voicePhase, start: startVoice, send: sendVoice, discard: discardVoice, setLevelListener } = useVoiceTurn()
   // The composer is out of the normal flow, so it takes up no room. The spacer
   // at the end of the list gives that room back, exactly as much as it needs.
   const [overlayRef, overlayHeight] = useElementHeight<HTMLDivElement>()
@@ -25,6 +27,13 @@ export function ChatPanel({ modelStatus }: Props) {
     sendMessage(text)
     scrollToBottom()
   }
+
+  const modelReady = modelStatus === 'ready'
+  // Text and voice never compete for the same turn: each one disables the
+  // other - except once voice is already recording, where the mic must
+  // always be able to stop.
+  const micDisabled = !modelReady || (voicePhase.type !== 'recording' && isStreaming)
+  const textDisabled = !modelReady || voicePhase.type === 'recording' || voicePhase.type === 'processing'
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -39,7 +48,7 @@ export function ChatPanel({ modelStatus }: Props) {
         <Button
           size="icon"
           variant="secondary"
-          aria-label="Ir al final de la conversacion"
+          aria-label="Scroll to the latest message"
           onClick={scrollToBottom}
           className="absolute left-1/2 z-10 -translate-x-1/2 rounded-full border shadow-md"
           style={{ bottom: overlayHeight + 8 }}
@@ -53,7 +62,18 @@ export function ChatPanel({ modelStatus }: Props) {
       <div ref={overlayRef} className="pointer-events-none absolute inset-x-0 bottom-0">
         <div className="h-8 bg-linear-to-t from-background to-background/0" />
         <div className="pointer-events-auto bg-background px-3 pb-3">
-          <Composer isStreaming={isStreaming} disabled={modelStatus !== 'ready'} onSend={handleSend} onStop={stop} />
+          <Composer
+            isStreaming={isStreaming}
+            textDisabled={textDisabled}
+            onSend={handleSend}
+            onStop={stop}
+            voicePhase={voicePhase}
+            micDisabled={micDisabled}
+            onMicClick={startVoice}
+            onVoiceCancel={discardVoice}
+            onVoiceSend={sendVoice}
+            registerVoiceLevelListener={setLevelListener}
+          />
         </div>
       </div>
     </div>

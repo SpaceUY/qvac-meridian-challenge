@@ -44,6 +44,13 @@ export class TranscriptionService {
     return result.text;
   }
 
+  /** Prerecorded audio, in-memory flow: transcribes a buffer that's already fully available (e.g. from an HTTP upload), mirroring transcribeFile's filePath flow. */
+  async transcribeBuffer(data: Buffer): Promise<string> {
+    const modelId = await this.ensureModel();
+    const result = await this.port.transcribe(modelId, { kind: 'buffer', data });
+    return result.text;
+  }
+
   /** The main hands-free flow: opens a live streaming session audio can be pushed into incrementally. */
   async transcribeLive(): Promise<StreamTranscriptSession> {
     const modelId = await this.ensureModel();

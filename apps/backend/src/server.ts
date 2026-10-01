@@ -4,10 +4,13 @@ import { createModelsRouter } from "./models/router/models.router.js";
 import { ModelManagementService } from "./models/service/models.service.js";
 import { QvacRuntimeAdapter } from "./models/infra/qvacRuntimeAdapter.js";
 import { AgentService } from "./ai/orchestrator/agentService.js";
-import { createChatStatusRouter, createCompletionsRouter } from "./chat/chat.router.js";
+import { createChatStatusRouter, createCompletionsRouter, createVoiceCompletionsRouter } from "./chat/chat.router.js";
 import { createTtsRouter } from "./tts/router/tts.router.js";
 import { TtsService } from "./tts/service/tts.service.js";
 import { QvacTtsAdapter } from "./tts/infra/qvacTtsAdapter.js";
+import { TranscriptionService } from "./speech/service/transcription.service.js";
+import { QvacTranscriptionAdapter } from "./speech/infra/qvacTranscriptionAdapter.js";
+import { VoiceAgentService } from "./ai/orchestrator/voiceAgentService.js";
 import { QvacEmbeddingAdapter } from "./rag/infra/qvacEmbeddingAdapter.js";
 import { buildFixtureVectorStore } from "./rag/infra/fixtures/corpus-chunks.fixture.js";
 import { RagRetrievalService } from "./rag/service/rag.service.js";
@@ -22,7 +25,9 @@ import {
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+// Default 100kb is too small for /v1/chat/voice-completions' base64 audio
+// body - a few seconds of audio already exceeds it.
+app.use(express.json({ limit: "25mb" }));
 
 app.get("/api/ping", (_req, res) => {
   res.json({ message: "pong from express" });
@@ -67,6 +72,10 @@ app.use("/v1/chat", createCompletionsRouter(agentService));
 
 const ttsService = new TtsService(modelManagementService, new QvacTtsAdapter());
 app.use("/api/tts", createTtsRouter(ttsService));
+
+const transcriptionService = new TranscriptionService(modelManagementService, new QvacTranscriptionAdapter());
+const voiceAgentService = new VoiceAgentService(agentService, transcriptionService, ttsService);
+app.use("/v1/chat", createVoiceCompletionsRouter(agentService, voiceAgentService));
 
 const server = app.listen(3001, () => {
   console.log("Server listening on port 3001");
