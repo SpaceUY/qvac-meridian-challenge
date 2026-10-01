@@ -27,6 +27,8 @@ type Props = {
   onVoiceCancel: () => void
   onVoiceSend: () => void
   registerVoiceLevelListener: (fn: ((level: number) => void) | null) => void
+  /** Chosen by ChatPanel, which knows *why* the composer can't send right now. */
+  placeholder: string
 }
 
 /** The bottom bar: write, send, or stop a response in progress (req. [1.4]), plus voice input and (now) image attachments. While recording, RecordingBar takes over the whole row - no Textarea, no MicButton, no attachments row (the images/text state is preserved underneath, just not rendered). */
@@ -41,6 +43,7 @@ export function Composer({
   onVoiceCancel,
   onVoiceSend,
   registerVoiceLevelListener,
+  placeholder,
 }: Props) {
   // What is being written, still not sent. It is pure UI - it does not matter
   // to anyone outside this component - that's why useState and not the chat reducer.
@@ -50,12 +53,16 @@ export function Composer({
   const [isDragOver, setIsDragOver] = useState(false)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   const imagesRef = useMirrorRef(images)
+  // Typing the next question while the answer streams is fine (it just
+  // can't be sent yet); attaching is not - same rule as the mic.
+  const attachBlocked = textDisabled || isStreaming
 
   // Revoke any still-pending (never sent) preview URLs if the composer goes
   // away - sent images are handed off to chat history and outlive this.
   useEffect(() => () => revokeAttachments(imagesRef.current), [imagesRef])
 
   function handleFilesSelected(files: File[]) {
+    if (attachBlocked) return
     const result = buildImageAttachments(files, images)
     if (result.error) {
       setAttachError(result.error)
@@ -100,7 +107,7 @@ export function Composer({
   }
 
   function handleDragOver(e: DragEvent<HTMLDivElement>) {
-    if (!e.dataTransfer.types.includes('Files')) return
+    if (attachBlocked || !e.dataTransfer.types.includes('Files')) return
     e.preventDefault()
     setIsDragOver(true)
   }
@@ -146,7 +153,7 @@ export function Composer({
         <ImageThumbnailRow images={images} onRemove={removeImage} onPreview={setLightboxSrc} />
         <div className="flex items-end gap-2">
           <AttachButton
-            disabled={textDisabled || images.length >= MAX_IMAGES_PER_MESSAGE}
+            disabled={attachBlocked || images.length >= MAX_IMAGES_PER_MESSAGE}
             onFilesSelected={handleFilesSelected}
           />
           <Textarea
@@ -155,7 +162,7 @@ export function Composer({
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             disabled={textDisabled}
-            placeholder={textDisabled ? 'Loading the model…' : 'Ask anything'}
+            placeholder={placeholder}
             rows={1}
             className="no-scrollbar max-h-40 min-h-9 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
             // The base Textarea defaults to field-sizing: content (grows to fit,
@@ -165,7 +172,6 @@ export function Composer({
             // instead of the two properties fighting over how overflow works.
             style={{ fieldSizing: 'fixed' }}
           />
-          <MicButton phase={voicePhase} disabled={micDisabled} onClick={onMicClick} />
           {isStreaming ? (
             <Button size="icon" variant="destructive" className="shrink-0 rounded-full" onClick={onStop}>
               <Square className="size-4" />
@@ -180,6 +186,7 @@ export function Composer({
               <Send className="size-4" />
             </Button>
           )}
+          <MicButton phase={voicePhase} disabled={micDisabled} onClick={onMicClick} />
         </div>
       </div>
       <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />

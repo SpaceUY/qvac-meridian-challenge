@@ -152,6 +152,43 @@ describe("QvacRuntimeAdapter.chatComplete", () => {
       }),
     );
   });
+
+  it("disables the KV cache outright when kvCacheEnabled is false, regardless of sessionId", () => {
+    completionMock.mockReturnValue({
+      requestId: "req-6",
+      events: (async function* () {})(),
+      final: Promise.resolve({ contentText: "hi", toolCalls: [], thinkingText: "" }),
+    });
+
+    const adapter = new QvacRuntimeAdapter();
+    adapter.chatComplete("model-1", {
+      history: [{ role: "user", content: "hi" }],
+      sessionId: "session-1",
+      kvCacheEnabled: false,
+    });
+
+    expect(completionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ kvCache: false }),
+    );
+  });
+
+  it("falls back to sessionId (or true) when kvCacheEnabled is omitted", () => {
+    completionMock.mockReturnValue({
+      requestId: "req-7",
+      events: (async function* () {})(),
+      final: Promise.resolve({ contentText: "hi", toolCalls: [], thinkingText: "" }),
+    });
+
+    const adapter = new QvacRuntimeAdapter();
+    adapter.chatComplete("model-1", {
+      history: [{ role: "user", content: "hi" }],
+      sessionId: "session-1",
+    });
+
+    expect(completionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ kvCache: "session-1" }),
+    );
+  });
 });
 
 describe("QvacRuntimeAdapter.provision", () => {

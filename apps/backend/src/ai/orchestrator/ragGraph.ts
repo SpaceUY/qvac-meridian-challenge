@@ -10,7 +10,7 @@ import {
   HumanMessage,
   SystemMessage,
 } from "@langchain/core/messages";
-import { hasImageContent, type ChatQVAC } from "./qvacChatModel.js";
+import { hasImageContent, type ChatQVAC } from "qvac-langgraph";
 import type { RagRetrievalService } from "../../rag/service/rag.service.js";
 import { buildGroundedContext } from "../../rag/service/contextBuilder.js";
 import {

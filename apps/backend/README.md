@@ -310,9 +310,14 @@ infra/    QVAC-specific: the only layer that knows @qvac/sdk exists
 ```
 
 `TtsService` reuses the existing `ModelManagementService` to load the
-Supertonic2 model (`SUPERTONIC2_TTS_MODEL_SOURCE` in
+Supertonic model for the current resource tier (`TTS_MODELS_BY_TIER` in
 `src/config/models.config.ts`), exactly like `TranscriptionService` does for
-whisper. Unlike the models/speech features, there's no `requestId`-keyed
+whisper (`WHISPER_MODELS_BY_TIER`) and `AgentService` does for the chat/VLM
+model (`LLM_MODELS_BY_TIER`). The tier itself - `low`/`medium`/`high` - is
+resolved once per process by `resolveResourceTier()`
+(`src/config/resourceTier.ts`) from RAM/CPU-core count, or forced via the
+`QVAC_RESOURCE_TIER` env var (useful on a machine whose GPU VRAM doesn't
+match what its RAM alone would suggest). Unlike the models/speech features, there's no `requestId`-keyed
 map here: `@qvac/sdk`'s `textToSpeech()` doesn't expose a per-call
 `requestId` the way `loadModel()`/`completion()` do, so `TtsService` keeps a
 single synthesis slot instead — a second `POST /api/tts` while one is

@@ -12,7 +12,7 @@ import {
 } from "@langchain/core/messages";
 import { lookupStockTool } from "./stockTool.js";
 import { createListDocumentsTool } from "./listDocumentsTool.js";
-import { ChatQVAC } from "./qvacChatModel.js";
+import { ChatQVAC } from "qvac-langgraph";
 import { buildGroundedContext } from "../../rag/service/contextBuilder.js";
 import { isCancellationError } from "../../models/domain/errors.js";
 import { State } from "./domain.js";
@@ -64,12 +64,13 @@ function guardMayReplaceReply(state: typeof State.State): boolean {
 async function generateReply(
   model: ReturnType<ChatQVAC["bindTools"]>,
   messages: BaseMessage[],
-  { hidden, temperature, seed }: { hidden: boolean; temperature?: number; seed?: number },
+  { hidden, temperature, seed, sessionId }: { hidden: boolean; temperature?: number; seed?: number; sessionId?: string },
 ): Promise<AIMessageChunk> {
   const stream = await model.stream(messages, {
     ...(hidden ? { tags: [NO_STREAM_TAG] } : {}),
     temperature,
     seed,
+    sessionId,
   });
   let reply: AIMessageChunk | undefined;
   for await (const chunk of stream) {
@@ -97,7 +98,7 @@ export function buildLlmNode(
     const response = await generateReply(
       model.bindTools(tools),
       [systemMessage, ...state.messages],
-      { hidden: guardMayReplace, temperature: state.temperature, seed: state.seed },
+      { hidden: guardMayReplace, temperature: state.temperature, seed: state.seed, sessionId: state.sessionId },
     );
 
     // Guard against hallucinated/refused answers: if this turn never called a

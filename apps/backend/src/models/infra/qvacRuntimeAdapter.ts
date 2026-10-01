@@ -198,6 +198,15 @@ export class QvacRuntimeAdapter
    * `stream` flag, and the returned promise carries `requestId`
    * synchronously - same convention as `load()`/`infer()` - so a caller can
    * cancel a long-running (especially streaming) generation in flight.
+   *
+   * `request.sessionId`, when present, is passed straight through as
+   * `kvCache`'s string form - `completion()`'s own `kvCache` accepts
+   * `boolean | string`, where a string is a caller-supplied cache key for
+   * manual per-session management (vs. `true`'s auto-generated key hashed
+   * from conversation history). Falls back to `true` when absent, e.g. for
+   * a caller that never threads a session id through (`infer()`, or the
+   * voice-completions path). `request.kvCacheEnabled === false` overrides
+   * both and disables the KV cache outright, regardless of `sessionId`.
    */
   chatComplete(
     modelId: string,
@@ -214,7 +223,7 @@ export class QvacRuntimeAdapter
       tools: request.tools,
       captureThinking: true,
       stream: Boolean(onToken),
-      kvCache: true,
+      kvCache: request.kvCacheEnabled === false ? false : request.sessionId ?? true,
       generationParams:
         request.temperature !== undefined || request.seed !== undefined
           ? { temp: request.temperature, seed: request.seed }

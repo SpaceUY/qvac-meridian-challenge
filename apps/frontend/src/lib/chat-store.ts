@@ -4,10 +4,19 @@
 
 import { create } from 'zustand'
 import type { Citation, History, Message, Role } from '@/lib/chat-types'
-import type { ImageAttachment } from '@/lib/image-attachments'
+import { revokeAttachments, type ImageAttachment } from '@/lib/image-attachments'
 
 type ChatStore = {
   history: History
+  /** Identifies the current conversation on every request (CONFIG.sessionHeader). conversationReset replaces it. */
+  sessionId: string
+  /**
+   * The abort handle of the text turn in flight, if any. Not render state:
+   * no component selects it. It lives here - not in a ref inside useChat -
+   * so Stop (in the composer) and New chat (in the left sidebar) reach the
+   * same handle from different parts of the tree.
+   */
+  activeTurn: AbortController | null
   turnStarted: (
     userMessageId: string,
     assistantMessageId: string,
@@ -27,10 +36,15 @@ type ChatStore = {
     citations: Citation[]
     audio?: { dataUrl: string }
   }) => void
+  activeTurnStarted: (controller: AbortController) => void
+  activeTurnSettled: (controller: AbortController) => void
+  conversationReset: () => void
 }
 
-export const useChatStore = create<ChatStore>((set) => ({
+export const useChatStore = create<ChatStore>((set, get) => ({
   history: [],
+  sessionId: crypto.randomUUID(),
+  activeTurn: null,
 
   turnStarted: (userMessageId, assistantMessageId, text, images) =>
     set((state) => ({
@@ -85,6 +99,29 @@ export const useChatStore = create<ChatStore>((set) => ({
         { ...createMessage(assistantMessageId, 'assistant', answer, 'done'), citations, audio },
       ],
     })),
+
+  activeTurnStarted: (controller) => set({ activeTurn: controller }),
+
+  /**
+   * Only clears the handle if it is still this turn's. A turn cancelled by
+   * conversationReset settles a moment later - by then a new turn may
+   * already be in flight, and its handle must survive.
+   */
+  activeTurnSettled: (controller) =>
+    set((state) => (state.activeTurn === controller ? { activeTurn: null } : {})),
+
+  /**
+   * New chat. Aborts the turn in flight (the backend cancels generation on
+   * disconnect - req. [1.4]), frees the image previews, and starts over
+   * with a fresh sessionId. Chunks still arriving for the old turn are
+   * harmless: withMessage on an id that no longer exists changes nothing.
+   */
+  conversationReset: () => {
+    const { activeTurn, history } = get()
+    activeTurn?.abort()
+    revokeAttachments(history.flatMap((message) => message.images ?? []))
+    set({ history: [], sessionId: crypto.randomUUID(), activeTurn: null })
+  },
 }))
 
 /** A newborn message, without citations yet. It cannot be born failed. */

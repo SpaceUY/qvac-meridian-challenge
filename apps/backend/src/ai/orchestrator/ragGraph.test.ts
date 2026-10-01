@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
-import type { ChatQVAC } from "./qvacChatModel.js";
+import type { ChatQVAC } from "qvac-langgraph";
 import type { RagRetrievalService } from "../../rag/service/rag.service.js";
 import type { RetrievedChunk } from "../../rag/domain/types.js";
 import {
@@ -12,7 +12,7 @@ import {
 import { GROUNDING_INSTRUCTIONS, INSUFFICIENT_CONTEXT_MESSAGE } from "./ragGraph.const.js";
 
 describe("routeOnEvidence", () => {
-  const BASE_STATE = { temperature: undefined, seed: undefined };
+  const BASE_STATE = { temperature: undefined, seed: undefined, sessionId: undefined };
 
   it("routes to insufficientContext when hasEvidence is false", () => {
     expect(
@@ -36,7 +36,7 @@ describe("routeOnEvidence", () => {
 describe("insufficientContextNode", () => {
   it("returns the fixed insufficient-context message without calling any model", async () => {
     const update = (await insufficientContextNode(
-      { temperature: undefined, seed: undefined, messages: [], chunks: [], hasEvidence: false, hasVisualInput: false },
+      { temperature: undefined, seed: undefined, sessionId: undefined, messages: [], chunks: [], hasEvidence: false, hasVisualInput: false },
       {},
     )) as {
       messages: AIMessage[];
@@ -63,7 +63,7 @@ describe("buildRetrieveNode", () => {
         hasEvidence: false,
         hasVisualInput: false,
         temperature: undefined,
-        seed: undefined,
+        seed: undefined, sessionId: undefined,
       },
       {},
     );
@@ -78,7 +78,7 @@ describe("buildRetrieveNode", () => {
 
     const node = buildRetrieveNode(ragService);
     const update = await node(
-      { messages: [], chunks: [], hasEvidence: false, hasVisualInput: false, temperature: undefined, seed: undefined },
+      { messages: [], chunks: [], hasEvidence: false, hasVisualInput: false, temperature: undefined, seed: undefined, sessionId: undefined },
       {},
     );
 
@@ -101,7 +101,7 @@ describe("buildRetrieveNode", () => {
         hasEvidence: false,
         hasVisualInput: false,
         temperature: undefined,
-        seed: undefined,
+        seed: undefined, sessionId: undefined,
       },
       {},
     );
@@ -129,7 +129,7 @@ describe("buildRetrieveNode", () => {
         hasEvidence: false,
         hasVisualInput: false,
         temperature: undefined,
-        seed: undefined,
+        seed: undefined, sessionId: undefined,
       },
       {},
     );
@@ -161,7 +161,7 @@ describe("buildLlmNode", () => {
         hasEvidence: true,
         hasVisualInput: false,
         temperature: undefined,
-        seed: undefined,
+        seed: undefined, sessionId: undefined,
       },
       {},
     )) as {

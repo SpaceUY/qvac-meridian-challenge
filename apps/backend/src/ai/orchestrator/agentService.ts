@@ -1,26 +1,24 @@
-import * as os from "node:os";
 import { randomUUID } from "node:crypto";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type { RagRetrievalService } from "../../rag/service/rag.service.js";
 import type { Citation, RetrievedChunk } from "../../rag/domain/types.js";
 import { selectCitations } from "./citationPolicy.js";
-import { ChatQVAC } from "./qvacChatModel.js";
+import { ChatQVAC } from "qvac-langgraph";
 import { createGraph } from "./graph.js";
-import { State } from "./domain.js";
+import { State, type GenerationOptions } from "./domain.js";
 import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
 import type { ModelManagementService } from "../../models/service/models.service.js";
 import type { SupportedImageMimeType } from "../../models/domain/types.js";
-import { isCancellationError } from "../../models/domain/errors.js";
-import type { LoadedModelDelegationInfo } from "../../models/domain/types.js";
 import {
-  RESOURCE_THRESHOLDS,
-  LOW_RESOURCE_MODEL,
-  HIGH_RESOURCE_MODEL,
-  type AgentModelConfig,
-} from "../../config/models.config.js";
+  isCancellationError,
+  isDelegatedProviderUnreachableError,
+  ModelManagementError,
+  OperationCancelledError,
+} from "../../models/domain/errors.js";
+import type { LoadedModelDelegationInfo } from "../../models/domain/types.js";
+import { LLM_MODELS_BY_TIER, resolveEngineConfig } from "../../config/models.config.js";
+import { RESOURCE_TIER, type ResourceTier } from "../../config/resourceTier.js";
 import { DELEGATE_CONFIG } from "../../config/delegate.config.js";
-
-const BYTES_PER_GB = 1024 ** 3;
 
 export type AgentStatus = "idle" | "loading" | "ready" | "error";
 
@@ -76,45 +74,31 @@ export class AgentService {
   /** `requestId`s of `invoke()` calls still in flight - lets `cancel()` reject an unknown/already-settled `requestId` as a safe no-op. */
   private readonly pendingRequests = new Set<string>();
 
+  /** `tier` defaults to the process-wide `RESOURCE_TIER`, overridable for tests. */
   constructor(
     service: ModelManagementService,
     ragService: RagRetrievalService,
     documentRepository: DocumentRepository,
+    tier: ResourceTier = RESOURCE_TIER,
   ) {
-    const {
-      modelSource,
-      modelName,
-      quantization,
-      temperature,
-      ctxSize,
-      engineConfig,
-    } = this.selectModelConfig();
+    const selectedModel = LLM_MODELS_BY_TIER[tier];
+    const { modelSource, modelName, quantization, temperature, ctxSize, kvCacheEnabled } =
+      selectedModel;
     this.modelInfo = { name: modelName, quantization };
     this.chatModel = new ChatQVAC({
       service,
       modelSource,
       temperature,
       ctxSize,
-      engineConfig,
+      engineConfig: resolveEngineConfig(selectedModel),
+      kvCacheEnabled,
       delegate: DELEGATE_CONFIG,
+      isRetryableProviderError: isDelegatedProviderUnreachableError,
+      createCancelledError: (requestId) =>
+        new ModelManagementError("cancel", "Operation cancelled", new OperationCancelledError(requestId)),
     });
     this.graph = createGraph(this.chatModel, ragService, documentRepository);
     //this.corpusContext = loadCorpusContext();
-  }
-
-  /**
-   * Picks between the configured low- and high-resource models based on
-   * this machine's total RAM and CPU core count.
-   */
-  private selectModelConfig(): AgentModelConfig {
-    const ramGB = os.totalmem() / BYTES_PER_GB;
-    const cpuCores = os.cpus().length;
-
-    const isLowResource =
-      ramGB < RESOURCE_THRESHOLDS.minRamGB ||
-      cpuCores < RESOURCE_THRESHOLDS.minCpuCores;
-
-    return isLowResource ? LOW_RESOURCE_MODEL : HIGH_RESOURCE_MODEL;
   }
 
   /**
@@ -169,8 +153,11 @@ export class AgentService {
 
   /**
    * Sends a conversation history through the graph, returns the assistant's
-   * reply text and thinking trace. Pass `onToken` to receive the final
-   * reply's text as it's generated, rather than only once this resolves.
+   * reply text and thinking trace. `options` overrides this turn's
+   * `temperature`/`seed` (Req 6.1.3) and carries the KV-cache session key,
+   * falling back to `ChatQVAC`'s own constructor default when omitted. Pass
+   * `onToken` to receive the final reply's text as it's generated, rather
+   * than only once this resolves.
    *
    * Not `async`: the returned promise carries `requestId` synchronously so
    * a caller can pass it to `cancel()` while the invoke is still running -
@@ -178,12 +165,13 @@ export class AgentService {
    */
   invoke(
     messages: ConversationMessage[],
+    options?: GenerationOptions,
     onToken?: (textDelta: string) => void,
   ): Promise<InvokeResult> & { requestId: string } {
     const requestId = randomUUID();
     this.pendingRequests.add(requestId);
 
-    const result = this.runInvoke(messages, onToken).finally(() => {
+    const result = this.runInvoke(messages, options, onToken).finally(() => {
       this.pendingRequests.delete(requestId);
     });
     return Object.assign(result, { requestId });
@@ -209,6 +197,7 @@ export class AgentService {
 
   private async runInvoke(
     messages: ConversationMessage[],
+    options: GenerationOptions | undefined,
     onToken?: (textDelta: string) => void,
   ): Promise<InvokeResult> {
     const langchainMessages = messages.map(toLangChainMessage);
@@ -216,6 +205,9 @@ export class AgentService {
     const stream = await this.graph.stream(
       {
         messages: langchainMessages,
+        temperature: options?.temperature,
+        seed: options?.seed,
+        sessionId: options?.sessionId,
       },
       { streamMode: ["messages", "values"] },
     );

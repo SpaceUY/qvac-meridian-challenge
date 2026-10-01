@@ -14,7 +14,7 @@ import type {
 import type { SpeechTranscriptionPort } from '../domain/ports.js';
 import type { AudioInput, StreamTranscriptSession } from '../domain/types.js';
 import { TranscriptionService } from './transcription.service.js';
-import { DEFAULT_WHISPER_ENGINE_CONFIG } from '../../config/models.config.js';
+import { DEFAULT_WHISPER_ENGINE_CONFIG, WHISPER_MODELS_BY_TIER } from '../../config/models.config.js';
 
 /** Resolves every load() immediately with a fresh modelId - no cancellation support needed for these tests. */
 class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
@@ -94,6 +94,16 @@ describe('TranscriptionService', () => {
     await service.ensureModel();
 
     expect(runtime.loadCalls[0]?.options).toEqual({ engineConfig: DEFAULT_WHISPER_ENGINE_CONFIG });
+  });
+
+  it('loads the tier-specific whisper model instead of always the default tier', async () => {
+    const runtime = new FakeModelRuntime();
+    const models = new ModelManagementService(runtime, runtime);
+    const service = new TranscriptionService(models, new FakeSpeechPort(), 'high');
+
+    await service.ensureModel();
+
+    expect(runtime.loadCalls[0]?.source).toEqual(WHISPER_MODELS_BY_TIER.high);
   });
 
   it('transcribeFile loads the model and delegates a filePath AudioInput to the port', async () => {

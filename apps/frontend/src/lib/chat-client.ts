@@ -10,6 +10,7 @@ import type { Citation, Message } from '@/lib/chat-types'
 import { CONFIG } from '@/lib/config'
 import { readSSEEvents } from '@/lib/parse-sse'
 import { readFileAsDataUrl } from '@/lib/image-attachments'
+import { isObject } from '@/lib/utils'
 
 /** OpenAI Vision-style content part - the same shape the backend's chat.router.helpers.ts parses. */
 export type ContentPart =
@@ -121,10 +122,6 @@ function safeJsonParse(json: string): unknown {
   } catch {
     return null
   }
-}
-
-function isObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null
 }
 
 /** Keeps only well-formed citations. Exported for voice-client.ts: the voice endpoint carries the same array. */

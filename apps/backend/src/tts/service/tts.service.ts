@@ -3,7 +3,8 @@ import type { ModelManagementService } from '../../models/service/models.service
 import type { TextToSpeechPort } from '../domain/ports.js';
 import { SynthesisInProgressError } from '../domain/errors.js';
 import type { SynthesisResult, SynthesisState } from '../domain/types.js';
-import { DEFAULT_SUPERTONIC_ENGINE_CONFIG, SUPERTONIC2_TTS_MODEL_SOURCE } from '../../config/models.config.js';
+import { DEFAULT_SUPERTONIC_ENGINE_CONFIG, TTS_MODELS_BY_TIER } from '../../config/models.config.js';
+import { RESOURCE_TIER, type ResourceTier } from '../../config/resourceTier.js';
 
 interface SynthesisSlot {
   state: SynthesisState;
@@ -22,15 +23,17 @@ export class TtsService {
   private modelIdPromise?: Promise<string>;
   private slot: SynthesisSlot = { state: 'idle' };
 
+  /** `tier` defaults to the process-wide `RESOURCE_TIER`, overridable for tests. */
   constructor(
     private readonly models: ModelManagementService,
-    private readonly port: TextToSpeechPort
+    private readonly port: TextToSpeechPort,
+    private readonly tier: ResourceTier = RESOURCE_TIER
   ) {}
 
   async ensureModel(): Promise<string> {
     if (!this.modelIdPromise) {
       this.modelIdPromise = this.models
-        .loadModel(SUPERTONIC2_TTS_MODEL_SOURCE, { engineConfig: DEFAULT_SUPERTONIC_ENGINE_CONFIG })
+        .loadModel(TTS_MODELS_BY_TIER[this.tier], { engineConfig: DEFAULT_SUPERTONIC_ENGINE_CONFIG })
         .then((loaded) => loaded.modelId)
         .catch((error: unknown) => {
           this.modelIdPromise = undefined;

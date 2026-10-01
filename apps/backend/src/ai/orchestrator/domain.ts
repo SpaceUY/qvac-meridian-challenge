@@ -11,6 +11,8 @@ export const State = new StateSchema({
   /** Per-request override forwarded to the model call (Req 6.1.3) - see `GenerationOptions` below. Absent unless the caller supplied one. */
   temperature: z.number().optional(),
   seed: z.number().optional(),
+  /** KV cache session key forwarded to the model call, from the `X-Meridian-Session` header - see `GenerationOptions` below. */
+  sessionId: z.string().optional(),
 });
 
 /**
@@ -25,4 +27,6 @@ export const State = new StateSchema({
 export interface GenerationOptions {
   temperature?: number;
   seed?: number;
+  /** KV cache session key, forwarded from the `X-Meridian-Session` header. */
+  sessionId?: string;
 }

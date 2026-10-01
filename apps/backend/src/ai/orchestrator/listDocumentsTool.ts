@@ -4,9 +4,9 @@ import {
   DocumentFormat,
   DocumentStatus,
   DocumentType,
-  type ArchitectureDocument,
 } from "../../document/domain/document.model.js";
 import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
+import { toSummary } from "../../document/domain/document-summary.js";
 
 const documentTypeValues = Object.values(DocumentType) as [string, ...string[]];
 const documentStatusValues = Object.values(DocumentStatus) as [
@@ -46,20 +46,6 @@ export const listDocumentsOutputSchema = z.object({
 
 export type ListDocumentsInput = z.infer<typeof listDocumentsInputSchema>;
 export type ListDocumentsOutput = z.infer<typeof listDocumentsOutputSchema>;
-
-function toSummary(
-  document: ArchitectureDocument,
-): z.infer<typeof documentSummarySchema> {
-  return {
-    id: document.id,
-    title: document.title,
-    type: document.type,
-    format: document.format,
-    status: document.status,
-    tags: document.tags,
-    updatedAt: document.updatedAt.toISOString(),
-  };
-}
 
 /**
  * Builds the `list_documents` tool around a `DocumentRepository`, so the

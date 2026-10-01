@@ -1,0 +1,29 @@
+{
+  "name": "qvac-langgraph",
+  "version": "1.0.0",
+  "description": "LangChain chat model bridging LangChain/LangGraph orchestration to a QVAC-style model management port.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@langchain/core": "^1.2.12"
+  },
+  "devDependencies": {
+    "@langchain/core": "^1.2.12",
+    "@types/node": "^24.13.6",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.1",
+    "zod": "^4.6.5"
+  }
+}

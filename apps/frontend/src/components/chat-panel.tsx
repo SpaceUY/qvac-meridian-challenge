@@ -5,6 +5,7 @@
 import { ArrowDown } from 'lucide-react'
 import { MessageList } from '@/components/message-list'
 import { Composer } from '@/components/composer'
+import { Welcome } from '@/components/welcome'
 import { Button } from '@/components/ui/button'
 import { useChat } from '@/hooks/use-chat'
 import { useVoiceTurn } from '@/hooks/use-voice-turn'
@@ -13,9 +14,9 @@ import { useStickToBottom } from '@/hooks/use-stick-to-bottom'
 import type { ModelStatus } from '@/lib/model-status-client'
 import type { ImageAttachment } from '@/lib/image-attachments'
 
-type Props = { modelStatus: ModelStatus }
+type Props = { modelStatus: ModelStatus; modelCancelled: boolean }
 
-export function ChatPanel({ modelStatus }: Props) {
+export function ChatPanel({ modelStatus, modelCancelled }: Props) {
   const { history, isStreaming, sendMessage, stop } = useChat()
   const { phase: voicePhase, start: startVoice, send: sendVoice, discard: discardVoice, setLevelListener } = useVoiceTurn()
   // The composer is out of the normal flow, so it takes up no room. The spacer
@@ -35,13 +36,27 @@ export function ChatPanel({ modelStatus }: Props) {
   // always be able to stop.
   const micDisabled = !modelReady || (voicePhase.type !== 'recording' && isStreaming)
   const textDisabled = !modelReady || voicePhase.type === 'recording' || voicePhase.type === 'processing'
+  // Why the composer can't send right now, in the box itself. While the
+  // model loads it stays neutral: the Welcome in the middle already says why.
+  const placeholder =
+    voicePhase.type === 'processing'
+      ? 'Processing audio…'
+      : isStreaming
+        ? 'Waiting for the response…'
+        : 'Ask anything'
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={scrollRef} className="chat-scrollbar min-h-0 flex-1 overflow-y-auto">
-        <div ref={contentRef}>
-          <MessageList history={history} />
-          <div aria-hidden style={{ height: overlayHeight }} />
+        {/* min-h-full + flex: an empty conversation can center the Welcome
+            in the visible area; the spacer keeps it above the composer. */}
+        <div ref={contentRef} className="flex min-h-full flex-col">
+          {history.length === 0 ? (
+            <Welcome modelStatus={modelStatus} modelCancelled={modelCancelled} />
+          ) : (
+            <MessageList history={history} />
+          )}
+          <div aria-hidden className="shrink-0" style={{ height: overlayHeight }} />
         </div>
       </div>
 
@@ -66,6 +81,7 @@ export function ChatPanel({ modelStatus }: Props) {
           <Composer
             isStreaming={isStreaming}
             textDisabled={textDisabled}
+            placeholder={placeholder}
             onSend={handleSend}
             onStop={stop}
             voicePhase={voicePhase}
