@@ -7,7 +7,7 @@
 // store are.
 
 import type { OpenAIMessage } from '@/lib/chat-client'
-import { EngineError, parseCitations } from '@/lib/chat-client'
+import { EngineError, readErrorMessage, parseCitations } from '@/lib/chat-client'
 import type { Citation } from '@/lib/chat-types'
 
 const VOICE_COMPLETIONS_ENDPOINT = '/v1/chat/voice-completions'
@@ -39,7 +39,7 @@ export async function requestVoiceCompletion({
     signal,
   })
 
-  if (!res.ok) throw new EngineError(`the server responded ${res.status}`, res.status)
+  if (!res.ok) throw new EngineError(await readErrorMessage(res), res.status)
 
   const body: unknown = await res.json()
   return parseVoiceCompletionBody(body)

@@ -5,6 +5,7 @@ import {
   parseMessages,
   parseHistory,
   parseAudioBase64,
+  describeParseError,
   createEnvelope,
   wantsStream,
   toCompletionResponse,
@@ -17,7 +18,6 @@ import {
   SSE_HEADERS,
   MODEL_NOT_READY_ERROR,
   COMPLETION_ERROR,
-  INVALID_MESSAGES_ERROR,
   INVALID_AUDIO_ERROR,
   VOICE_COMPLETION_ERROR,
   EMPTY_TRANSCRIPT_ERROR,
@@ -67,7 +67,7 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
   router.post("/completions", async (req: Request, res: Response) => {
     const messages = parseMessages(req.body);
     if (!messages) {
-      res.status(400).json({ error: INVALID_MESSAGES_ERROR });
+      res.status(400).json({ error: describeParseError(req.body) });
       return;
     }
     if (agent.getStatus().status !== "ready") {
@@ -146,7 +146,7 @@ export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatu
   router.post("/voice-completions", async (req: Request, res: Response) => {
     const history = parseHistory(req.body);
     if (!history) {
-      res.status(400).json({ error: INVALID_MESSAGES_ERROR });
+      res.status(400).json({ error: describeParseError(req.body) });
       return;
     }
     const audio = parseAudioBase64(req.body);

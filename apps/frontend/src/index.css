@@ -128,3 +128,26 @@
     @apply font-sans;
     }
 }
+
+/* Chat scroll area: unlike the composer's no-scrollbar spots, a long
+   conversation needs a visible scroll affordance - styled thin and in the
+   theme's own border/muted colors instead of the browser default, not
+   hidden. Firefox via scrollbar-color, everything else via
+   ::-webkit-scrollbar*. */
+.chat-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.chat-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.chat-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chat-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 9999px;
+}
+.chat-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted-foreground);
+}

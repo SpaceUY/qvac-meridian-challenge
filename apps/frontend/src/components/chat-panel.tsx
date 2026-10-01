@@ -11,6 +11,7 @@ import { useVoiceTurn } from '@/hooks/use-voice-turn'
 import { useElementHeight } from '@/hooks/use-element-height'
 import { useStickToBottom } from '@/hooks/use-stick-to-bottom'
 import type { ModelStatus } from '@/lib/model-status-client'
+import type { ImageAttachment } from '@/lib/image-attachments'
 
 type Props = { modelStatus: ModelStatus }
 
@@ -23,8 +24,8 @@ export function ChatPanel({ modelStatus }: Props) {
   const { scrollRef, contentRef, isPinned, scrollToBottom } = useStickToBottom<HTMLDivElement, HTMLDivElement>()
 
   // Sending always takes you back down: you just wrote it, you want to see it.
-  function handleSend(text: string) {
-    sendMessage(text)
+  function handleSend(text: string, images: ImageAttachment[]) {
+    sendMessage(text, images)
     scrollToBottom()
   }
 
@@ -37,7 +38,7 @@ export function ChatPanel({ modelStatus }: Props) {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="chat-scrollbar min-h-0 flex-1 overflow-y-auto">
         <div ref={contentRef}>
           <MessageList history={history} />
           <div aria-hidden style={{ height: overlayHeight }} />

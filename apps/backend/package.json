@@ -12,6 +12,7 @@
     "rag-demo": "tsx src/ai/ragDemo.ts",
     "ingest": "tsx src/rag/ingest/ingest.cli.ts",
     "model-lifecycle-demo": "tsx src/models/demo.ts",
+    "multimodal-demo": "tsx src/ai/multimodalDemo.ts",
     "speech-demo": "tsx src/speech/demo.ts",
     "tts-demo": "tsx src/tts/demo.ts"
   },

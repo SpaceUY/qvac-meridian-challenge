@@ -12,5 +12,26 @@ export const VOICE_COMPLETION_ERROR = "could not generate a voice response";
 export const EMPTY_TRANSCRIPT_ERROR = "no speech detected in audio";
 export const CANCEL_PRELOAD_ERROR = "could not cancel model load";
 
+/** Per attached image, measured on the decoded byte buffer (not the base64 string, which is ~33% larger). */
+export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+/**
+ * Per message. Temporarily 1, not 2: sending 2 image attachments in one
+ * message reproducibly crashes the QVAC/llama.cpp worker process (native
+ * exit, not a caught error - confirmed with both attachments pointing at
+ * the same file AND at distinct files with identical content, so it's not
+ * a path-dedup issue). Raise this back to 2 once that's root-caused/fixed
+ * upstream - the rest of the pipeline (thumbnail row, comparison prompts)
+ * already assumes more than one is possible.
+ */
+export const MAX_IMAGES_PER_MESSAGE = 1;
+/**
+ * Sum of all images in one message, decoded. Deliberately BELOW
+ * MAX_IMAGES_PER_MESSAGE × MAX_IMAGE_BYTES (16MB) - at that value the
+ * limit could never fire independently of the other two (two max-sized
+ * images sum to exactly the ceiling, never over it). At 12MB it's a real,
+ * independently testable limit.
+ */
+export const MAX_TOTAL_IMAGE_BYTES = 12 * 1024 * 1024;
+
 /** Public alias of the chat model, echoed as `model` when a request omits it - the same name `qvac-eval.json` declares under `models.chat`. */
 export const PUBLIC_CHAT_MODEL = "meridian-assistant";

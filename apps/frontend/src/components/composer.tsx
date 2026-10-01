@@ -1,15 +1,25 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useEffect, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
 import { Send, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { MicButton } from '@/components/mic-button'
 import { RecordingBar } from '@/components/recording-bar'
+import { AttachButton } from '@/components/attach-button'
+import { ImageThumbnailRow } from '@/components/image-thumbnail-row'
+import { ImageLightbox } from '@/components/image-lightbox'
+import { useMirrorRef } from '@/hooks/use-mirror-ref'
+import {
+  buildImageAttachments,
+  revokeAttachments,
+  MAX_IMAGES_PER_MESSAGE,
+  type ImageAttachment,
+} from '@/lib/image-attachments'
 import type { VoicePhase } from '@/hooks/use-voice-turn'
 
 type Props = {
   isStreaming: boolean
   textDisabled?: boolean
-  onSend: (text: string) => void
+  onSend: (text: string, images: ImageAttachment[]) => void
   onStop: () => void
   voicePhase: VoicePhase
   micDisabled?: boolean
@@ -19,7 +29,7 @@ type Props = {
   registerVoiceLevelListener: (fn: ((level: number) => void) | null) => void
 }
 
-/** The bottom bar: write, send, or stop a response in progress (req. [1.4]), plus voice input. While recording, RecordingBar takes over the whole row - no Textarea, no MicButton. */
+/** The bottom bar: write, send, or stop a response in progress (req. [1.4]), plus voice input and (now) image attachments. While recording, RecordingBar takes over the whole row - no Textarea, no MicButton, no attachments row (the images/text state is preserved underneath, just not rendered). */
 export function Composer({
   isStreaming,
   textDisabled = false,
@@ -35,11 +45,40 @@ export function Composer({
   // What is being written, still not sent. It is pure UI - it does not matter
   // to anyone outside this component - that's why useState and not the chat reducer.
   const [text, setText] = useState('')
+  const [images, setImages] = useState<ImageAttachment[]>([])
+  const [attachError, setAttachError] = useState<string | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+  const imagesRef = useMirrorRef(images)
+
+  // Revoke any still-pending (never sent) preview URLs if the composer goes
+  // away - sent images are handed off to chat history and outlive this.
+  useEffect(() => () => revokeAttachments(imagesRef.current), [imagesRef])
+
+  function handleFilesSelected(files: File[]) {
+    const result = buildImageAttachments(files, images)
+    if (result.error) {
+      setAttachError(result.error)
+      return
+    }
+    setAttachError(null)
+    setImages((prev) => [...prev, ...result.attachments])
+  }
+
+  function removeImage(id: string) {
+    setImages((prev) => {
+      const removed = prev.find((image) => image.id === id)
+      if (removed) revokeAttachments([removed])
+      return prev.filter((image) => image.id !== id)
+    })
+  }
 
   function send() {
-    if (!text.trim() || isStreaming || textDisabled) return
-    onSend(text)
+    if ((!text.trim() && images.length === 0) || isStreaming || textDisabled) return
+    onSend(text, images)
     setText('') // empty it now: no need to wait for the server to reply
+    setImages([]) // ownership moves to chat history - don't revoke, it still needs these
+    setAttachError(null)
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -48,6 +87,35 @@ export function Composer({
       e.preventDefault()
       send()
     }
+  }
+
+  function handlePaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    const files = Array.from(e.clipboardData.items)
+      .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null)
+    if (files.length === 0) return // no image in the clipboard: let normal text paste happen
+    e.preventDefault()
+    handleFilesSelected(files)
+  }
+
+  function handleDragOver(e: DragEvent<HTMLDivElement>) {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    setIsDragOver(true)
+  }
+
+  function handleDragLeave(e: DragEvent<HTMLDivElement>) {
+    // Only clear when actually leaving the composer, not when moving between its children.
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+    setIsDragOver(false)
+  }
+
+  function handleDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    setIsDragOver(false)
+    const files = Array.from(e.dataTransfer.files).filter((file) => file.type.startsWith('image/'))
+    if (files.length > 0) handleFilesSelected(files)
   }
 
   if (voicePhase.type === 'recording') {
@@ -61,27 +129,60 @@ export function Composer({
       {voicePhase.type === 'error' && (
         <p className="rounded-md bg-destructive/10 px-3 py-1.5 text-xs text-destructive">{voicePhase.message}</p>
       )}
-      <div className="flex items-end gap-2 rounded-3xl border bg-secondary/50 p-2 shadow-sm">
-        <Textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={textDisabled}
-          placeholder={textDisabled ? 'Loading the model…' : 'Ask anything'}
-          rows={1}
-          className="max-h-40 min-h-9 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
-        />
-        <MicButton phase={voicePhase} disabled={micDisabled} onClick={onMicClick} />
-        {isStreaming ? (
-          <Button size="icon" variant="destructive" className="shrink-0 rounded-full" onClick={onStop}>
-            <Square className="size-4" />
-          </Button>
-        ) : (
-          <Button size="icon" className="shrink-0 rounded-full" disabled={!text.trim() || textDisabled} onClick={send}>
-            <Send className="size-4" />
-          </Button>
+      {attachError && (
+        <p className="rounded-md bg-destructive/10 px-3 py-1.5 text-xs text-destructive">{attachError}</p>
+      )}
+      <div
+        className="relative flex flex-col gap-1.5 rounded-3xl border bg-secondary/50 p-2 shadow-sm"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {isDragOver && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-3xl border-2 border-dashed border-primary bg-primary/5 text-sm font-medium text-primary">
+            Drop image here
+          </div>
         )}
+        <ImageThumbnailRow images={images} onRemove={removeImage} onPreview={setLightboxSrc} />
+        <div className="flex items-end gap-2">
+          <AttachButton
+            disabled={textDisabled || images.length >= MAX_IMAGES_PER_MESSAGE}
+            onFilesSelected={handleFilesSelected}
+          />
+          <Textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            disabled={textDisabled}
+            placeholder={textDisabled ? 'Loading the model…' : 'Ask anything'}
+            rows={1}
+            className="no-scrollbar max-h-40 min-h-9 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
+            // The base Textarea defaults to field-sizing: content (grows to fit,
+            // no scroll). Forced back to the classic fixed-box behavior here via
+            // inline style (wins regardless of how cn()/tailwind-merge resolves
+            // the class list) so max-h-40 actually clips and scrolls internally
+            // instead of the two properties fighting over how overflow works.
+            style={{ fieldSizing: 'fixed' }}
+          />
+          <MicButton phase={voicePhase} disabled={micDisabled} onClick={onMicClick} />
+          {isStreaming ? (
+            <Button size="icon" variant="destructive" className="shrink-0 rounded-full" onClick={onStop}>
+              <Square className="size-4" />
+            </Button>
+          ) : (
+            <Button
+              size="icon"
+              className="shrink-0 rounded-full"
+              disabled={(!text.trim() && images.length === 0) || textDisabled}
+              onClick={send}
+            >
+              <Send className="size-4" />
+            </Button>
+          )}
+        </div>
       </div>
+      <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
   )
 }

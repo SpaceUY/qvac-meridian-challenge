@@ -17,13 +17,14 @@ import { ChatGenerationChunk, type ChatResult } from "@langchain/core/outputs";
 import type { Runnable } from "@langchain/core/runnables";
 import type { ModelManagementService } from "../../models/service/models.service.js";
 import type {
-  ChatCompletionRequest,
   ChatCompletionResult,
+  ChatImageAttachment,
   ChatMessage,
   ChatTool,
   ChatToolCall,
   ChatToolProperty,
   ModelSource,
+  SupportedImageMimeType,
 } from "../../models/domain/types.js";
 
 const QVAC_ROLE_BY_MESSAGE_TYPE: Record<string, string> = {
@@ -89,6 +90,44 @@ function toChatTool(tool: BindToolsInput): ChatTool {
   };
 }
 
+const SUPPORTED_IMAGE_MIME_TYPES: ReadonlySet<string> = new Set<SupportedImageMimeType>([
+  "image/jpeg",
+  "image/png",
+]);
+
+function isSupportedImageMimeType(mimeType: unknown): mimeType is SupportedImageMimeType {
+  return typeof mimeType === "string" && SUPPORTED_IMAGE_MIME_TYPES.has(mimeType);
+}
+
+/** Whether `message` carries at least one image content block - used by `ragGraph.ts` to compute `hasVisualInput`, and internally by `toChatMessage()` below. */
+export function hasImageContent(message: BaseMessage): boolean {
+  return message.contentBlocks.some((block) => block.type === "image");
+}
+
+/**
+ * Extracts image content blocks from `message` into `ChatMessage.images`.
+ * Only blocks whose `mimeType` this pipeline actually supports survive -
+ * the API boundary (`chat.router.helpers.ts`) is what enforces that on the
+ * way in; this is a defensive filter against a message constructed some
+ * other way (e.g. a future caller that doesn't go through the router).
+ */
+function toChatImages(message: BaseMessage): ChatImageAttachment[] | undefined {
+  const images: ChatImageAttachment[] = [];
+
+  for (const block of message.contentBlocks) {
+    if (block.type !== "image") continue;
+    if (!("data" in block) || block.data === undefined) continue;
+    if (!isSupportedImageMimeType(block.mimeType)) continue;
+
+    images.push({
+      mimeType: block.mimeType,
+      data: typeof block.data === "string" ? Buffer.from(block.data, "base64") : block.data,
+    });
+  }
+
+  return images.length > 0 ? images : undefined;
+}
+
 function toChatMessage(message: BaseMessage): ChatMessage {
   const role = QVAC_ROLE_BY_MESSAGE_TYPE[message.type] ?? "user";
 
@@ -105,7 +144,8 @@ function toChatMessage(message: BaseMessage): ChatMessage {
     };
   }
 
-  return { role, content: message.text };
+  const images = toChatImages(message);
+  return { role, content: message.text, ...(images ? { images } : {}) };
 }
 
 function toLangChainToolCalls(toolCalls: ChatToolCall[]): ToolCall[] {

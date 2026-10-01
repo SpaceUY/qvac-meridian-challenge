@@ -9,6 +9,7 @@ import { createGraph } from "./graph.js";
 import { State } from "./domain.js";
 import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
 import type { ModelManagementService } from "../../models/service/models.service.js";
+import type { SupportedImageMimeType } from "../../models/domain/types.js";
 import { isCancellationError } from "../../models/domain/errors.js";
 import {
   RESOURCE_THRESHOLDS,
@@ -30,6 +31,19 @@ export interface AgentStatusPayload {
 export interface ConversationMessage {
   role: "user" | "assistant";
   message: string;
+  images?: { mimeType: SupportedImageMimeType; data: Buffer }[];
+}
+
+function toLangChainMessage({ role, message, images }: ConversationMessage): HumanMessage | AIMessage {
+  if (role === "assistant") return new AIMessage(message);
+  if (!images?.length) return new HumanMessage(message);
+
+  return new HumanMessage({
+    content: [
+      { type: "text", text: message },
+      ...images.map((image) => ({ type: "image" as const, mimeType: image.mimeType, data: image.data })),
+    ],
+  });
 }
 
 export interface InvokeResult {
@@ -181,9 +195,7 @@ export class AgentService {
     messages: ConversationMessage[],
     onToken?: (textDelta: string) => void,
   ): Promise<InvokeResult> {
-    const langchainMessages = messages.map(({ role, message }) =>
-      role === "user" ? new HumanMessage(message) : new AIMessage(message),
-    );
+    const langchainMessages = messages.map(toLangChainMessage);
 
     const stream = await this.graph.stream(
       {

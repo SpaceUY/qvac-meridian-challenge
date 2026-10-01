@@ -1,3 +1,7 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { randomUUID } from "node:crypto";
 import {
   cancel,
   close,
@@ -19,16 +23,79 @@ import type {
 import type {
   ChatCompletionRequest,
   ChatCompletionResult,
+  ChatMessage,
   InferenceResult,
   LoadedModel,
   LoadModelOptions,
   ModelDownloadProgress,
   ModelSource,
   RegistryModelSummary,
-  RegistrySearchQuery
+  RegistrySearchQuery,
+  SupportedImageMimeType
 } from '../domain/types.js';
 import { DEFAULT_MODEL_TYPE } from '../../config/models.config.js';
 import { toSdkModelConfig } from './loadModelConfig.js';
+
+const EXTENSION_BY_MIME_TYPE: Record<SupportedImageMimeType, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+};
+
+interface SdkHistoryEntry {
+  role: string;
+  content: string;
+  attachments?: { path: string }[];
+}
+
+/**
+ * Writes each `ChatMessage.images` entry to a temp file - `completion()`'s
+ * `attachments` only accepts a file path, never raw bytes
+ * (`@qvac/sdk`'s own `dist/schemas/common.d.ts`). Returns the SDK-shaped
+ * history (images replaced by `attachments`) plus every temp path written,
+ * so the caller can delete them once inference settles. Synchronous
+ * (`writeFileSync`) on purpose: `chatComplete()` below must stay
+ * non-`async` to expose `requestId` synchronously (same constraint
+ * `ModelManagementService.loadModel()`'s own doc comment explains) - an
+ * `await` here would force the method to return a fresh `Promise` that
+ * can't carry that extra property.
+ */
+function materializeAttachments(history: ChatMessage[]): {
+  sdkHistory: SdkHistoryEntry[];
+  tempFilePaths: string[];
+} {
+  const tempFilePaths: string[] = [];
+
+  const sdkHistory = history.map((message): SdkHistoryEntry => {
+    if (!message.images?.length) {
+      return { role: message.role, content: message.content };
+    }
+
+    const attachments = message.images.map((image) => {
+      const tempPath = path.join(
+        os.tmpdir(),
+        `qvac-vlm-${randomUUID()}.${EXTENSION_BY_MIME_TYPE[image.mimeType]}`,
+      );
+      fs.writeFileSync(tempPath, image.data);
+      tempFilePaths.push(tempPath);
+      return { path: tempPath };
+    });
+
+    return { role: message.role, content: message.content, attachments };
+  });
+
+  return { sdkHistory, tempFilePaths };
+}
+
+/** Best-effort: a leftover temp file in `os.tmpdir()` is not worth failing or logging an in-flight chat request over. */
+function cleanupTempFiles(tempFilePaths: string[]): void {
+  for (const tempPath of tempFilePaths) {
+    try {
+      fs.rmSync(tempPath, { force: true });
+    } catch {
+      // best effort, see doc comment above
+    }
+  }
+}
 
 /**
  * The only file in this feature that imports `@qvac/sdk`. Translates
@@ -130,9 +197,11 @@ export class QvacRuntimeAdapter
     request: ChatCompletionRequest,
     onToken?: (textDelta: string) => void,
   ): Promise<ChatCompletionResult> & { requestId: string } {
+    const { sdkHistory, tempFilePaths } = materializeAttachments(request.history);
+
     const run = completion({
       modelId,
-      history: request.history,
+      history: sdkHistory,
       tools: request.tools,
       captureThinking: true,
       stream: Boolean(onToken),
@@ -169,7 +238,8 @@ export class QvacRuntimeAdapter
       }))
       .catch((err: unknown) => {
         throw toDomainError(requestId, err);
-      });
+      })
+      .finally(() => cleanupTempFiles(tempFilePaths));
 
     return Object.assign(result, { requestId });
   }

@@ -88,10 +88,20 @@ export interface LoadModelOptions {
   engineConfig?: Record<string, unknown>;
 }
 
+/** Closed set of image formats the multimodal pipeline accepts today - see the design spec for why WebP is deliberately excluded even though the API boundary can detect it. */
+export type SupportedImageMimeType = "image/jpeg" | "image/png";
+
+export interface ChatImageAttachment {
+  mimeType: SupportedImageMimeType;
+  data: Uint8Array;
+}
+
 /** One turn of chat history, engine-agnostic. */
 export interface ChatMessage {
   role: string;
   content: string;
+  /** Images attached to this turn. Materialized to temp files by `qvacRuntimeAdapter.ts` before reaching the SDK, which only accepts a file path (never raw bytes) for an attachment. */
+  images?: ChatImageAttachment[];
 }
 
 export interface ChatToolProperty {
