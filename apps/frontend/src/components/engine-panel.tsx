@@ -1,8 +1,16 @@
 import type { ReactNode } from 'react'
 import { Separator } from '@/components/ui/separator'
+import { Button } from '@/components/ui/button'
 import type { ModelInfo, ModelStatus } from '@/lib/model-status-client'
 
-type Props = { model?: ModelInfo; modelStatus: ModelStatus; statusError?: string }
+type Props = {
+  model?: ModelInfo
+  modelStatus: ModelStatus
+  statusError?: string
+  cancelled: boolean
+  onCancelLoad: () => void
+  onRetryLoad: () => void
+}
 
 const STATUS_LABEL: Record<ModelStatus, string> = {
   idle: 'Starting…',
@@ -18,13 +26,31 @@ const STATUS_COLOR: Record<ModelStatus, string> = {
 }
 
 /** Right panel: "with what" the assistant runs. Req. [5.1] + [5.1.1]. */
-export function EnginePanel({ model, modelStatus, statusError }: Props) {
+export function EnginePanel({ model, modelStatus, statusError, cancelled, onCancelLoad, onRetryLoad }: Props) {
+  // A cancelled load is still reported as 'idle' by the server (it's not a
+  // failure) - `cancelled` is what tells that apart from the app's initial
+  // "about to auto-start" idle, so the label/action match what happened.
+  const showCancelledState = modelStatus === 'idle' && cancelled
+  const label = showCancelledState ? 'Load cancelled' : STATUS_LABEL[modelStatus]
+
   return (
     <div className="flex flex-col gap-4 text-sm">
       <Section title="Inference">
-        <div className={`flex items-center gap-1.5 font-medium ${STATUS_COLOR[modelStatus]}`}>
-          <span className="size-1.5 rounded-full bg-current" />
-          {STATUS_LABEL[modelStatus]}
+        <div className="flex items-center justify-between gap-1.5">
+          <div className={`flex items-center gap-1.5 font-medium ${STATUS_COLOR[modelStatus]}`}>
+            <span className="size-1.5 rounded-full bg-current" />
+            {label}
+          </div>
+          {modelStatus === 'loading' && (
+            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={onCancelLoad}>
+              Cancel
+            </Button>
+          )}
+          {showCancelledState && (
+            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={onRetryLoad}>
+              Load
+            </Button>
+          )}
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
           {modelStatus === 'error' ? statusError : 'No peers available.'}

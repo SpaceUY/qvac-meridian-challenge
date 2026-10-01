@@ -9,6 +9,7 @@ import { State } from "./domain.js";
 import { loadCorpusContext } from "../context/fullCorpusContext.js";
 import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
 import type { ModelManagementService } from "../../models/service/models.service.js";
+import { isCancellationError } from "../../models/domain/errors.js";
 import {
   RESOURCE_THRESHOLDS,
   LOW_RESOURCE_MODEL,
@@ -107,10 +108,25 @@ export class AgentService {
       await this.chatModel.ensureModel();
       this.status = "ready";
     } catch (err) {
-      this.status = "error";
-      this.statusError = err instanceof Error ? err.message : String(err);
+      // A cancelled load isn't a genuine failure - go back to "idle" so a
+      // caller can start loading again, rather than getting stuck on "error".
+      if (isCancellationError(err)) {
+        this.status = "idle";
+      } else {
+        this.status = "error";
+        this.statusError = err instanceof Error ? err.message : String(err);
+      }
       throw err;
     }
+  }
+
+  /**
+   * Cancels the model load started by `preload()`, if one is currently in
+   * flight. Safe to call when nothing is loading - a no-op, same
+   * convention as `ModelManagementService.cancel()`.
+   */
+  async cancelPreload(): Promise<void> {
+    await this.chatModel.cancelLoad();
   }
 
   /**

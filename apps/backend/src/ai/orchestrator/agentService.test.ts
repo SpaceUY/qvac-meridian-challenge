@@ -91,17 +91,27 @@ interface PendingChatCall {
   reject: (err: unknown) => void;
 }
 
+interface PendingLoadCall {
+  resolve: (result: LoadedModel) => void;
+  reject: (err: unknown) => void;
+}
+
 /**
- * Like `FakeModelRuntime` above, but `chatComplete` calls stay pending until
- * the test explicitly `settle()`s or `cancel()`s them by requestId - needed
- * to exercise `AgentService.cancel()`, which cancels whatever chat call is
- * currently in flight on the underlying `ChatQVAC` model.
+ * Like `FakeModelRuntime` above, but `load`/`chatComplete` calls stay
+ * pending until the test explicitly `settle()`s or `cancel()`s them by
+ * requestId - needed to exercise `AgentService.cancel()`/`cancelPreload()`,
+ * which cancel whatever call is currently in flight on the underlying
+ * `ChatQVAC` model.
  */
 class ControllableModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
   private nextRequestId = 0;
-  private readonly pending = new Map<string, PendingChatCall>();
+  private readonly pendingChat = new Map<string, PendingChatCall>();
+  private readonly pendingLoad = new Map<string, PendingLoadCall>();
+  private readonly loadSources = new Map<string, ModelSource>();
   private readonly chatRequestIdQueue: string[] = [];
   private chatRequestWaiter?: (requestId: string) => void;
+  private readonly loadRequestIdQueue: string[] = [];
+  private loadRequestWaiter?: (requestId: string) => void;
 
   async searchRegistry() {
     return [];
@@ -114,10 +124,18 @@ class ControllableModelRuntime implements ModelProvisioningPort, ModelRuntimePor
   async provision() {}
 
   load(source: ModelSource): Promise<LoadedModel> & { requestId: string } {
-    return Object.assign(
-      Promise.resolve({ modelId: "fake-model", source, loadedAt: new Date() }),
-      { requestId: "req-load" },
-    );
+    const requestId = `req-load-${(this.nextRequestId += 1)}`;
+    this.loadSources.set(requestId, source);
+    const promise = new Promise<LoadedModel>((resolve, reject) => {
+      this.pendingLoad.set(requestId, { resolve, reject });
+    });
+    if (this.loadRequestWaiter) {
+      this.loadRequestWaiter(requestId);
+      this.loadRequestWaiter = undefined;
+    } else {
+      this.loadRequestIdQueue.push(requestId);
+    }
+    return Object.assign(promise, { requestId });
   }
 
   infer(): Promise<InferenceResult> & { requestId: string } {
@@ -129,7 +147,7 @@ class ControllableModelRuntime implements ModelProvisioningPort, ModelRuntimePor
   chatComplete(): Promise<ChatCompletionResult> & { requestId: string } {
     const requestId = `req-chat-${(this.nextRequestId += 1)}`;
     const promise = new Promise<ChatCompletionResult>((resolve, reject) => {
-      this.pending.set(requestId, { resolve, reject });
+      this.pendingChat.set(requestId, { resolve, reject });
     });
     if (this.chatRequestWaiter) {
       this.chatRequestWaiter(requestId);
@@ -145,18 +163,33 @@ class ControllableModelRuntime implements ModelProvisioningPort, ModelRuntimePor
   async close() {}
 
   async cancel(requestId: string) {
-    const call = this.pending.get(requestId);
-    if (!call) return; // unknown, already-settled, or already-cancelled: safe no-op
-    this.pending.delete(requestId);
-    call.reject(new OperationCancelledError(requestId));
+    const chatCall = this.pendingChat.get(requestId);
+    if (chatCall) {
+      this.pendingChat.delete(requestId);
+      chatCall.reject(new OperationCancelledError(requestId));
+      return;
+    }
+    const loadCall = this.pendingLoad.get(requestId);
+    if (!loadCall) return; // unknown, already-settled, or already-cancelled: safe no-op
+    this.pendingLoad.delete(requestId);
+    loadCall.reject(new OperationCancelledError(requestId));
   }
 
   /** Resolves the given in-flight chat call with a fixed reply. Throws if `requestId` isn't pending. */
   settle(requestId: string, result: ChatCompletionResult = { text: "ok", toolCalls: [] }): void {
-    const call = this.pending.get(requestId);
+    const call = this.pendingChat.get(requestId);
     if (!call) throw new Error(`no pending chat call for requestId "${requestId}"`);
-    this.pending.delete(requestId);
+    this.pendingChat.delete(requestId);
     call.resolve(result);
+  }
+
+  /** Resolves the given in-flight load call with a synthetic result built from its own `source`. Throws if `requestId` isn't pending. */
+  settleLoad(requestId: string): void {
+    const call = this.pendingLoad.get(requestId);
+    if (!call) throw new Error(`no pending load call for requestId "${requestId}"`);
+    this.pendingLoad.delete(requestId);
+    const source = this.loadSources.get(requestId)!;
+    call.resolve({ modelId: `fake-model-${requestId}`, source, loadedAt: new Date() });
   }
 
   /** Resolves with the requestId of the next `chatComplete` call, so a test can wait for it to actually start before cancelling. */
@@ -165,6 +198,15 @@ class ControllableModelRuntime implements ModelProvisioningPort, ModelRuntimePor
     if (queued) return Promise.resolve(queued);
     return new Promise((resolve) => {
       this.chatRequestWaiter = resolve;
+    });
+  }
+
+  /** Resolves with the requestId of the next `load` call, so a test can wait for it to actually start before cancelling. */
+  nextLoadRequestId(): Promise<string> {
+    const queued = this.loadRequestIdQueue.shift();
+    if (queued) return Promise.resolve(queued);
+    return new Promise((resolve) => {
+      this.loadRequestWaiter = resolve;
     });
   }
 }
@@ -300,6 +342,7 @@ describe("AgentService.invoke", () => {
     const pending = agentService.invoke([
       { role: "user", message: "What's the warranty policy?" },
     ]);
+    runtime.settleLoad(await runtime.nextLoadRequestId());
     const chatRequestId = await runtime.nextChatRequestId();
 
     await agentService.cancel(pending.requestId);
@@ -320,5 +363,39 @@ describe("AgentService.invoke", () => {
     await expect(followUp).resolves.toEqual(
       expect.objectContaining({ answer: expect.any(String) }),
     );
+  });
+
+  it("cancels an in-flight model load without leaving the agent unable to load a model afterward", async () => {
+    const runtime = new ControllableModelRuntime();
+    const modelService = new ModelManagementService(runtime, runtime);
+
+    const embeddingPort = new FakeEmbeddingPort();
+    const vectorStore = await buildFixtureVectorStore(embeddingPort);
+    const ragService = new RagRetrievalService(embeddingPort, vectorStore);
+
+    const agentService = new AgentService(
+      modelService,
+      ragService,
+      new FakeDocumentRepository([]),
+    );
+
+    const preloadPromise = agentService.preload();
+    const loadRequestId = await runtime.nextLoadRequestId();
+    expect(agentService.getStatus().status).toBe("loading");
+
+    await agentService.cancelPreload();
+
+    await expect(preloadPromise).rejects.toBeInstanceOf(ModelManagementError);
+    // A cancelled load isn't a genuine failure: the agent should be ready
+    // to try loading again, not stuck showing an error.
+    expect(agentService.getStatus().status).toBe("idle");
+
+    const secondPreload = agentService.preload();
+    const secondLoadRequestId = await runtime.nextLoadRequestId();
+    expect(secondLoadRequestId).not.toBe(loadRequestId);
+    runtime.settleLoad(secondLoadRequestId);
+
+    await secondPreload;
+    expect(agentService.getStatus().status).toBe("ready");
   });
 });

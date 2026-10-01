@@ -10,7 +10,16 @@ export default function App() {
   return (
     <AppShell
       leftSidebar={<CorpusPanel documents={FAKE_CORPUS} />}
-      rightSidebar={<EnginePanel model={modelStatus.model} modelStatus={modelStatus.status} statusError={modelStatus.error} />}
+      rightSidebar={
+        <EnginePanel
+          model={modelStatus.model}
+          modelStatus={modelStatus.status}
+          statusError={modelStatus.error}
+          cancelled={modelStatus.cancelled}
+          onCancelLoad={modelStatus.cancelLoad}
+          onRetryLoad={modelStatus.retryLoad}
+        />
+      }
     >
       <ChatPanel modelStatus={modelStatus.status} />
     </AppShell>

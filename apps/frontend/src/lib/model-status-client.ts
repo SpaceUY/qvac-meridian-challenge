@@ -13,3 +13,8 @@ export async function triggerPreload(): Promise<ModelStatusResponse> {
   if (!res.ok) throw new Error(`preload failed: ${res.status}`)
   return res.json()
 }
+
+export async function cancelPreload(): Promise<void> {
+  const res = await fetch('/api/chat/preload/cancel', { method: 'POST' })
+  if (!res.ok) throw new Error(`cancel preload failed: ${res.status}`)
+}

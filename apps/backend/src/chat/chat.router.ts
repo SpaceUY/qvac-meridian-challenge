@@ -10,9 +10,10 @@ import {
   INVALID_AUDIO_ERROR,
   VOICE_COMPLETION_ERROR,
   EMPTY_TRANSCRIPT_ERROR,
+  CANCEL_PRELOAD_ERROR,
 } from "./chat.router.const.js";
 
-/** `GET /status` + `POST /preload`, mounted at `/api/chat` in server.ts. */
+/** `GET /status` + `POST /preload` + `POST /preload/cancel`, mounted at `/api/chat` in server.ts. */
 export function createChatStatusRouter(agentService: AgentService): Router {
   const router = Router();
 
@@ -27,6 +28,19 @@ export function createChatStatusRouter(agentService: AgentService): Router {
       console.error("[chat:preload]", err);
     });
     res.status(202).json(agentService.getStatus());
+  });
+
+  // Cancels the model load started by /preload, if one is in flight. Same
+  // safe-no-op convention as the rest of the cancel API: calling this when
+  // nothing is loading (or after it already finished) does nothing.
+  router.post("/preload/cancel", async (_req: Request, res: Response) => {
+    try {
+      await agentService.cancelPreload();
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[chat:preload:cancel]", err);
+      res.status(500).json({ error: CANCEL_PRELOAD_ERROR });
+    }
   });
 
   return router;
