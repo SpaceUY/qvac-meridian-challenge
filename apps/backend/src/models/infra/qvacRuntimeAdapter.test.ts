@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { DelegatedProviderUnreachableError, OperationCancelledError } from "../domain/errors.js";
 
-const { loadModelMock, getLoadedModelInfoMock, completionMock, downloadAssetMock, deleteCacheMock } = vi.hoisted(() => ({
+const { loadModelMock, getLoadedModelInfoMock, completionMock, downloadAssetMock, deleteCacheMock, heartbeatMock } = vi.hoisted(() => ({
   loadModelMock: vi.fn(),
   getLoadedModelInfoMock: vi.fn(),
   completionMock: vi.fn(),
   downloadAssetMock: vi.fn(),
   deleteCacheMock: vi.fn(),
+  heartbeatMock: vi.fn(),
 }));
 
 /**
@@ -29,6 +30,7 @@ vi.mock("@qvac/sdk", async (importOriginal) => {
     completion: completionMock,
     downloadAsset: downloadAssetMock,
     deleteCache: deleteCacheMock,
+    heartbeat: heartbeatMock,
   };
 });
 
@@ -212,6 +214,29 @@ describe("QvacRuntimeAdapter.provision", () => {
     await adapter.provision({ kind: "rawSrc", src: "hf://some/projection-model.gguf" });
     expect(downloadAssetMock).toHaveBeenCalledWith(
       expect.objectContaining({ assetSrc: "hf://some/projection-model.gguf" }),
+    );
+  });
+});
+
+describe("QvacRuntimeAdapter.heartbeat", () => {
+  it("sends the SDK a heartbeat addressed to the provider with the given timeout", async () => {
+    heartbeatMock.mockResolvedValue({ type: "heartbeat", number: 1 });
+
+    const adapter = new QvacRuntimeAdapter();
+    await adapter.heartbeat({ providerPublicKey: "pk-abc", timeout: 3000 });
+
+    expect(heartbeatMock).toHaveBeenCalledWith({
+      delegate: { providerPublicKey: "pk-abc", timeout: 3000 },
+    });
+  });
+
+  it("propagates the SDK's failure when the provider is unreachable", async () => {
+    heartbeatMock.mockRejectedValue(new Error("provider offline"));
+
+    const adapter = new QvacRuntimeAdapter();
+
+    await expect(adapter.heartbeat({ providerPublicKey: "pk-abc", timeout: 3000 })).rejects.toThrow(
+      "provider offline",
     );
   });
 });

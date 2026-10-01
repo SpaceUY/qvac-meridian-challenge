@@ -85,4 +85,12 @@ export interface ModelRuntimePort {
    * fake used by an unrelated feature's tests doesn't have to implement it.
    */
   deleteCache?(kvCacheKey: string): Promise<void>;
+  /**
+   * Round-trips a heartbeat to a delegated provider: resolves when it
+   * answers, rejects when it is unreachable or `timeout` (ms) elapses.
+   * Optional: only the provider health monitor needs it, so a
+   * `ModelRuntimePort` fake used by an unrelated feature's tests doesn't
+   * have to implement it.
+   */
+  heartbeat?(delegate: { providerPublicKey: string; timeout: number }): Promise<void>;
 }

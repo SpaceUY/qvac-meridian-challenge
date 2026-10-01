@@ -11,6 +11,7 @@ export const STAGE_STATUS: Record<ModelManagementError['stage'], number> = {
   cancel: 502,
   introspect: 502,
   cache: 502,
+  heartbeat: 502,
   'not-found': 404
 };
 

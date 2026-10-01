@@ -10,6 +10,7 @@ import {
   deleteCache,
   downloadAsset,
   getLoadedModelInfo,
+  heartbeat,
   InferenceCancelledError,
   loadModel,
   modelRegistryList,
@@ -287,6 +288,11 @@ export class QvacRuntimeAdapter
   /** Omits `modelId` on purpose, so the SDK removes the key's caches for every model, not just one. */
   async deleteCache(kvCacheKey: string): Promise<void> {
     await deleteCache({ kvCacheKey });
+  }
+
+  /** Thin wrapper over the SDK's `heartbeat()`, which throws when the provider is unreachable or the timeout elapses. */
+  async heartbeat(delegate: { providerPublicKey: string; timeout: number }): Promise<void> {
+    await heartbeat({ delegate });
   }
 
   /**

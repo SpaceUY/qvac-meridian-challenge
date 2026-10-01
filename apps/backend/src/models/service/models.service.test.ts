@@ -140,6 +140,17 @@ class CacheableRuntime extends FakeModelRuntime {
   }
 }
 
+/** A runtime that implements the optional `heartbeat()`, recording every delegate it was asked to check. */
+class HeartbeatRuntime extends FakeModelRuntime {
+  readonly heartbeatCalls: Array<{ providerPublicKey: string; timeout: number }> = [];
+  heartbeatShouldFail = false;
+
+  async heartbeat(delegate: { providerPublicKey: string; timeout: number }): Promise<void> {
+    this.heartbeatCalls.push(delegate);
+    if (this.heartbeatShouldFail) throw new Error('provider offline');
+  }
+}
+
 const SOURCE: ModelSource = { kind: 'url', url: 'https://example.com/model.gguf' };
 
 describe('ModelManagementService cancellation', () => {
@@ -321,5 +332,35 @@ describe('ModelManagementService.deleteCache', () => {
     const service = new ModelManagementService(runtime, runtime);
 
     await expect(service.deleteCache('session-1')).rejects.toMatchObject({ stage: 'cache' });
+  });
+});
+
+describe('ModelManagementService.heartbeat', () => {
+  it("delegates to the runtime's heartbeat() with the same delegate", async () => {
+    const runtime = new HeartbeatRuntime();
+    const service = new ModelManagementService(runtime, runtime);
+
+    await service.heartbeat({ providerPublicKey: 'pk-abc', timeout: 3000 });
+
+    expect(runtime.heartbeatCalls).toEqual([{ providerPublicKey: 'pk-abc', timeout: 3000 }]);
+  });
+
+  it('rejects with a "heartbeat" error when the runtime says the provider is unreachable', async () => {
+    const runtime = new HeartbeatRuntime();
+    runtime.heartbeatShouldFail = true;
+    const service = new ModelManagementService(runtime, runtime);
+
+    await expect(service.heartbeat({ providerPublicKey: 'pk-abc', timeout: 3000 })).rejects.toMatchObject({
+      stage: 'heartbeat'
+    });
+  });
+
+  it('rejects with a "heartbeat" error when the runtime does not implement heartbeat()', async () => {
+    const runtime = new FakeModelRuntime();
+    const service = new ModelManagementService(runtime, runtime);
+
+    await expect(service.heartbeat({ providerPublicKey: 'pk-abc', timeout: 3000 })).rejects.toMatchObject({
+      stage: 'heartbeat'
+    });
   });
 });

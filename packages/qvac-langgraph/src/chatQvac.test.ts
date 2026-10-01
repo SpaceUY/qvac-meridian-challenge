@@ -19,7 +19,7 @@ function createTestCancelledError(requestId: string): Error & { stage: string } 
   return Object.assign(new Error(`Operation "${requestId}" was cancelled`), { stage: "cancel" });
 }
 
-/** Records the `options` passed to `loadModel()`; resolves immediately with a fixed model id. Records every `getLoadedModelInfo()` call so tests can assert whether it was even attempted. */
+/** Records the `options` passed to `loadModel()`; resolves immediately with a per-load model id (`fake-model-<n>` for the n-th load). Records every `getLoadedModelInfo()` call so tests can assert whether it was even attempted. */
 class RecordingQvacModelPort implements QvacModelPort {
   lastLoadOptions?: Parameters<QvacModelPort["loadModel"]>[1];
   loadCallCount = 0;
@@ -32,6 +32,14 @@ class RecordingQvacModelPort implements QvacModelPort {
   operations: string[] = [];
   /** When true, `loadModel()` returns a promise that never settles - simulates a delegated connection attempt stuck mid-connect (see `ChatQVAC.cancelLoad`'s doc comment). */
   hangLoad = false;
+  /** When true, `chatComplete()` returns a promise that never settles - simulates a completion still in flight. */
+  hangChat = false;
+  /** When true, the next `loadModel()` call rejects (then this resets to false) - simulates a load that fails, e.g. a local load running out of memory. */
+  failNextLoad = false;
+  /** When true, every `loadModel()` call that carries a `delegate` rejects - simulates a provider that answers but cannot load the model (a provider-side load failure the SDK does not fall back from). Checked before `failNextLoad`, so it does not consume it. */
+  rejectDelegatedLoads = false;
+  /** When true, `unloadModel()` returns a promise that never settles - freezes a switch in its unload phase, before any load is in flight. */
+  hangUnload = false;
 
   loadModel(
     _source: QvacModelSource,
@@ -40,9 +48,17 @@ class RecordingQvacModelPort implements QvacModelPort {
     this.loadCallCount += 1;
     this.lastLoadOptions = options;
     this.operations.push("load");
-    const promise = this.hangLoad
-      ? new Promise<{ modelId: string }>(() => {})
-      : Promise.resolve({ modelId: "fake-model" });
+    let promise: Promise<{ modelId: string }>;
+    if (this.rejectDelegatedLoads && options?.delegate) {
+      promise = Promise.reject(new Error("Provider failed to load model"));
+    } else if (this.failNextLoad) {
+      this.failNextLoad = false;
+      promise = Promise.reject(new Error("load failed"));
+    } else if (this.hangLoad) {
+      promise = new Promise<{ modelId: string }>(() => {});
+    } else {
+      promise = Promise.resolve({ modelId: `fake-model-${this.loadCallCount}` });
+    }
     return Object.assign(promise, { requestId: `req-load-${this.loadCallCount}` });
   }
 
@@ -53,6 +69,9 @@ class RecordingQvacModelPort implements QvacModelPort {
   ): Promise<QvacChatCompletionResult> & { requestId: string } {
     this.chatCompleteCallCount += 1;
     const requestId = `req-chat-${this.chatCompleteCallCount}`;
+    if (this.hangChat) {
+      return Object.assign(new Promise<QvacChatCompletionResult>(() => {}), { requestId });
+    }
     const outcome = this.chatCompleteOutcomes.shift() ?? "succeed";
     if (outcome === "provider-unreachable") {
       return Object.assign(Promise.reject(new TestProviderUnreachableError()), { requestId });
@@ -68,6 +87,7 @@ class RecordingQvacModelPort implements QvacModelPort {
 
   async unloadModel(modelId: string): Promise<void> {
     this.operations.push(`unload:${modelId}`);
+    if (this.hangUnload) await new Promise<void>(() => {});
   }
 
   async getLoadedModelInfo(modelId: string): Promise<QvacLoadedModelDelegationInfo> {
@@ -166,7 +186,7 @@ describe("ChatQVAC.cancelLoad", () => {
       modelSource: { kind: "url", url: "https://example.com/model.gguf" },
     });
 
-    await expect(chatModel.ensureModel()).resolves.toBe("fake-model");
+    await expect(chatModel.ensureModel()).resolves.toBe("fake-model-1");
     await expect(chatModel.cancelLoad()).resolves.toBeUndefined();
   });
 
@@ -215,7 +235,7 @@ describe("ChatQVAC.getDelegationInfo", () => {
       isDelegated: true,
       providerPublicKey: "pk-abc",
     });
-    expect(runtime.getLoadedModelInfoCalls).toEqual(["fake-model"]);
+    expect(runtime.getLoadedModelInfoCalls).toEqual(["fake-model-1"]);
   });
 
   it("resolves undefined without querying the runtime when no delegate is configured", async () => {
@@ -305,7 +325,7 @@ describe("ChatQVAC._generate delegation recovery", () => {
     // Unloading the stale (still delegated) model BEFORE reloading is what
     // makes the reload a genuine local load rather than a same-modelId
     // no-op that would leave it delegated forever.
-    expect(runtime.operations).toEqual(["load", "unload:fake-model", "load"]);
+    expect(runtime.operations).toEqual(["load", "unload:fake-model-1", "load"]);
     expect(chatModel.getCachedDelegationInfo()).toEqual({ isDelegated: false });
   });
 
@@ -377,7 +397,7 @@ describe("ChatQVAC._streamResponseChunks delegation recovery", () => {
 
     expect(chunks).toContain("ok");
     expect(runtime.loadCallCount).toBe(2);
-    expect(runtime.operations).toEqual(["load", "unload:fake-model", "load"]);
+    expect(runtime.operations).toEqual(["load", "unload:fake-model-1", "load"]);
   });
 
   it("does not retry a genuine completion failure while streaming", async () => {
@@ -450,6 +470,225 @@ describe("ChatQVAC.isRecovering", () => {
     await chatModel._generate([new HumanMessage("hi")], CALL_OPTIONS);
 
     expect(chatModel.isRecovering()).toBe(false);
+  });
+});
+
+const DELEGATE = { providerPublicKey: "pk-abc", fallbackToLocal: true };
+
+function buildDelegatingModel(runtime: RecordingQvacModelPort): ChatQVAC {
+  return new ChatQVAC({
+    service: runtime,
+    modelSource: { kind: "url", url: "https://example.com/model.gguf" },
+    delegate: DELEGATE,
+  });
+}
+
+/** Enough microtask ticks for a suspended async function to run up to its next real wait. */
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 10; i++) {
+    await Promise.resolve();
+  }
+}
+
+describe("ChatQVAC.switchTo", () => {
+  it("unloads the current model, then loads a local one without a delegate", async () => {
+    const runtime = new RecordingQvacModelPort();
+    const chatModel = buildDelegatingModel(runtime);
+    runtime.delegationInfoResult = { isDelegated: true, providerPublicKey: "pk-abc" };
+    await chatModel.getDelegationInfo();
+    runtime.operations.length = 0;
+
+    runtime.delegationInfoResult = { isDelegated: false };
+    await chatModel.switchTo("local");
+
+    expect(runtime.operations).toEqual(["unload:fake-model-1", "load"]);
+    expect(runtime.lastLoadOptions?.delegate).toBeUndefined();
+  });
+
+  it("loads with the configured delegate when switching back to delegated", async () => {
+    const runtime = new RecordingQvacModelPort();
+    const chatModel = buildDelegatingModel(runtime);
+    await chatModel.ensureModel();
+    await chatModel.switchTo("local");
+
+    await chatModel.switchTo("delegated");
+
+    expect(runtime.lastLoadOptions?.delegate).toEqual(DELEGATE);
+  });
+
+  it("refreshes the cached delegation info once the switch settles", async () => {
+    const runtime = new RecordingQvacModelPort();
+    const chatModel = buildDelegatingModel(runtime);
+    runtime.delegationInfoResult = { isDelegated: true, providerPublicKey: "pk-abc" };
+    await chatModel.getDelegationInfo();
+
+    runtime.delegationInfoResult = { isDelegated: false };
+    await chatModel.switchTo("local");
+
+    expect(chatModel.getCachedDelegationInfo()).toEqual({ isDelegated: false });
+  });
+
+  it("rejects switching to delegated when no delegate is configured", async () => {
+    const runtime = new RecordingQvacModelPort();
+    const chatModel = new ChatQVAC({
+      service: runtime,
+      modelSource: { kind: "url", url: "https://example.com/model.gguf" },
+    });
+    await chatModel.ensureModel();
+
+    await expect(chatModel.switchTo("delegated")).rejects.toThrow(/no delegate/i);
+    expect(runtime.loadCallCount).toBe(1);
+  });
+
+  it("shares the switch's load with a chat request that arrives mid-switch (no second load)", async () => {
+    const runtime = new RecordingQvacModelPort();
+    const chatModel = buildDelegatingModel(runtime);
+    await chatModel.ensureModel();
+    expect(runtime.loadCallCount).toBe(1);
+
+    const switching = chatModel.switchTo("local");
+    const concurrent = chatModel.ensureModel();
+
+    await expect(concurrent).resolves.toBe("fake-model-2");
+    await switching;
+    expect(runtime.loadCallCount).toBe(2);
+  });
+
+  it("clears the cached model and delegation info when the switch fails, so a later ensureModel() reloads", async () => {
+    const runtime = new RecordingQvacModelPort();
+    const chatModel = buildDelegatingModel(runtime);
+    runtime.delegationInfoResult = { isDelegated: true, providerPublicKey: "pk-abc" };
+    await chatModel.getDelegationInfo();
+
+    runtime.failNextLoad = true;
+    await expect(chatModel.switchTo("local")).rejects.toThrow("load failed");
+
+    expect(chatModel.getCachedDelegationInfo()).toBeUndefined();
+    expect(chatModel.isRecovering()).toBe(false);
+    const loadsBefore = runtime.loadCallCount;
+    await expect(chatModel.ensureModel()).resolves.toBe("fake-model-3");
+    expect(runtime.loadCallCount).toBe(loadsBefore + 1);
+  });
+
+  it("falls back to a local load inside the same call when the delegated load fails", async () => {
+    const runtime = new RecordingQvacModelPort();
+    const chatModel = buildDelegatingModel(runtime);
+    await chatModel.ensureModel();
+    runtime.operations.length = 0;
+    runtime.rejectDelegatedLoads = true;
+
+    await expect(chatModel.switchTo("delegated")).resolves.toBe("fake-model-3");
+
+    expect(runtime.operations).toEqual(["unload:fake-model-1", "load", "load"]);
+    expect(runtime.lastLoadOptions?.delegate).toBeUndefined();
+    expect(chatModel.getCachedDelegationInfo()).toEqual({ isDelegated: false });
+    await expect(chatModel.ensureModel()).resolves.toBe("fake-model-3");
+    expect(runtime.loadCallCount).toBe(3);
+  });
+
+  it("rejects and clears the cached model only when the local fallback also fails", async () => {
+    const runtime = new RecordingQvacModelPort();
+    const chatModel = buildDelegatingModel(runtime);
+    await chatModel.ensureModel();
+    runtime.rejectDelegatedLoads = true;
+    runtime.failNextLoad = true;
+
+    await expect(chatModel.switchTo("delegated")).rejects.toThrow("load failed");
+
+    expect(chatModel.getCachedDelegationInfo()).toBeUndefined();
+    expect(chatModel.isBusy()).toBe(false);
+    runtime.rejectDelegatedLoads = false;
+    await expect(chatModel.ensureModel()).resolves.toBe("fake-model-4");
+  });
+});
+
+describe("ChatQVAC.isBusy", () => {
+  it("is false when nothing is in flight", async () => {
+    const runtime = new RecordingQvacModelPort();
+    const chatModel = buildDelegatingModel(runtime);
+    await chatModel.ensureModel();
+
+    expect(chatModel.isBusy()).toBe(false);
+  });
+
+  it("is true while a load is in flight", async () => {
+    const runtime = new RecordingQvacModelPort();
+    runtime.hangLoad = true;
+    const chatModel = buildDelegatingModel(runtime);
+
+    void chatModel.ensureModel();
+    await flushMicrotasks();
+
+    expect(chatModel.isBusy()).toBe(true);
+  });
+
+  it("is true while a completion is in flight", async () => {
+    const runtime = new RecordingQvacModelPort();
+    const chatModel = buildDelegatingModel(runtime);
+    await chatModel.ensureModel();
+    runtime.hangChat = true;
+
+    void chatModel._generate([new HumanMessage("hi")], CALL_OPTIONS);
+    await flushMicrotasks();
+
+    expect(chatModel.isBusy()).toBe(true);
+  });
+
+  it("is true while a switch is in flight", async () => {
+    const runtime = new RecordingQvacModelPort();
+    const chatModel = buildDelegatingModel(runtime);
+    await chatModel.ensureModel();
+    runtime.hangLoad = true;
+
+    void chatModel.switchTo("local");
+    await flushMicrotasks();
+
+    expect(chatModel.isBusy()).toBe(true);
+    expect(chatModel.isRecovering()).toBe(true);
+  });
+
+  it("is true while a switch to delegated is still unloading, without raising recovering", async () => {
+    const runtime = new RecordingQvacModelPort();
+    const chatModel = buildDelegatingModel(runtime);
+    await chatModel.ensureModel();
+    runtime.hangUnload = true;
+
+    void chatModel.switchTo("delegated");
+    await flushMicrotasks();
+
+    expect(runtime.operations).toEqual(["load", "unload:fake-model-1"]);
+    expect(chatModel.isBusy()).toBe(true);
+    expect(chatModel.isRecovering()).toBe(false);
+  });
+
+  it("is true while a switch to local is still unloading, and raises recovering", async () => {
+    const runtime = new RecordingQvacModelPort();
+    const chatModel = buildDelegatingModel(runtime);
+    await chatModel.ensureModel();
+    runtime.hangUnload = true;
+
+    void chatModel.switchTo("local");
+    await flushMicrotasks();
+
+    expect(runtime.operations).toEqual(["load", "unload:fake-model-1"]);
+    expect(chatModel.isBusy()).toBe(true);
+    expect(chatModel.isRecovering()).toBe(true);
+  });
+
+  it("stays true while an overlapping switch is still running after the first one settled", async () => {
+    const runtime = new RecordingQvacModelPort();
+    const chatModel = buildDelegatingModel(runtime);
+    runtime.hangUnload = true;
+
+    // Nothing is loaded yet, so the first switch has nothing to unload and
+    // settles; the second one then hangs unloading the first one's model.
+    const first = chatModel.switchTo("local");
+    void chatModel.switchTo("delegated");
+    await first;
+    await flushMicrotasks();
+
+    expect(runtime.operations).toEqual(["load", "unload:fake-model-1"]);
+    expect(chatModel.isBusy()).toBe(true);
   });
 });
 

@@ -19,6 +19,7 @@ Run from the repo root, or with `--workspace=apps/backend`:
 | `npm run dev:server` | Starts the Express server on `:3001` (`tsx watch`) |
 | `npm run model-lifecycle-demo --workspace=apps/backend` | Runs the full lifecycle for real, both sources, no HTTP — see [Demo script](#demo-script) |
 | `npm run provider --workspace=apps/backend` | Starts a QVAC provider service for P2P delegated inference — see [Delegated inference (P2P)](#delegated-inference-p2p) |
+| `npm run seed:generate --workspace=apps/backend` | Generates a `QVAC_HYPERSWARM_SEED` and prints the public key it produces — see [Generating a seed](#generating-a-seed-fixed-identity--provider-firewall) |
 | `npm run ingest --workspace=apps/backend` | Builds or updates the vector store in `.lancedb/` from `corpus/` — see [RAG: corpus ingestion](#rag-corpus-ingestion) |
 | `npm run corpus:ingest --workspace=apps/backend` | Alias of `ingest` above, named to match the grading harness's `setup` command (`qvac-eval.json`) |
 | `npm run models:fetch --workspace=apps/backend` | Pre-downloads every model asset `/v1/chat/completions` needs (chat + embedding + any vision projector), so `npm run serve` never touches the network — required by `qvac-eval.json`'s "start must not require network access" contract |
@@ -30,8 +31,8 @@ Only run **one** QVAC-backed process at a time per machine (`dev:server`, `serve
 
 ### Endpoints
 
-- `GET /health` — readiness probe used by `qvac-eval.json`'s `readyPath`. Returns `200 {"status":"ready"}` once **both** the chat model and the embedding model have finished warming up; otherwise `503 {"status": "idle"|"loading"|"error", "embedding": "loading"|"ready"}`. If a warm-up failed on a previous attempt, polling `/health` again re-kicks it automatically (self-healing across polls, not a permanent latch).
-- `GET /v1/models` — OpenAI-compatible model listing (`{"object":"list","data":[{"id":..., "object":"model", ...}]}`), one entry for the public chat model name this backend serves.
+- `GET /health` — readiness probe for local dev/manual polling. Returns `200 {"status":"ready"}` once **both** the chat model and the embedding model have finished warming up; otherwise `503 {"status": "idle"|"loading"|"error", "embedding": "loading"|"ready"}`. If a warm-up failed on a previous attempt, polling `/health` again re-kicks it automatically (self-healing across polls, not a permanent latch).
+- `GET /v1/models` — OpenAI-compatible model listing (`{"object":"list","data":[{"id":..., "object":"model", ...}]}`), one entry for the public chat model name this backend serves. **This is what `qvac-eval.json`'s `readyPath` actually polls** (`baseUrl` already ends in `/v1`): returns `503 {"error":"model not ready"}` until both the chat and embedding models have finished warming up (same underlying check as `/health`), `200` once they have.
 
 ## Build
 
@@ -200,9 +201,40 @@ This starts a provider service and prints its public key:
 
 Optional arguments: `npm run provider --workspace=apps/backend -- [seed] [allowedConsumerPublicKey]`
 - `seed` — a 64-char hex identity seed for a reproducible provider public key across restarts. Prefer setting it as an actual env var instead — `QVAC_HYPERSWARM_SEED=<seed> npm run provider --workspace=apps/backend` — since a CLI argument is visible in `ps` output and shell history.
-- `allowedConsumerPublicKey` — restricts the provider to serve only that consumer (firewall allow-list); omit to accept any consumer. The consumer's public key is derived from **its own** `QVAC_HYPERSWARM_SEED` (set before starting the backend); a consumer with no seed gets a random identity every run, which the firewall can't allow-list. This backend doesn't currently print its own consumer public key — treat the firewall as an SDK-level option for a scripted/tested setup with a fixed consumer seed, not yet a turnkey feature of this backend.
+- `allowedConsumerPublicKey` — restricts the provider to serve only that consumer (firewall allow-list); omit to accept any consumer. The consumer's public key is derived from **its own** `QVAC_HYPERSWARM_SEED` (set before starting the backend); a consumer with no seed gets a random identity every run, which the firewall can't allow-list. This backend doesn't currently print its own consumer public key — treat the firewall as an SDK-level option for a scripted/tested setup with a fixed consumer seed, not yet a turnkey feature of this backend. `npm run seed:generate` (below) gives you a seed and its public key up front, so you can set this up without needing the backend to print anything.
 
 Press `Ctrl+C` to stop it.
+
+### Generating a seed (fixed identity / provider firewall)
+
+Every QVAC process (provider or consumer) gets a random network identity per run unless `QVAC_HYPERSWARM_SEED` is set. The public key is derived from that seed, but neither the SDK nor this backend prints it for the consumer — so to allow-list a consumer on a provider, you need to know its public key *before* it starts. `seed:generate` creates a seed and computes the matching public key:
+
+```bash
+npm run seed:generate --workspace=apps/backend
+```
+
+```
+QVAC_HYPERSWARM_SEED=<64-char hex seed>
+Public key: <64-char hex public key>
+```
+
+Typical use — restrict a provider to a single consumer:
+
+1. On the **consumer** machine, run `seed:generate` and export the seed in the shell that will run the backend:
+   ```bash
+   export QVAC_HYPERSWARM_SEED=<seed>
+   ```
+2. Send the printed **public key** (not the seed) to whoever runs the provider, and pass it as the second argument. The empty first argument leaves the provider's own identity random; use a separate seed there for a stable provider key:
+   ```bash
+   npm run provider --workspace=apps/backend -- "" <consumer-public-key>
+   ```
+3. Start the consumer with `DELEGATE_PROVIDER_PUBLIC_KEY` set, as in [Running a consumer](#running-a-consumer).
+
+Notes:
+- The seed is identity material — keep it out of the repo and shell history (use the env var, not a CLI argument), and never share it; only the public key is safe to share.
+- The seed must be exported in the same shell that starts `dev:server`. Otherwise the consumer gets a random identity and the provider's firewall silently denies it.
+- Don't give the provider and consumer the same seed — that gives them the same identity. Run `seed:generate` once per process that needs a fixed identity.
+- Each run prints a *new* seed; it does not read or reuse an existing one.
 
 ### Running a consumer
 
@@ -272,6 +304,34 @@ If you only see the backend's `🔄 Fallback...` line (no matching activity
 on the provider), the request was served locally — check
 `DELEGATE_PROVIDER_PUBLIC_KEY` matches the provider's printed public key
 exactly, and that the provider is actually running.
+
+### Provider health checks
+
+When `DELEGATE_PROVIDER_PUBLIC_KEY` is set to a valid key, the backend also sends the provider a heartbeat (`@qvac/sdk`'s `heartbeat()`, answered by the provider's own SDK — nothing to configure on the provider) and keeps the chat model on the right side of it *before* a chat request fails:
+
+- **Provider stops answering** (3 consecutive missed heartbeats, ~45s by default) → the chat model is reloaded locally, immediately (no connect-timeout wait).
+- **Provider answers again** (2 consecutive heartbeats) → the chat model is moved back to the provider.
+- **Provider answers heartbeats but cannot serve the model** (its load fails, or the SDK falls back to local) → the chat model stays local. Moving back is attempted once per recovery: an attempt that lands local is not retried until the provider goes down and comes back again.
+- Heartbeats are skipped while a chat is in flight, so a heartbeat never disturbs a running completion, and a reload never interrupts one. Going *down* takes 3 consecutive failed heartbeats, so one dropped heartbeat never triggers a reload.
+- The existing recovery on a *failed* completion is unchanged and still applies.
+- Every check re-reads the chat model's real mode from the SDK instead of trusting its last-known state, and logs a `[provider-health] the chat model's mode changed outside a tracked switch` warning if that differs. The once-per-recovery attempt to move back is renewed whenever the model is observed running on the provider (including right after a successful move back), so a model that later drifts off the provider is moved back again without waiting for another recovery.
+
+Switching models drops the in-memory chat model; KV-cache sessions do not carry over to the new model.
+
+`GET /api/chat/status` reports it as `providerHealth` (present only when a delegate is configured and the model has finished loading):
+
+```json
+"providerHealth": { "state": "up", "consecutiveFailures": 0, "lastSuccessAt": "2026-09-29T10:00:00.000Z", "lastLatencyMs": 42 }
+```
+
+| Env var | Default | Minimum | Meaning |
+|---|---|---|---|
+| `DELEGATE_HEARTBEAT_INTERVAL_MS` | `15000` | `1000` | Time between heartbeats |
+| `DELEGATE_HEARTBEAT_TIMEOUT_MS` | `3000` | `100` | How long one heartbeat may take before it counts as failed |
+
+An invalid value is logged as a warning and the default is used. A provider (or SDK version) that cannot answer heartbeats fails every check, so the chat model runs locally — safe, but delegation is never used.
+
+While the provider is down, `@qvac/sdk` itself logs every heartbeat interval: the failed heartbeat/connection at error level, and the provider's public key at info level (on each connection attempt). This backend only logs a failed heartbeat at debug level.
 
 ### Notes
 
