@@ -2,6 +2,8 @@ import type { Citation, RetrievedChunk } from "../../rag/domain/types.js";
 import type { AgentService, ConversationMessage } from "./agentService.js";
 import type { TranscriptionService } from "../../speech/service/transcription.service.js";
 import type { TtsService } from "../../tts/service/tts.service.js";
+import { SentenceChunker } from "./sentenceChunker.js";
+import { DEFAULT_MIN_SENTENCE_CHUNK_CHARS } from "../../config/voice.config.js";
 
 /** Thrown when transcription produced no usable text (silence, noise-only audio, a too-short clip) - there's no user message to run through the agent. */
 export class EmptyTranscriptError extends Error {
@@ -25,6 +27,22 @@ export interface VoiceInvokeResult {
   sampleRate?: number;
 }
 
+/** One sentence-sized piece of a streamed voice answer. `audio`/`sampleRate` are undefined if that sentence's synthesis failed - the chunk still carries its text. */
+export interface VoiceStreamChunk {
+  text: string;
+  audio?: Buffer;
+  sampleRate?: number;
+}
+
+/** Final summary once a streamed voice turn finishes - same fields as `VoiceInvokeResult` minus `audio`/`sampleRate`, which arrived incrementally via `onChunk`. */
+export interface VoiceStreamResult {
+  transcript: string;
+  answer: string;
+  thinkingText?: string;
+  chunks: RetrievedChunk[];
+  citations: Citation[];
+}
+
 /**
  * Composes the existing text orchestrator with STT/TTS for a single voice
  * turn: transcribe the incoming audio, run it through AgentService's graph
@@ -37,6 +55,7 @@ export class VoiceAgentService {
     private readonly agentService: AgentService,
     private readonly transcriptionService: TranscriptionService,
     private readonly ttsService: TtsService,
+    private readonly minSentenceChunkChars: number = DEFAULT_MIN_SENTENCE_CHUNK_CHARS,
   ) {}
 
   async invoke(history: ConversationMessage[], audio: Buffer): Promise<VoiceInvokeResult> {
@@ -48,25 +67,99 @@ export class VoiceAgentService {
       throw new EmptyTranscriptError();
     }
 
-    const result = await this.agentService.invoke([
-      ...history,
-      { role: "user", message: transcript },
-    ]);
+    let streamedAnswer = "";
+    const result = await this.agentService.invoke(
+      [...history, { role: "user", message: transcript }],
+      undefined,
+      (textDelta) => {
+        streamedAnswer += textDelta;
+      },
+    );
+    // Prefer the text built up from the streamed deltas - falls back to the
+    // graph's own resolved answer only if generation produced no stream
+    // event at all (see AgentService.runInvoke's matching safety net).
+    const answer = streamedAnswer || result.answer;
 
     let synthesis: { audio: Buffer; sampleRate: number } | undefined;
     try {
-      synthesis = await this.ttsService.synthesizeSync(result.answer);
+      synthesis = await this.ttsService.synthesizeSync(answer);
     } catch (err) {
       console.error("[voice:tts]", err);
     }
 
     return {
       transcript,
-      answer: result.answer,
+      answer,
       thinkingText: result.thinkingText,
       chunks: result.chunks,
       citations: result.citations,
       ...synthesis,
     };
+  }
+
+  /**
+   * Same turn as `invoke()`, but synthesizes and emits audio sentence by
+   * sentence as the answer streams in, instead of waiting for the whole
+   * answer before running TTS once. Sentence boundaries come from
+   * `SentenceChunker`; each completed sentence is synthesized and passed to
+   * `onChunk` strictly in order - one TTS call at a time, since the
+   * underlying model isn't safe for concurrent use. A chunk whose synthesis
+   * fails still goes out with its text, `audio`/`sampleRate` undefined.
+   */
+  async invokeStreaming(
+    history: ConversationMessage[],
+    audio: Buffer,
+    onChunk: (chunk: VoiceStreamChunk) => void | Promise<void>,
+  ): Promise<VoiceStreamResult> {
+    const transcript = await this.transcriptionService.transcribeBuffer(audio);
+    if (!transcript.trim()) {
+      throw new EmptyTranscriptError();
+    }
+
+    const chunker = new SentenceChunker(this.minSentenceChunkChars);
+    let streamedAnswer = "";
+    // Chains sentence synthesis+emission one at a time, decoupled from the
+    // token stream that discovers them - onToken below can't itself be
+    // async (AgentService.invoke's callback is fire-and-forget per token).
+    let processingChain: Promise<void> = Promise.resolve();
+    const enqueueSentence = (sentence: string) => {
+      processingChain = processingChain.then(() => this.synthesizeAndEmit(sentence, onChunk));
+    };
+
+    const result = await this.agentService.invoke(
+      [...history, { role: "user", message: transcript }],
+      undefined,
+      (textDelta) => {
+        streamedAnswer += textDelta;
+        for (const sentence of chunker.push(textDelta)) enqueueSentence(sentence);
+      },
+    );
+
+    const remainder = chunker.flush();
+    if (remainder) enqueueSentence(remainder);
+    await processingChain;
+
+    const answer = streamedAnswer || result.answer;
+
+    return {
+      transcript,
+      answer,
+      thinkingText: result.thinkingText,
+      chunks: result.chunks,
+      citations: result.citations,
+    };
+  }
+
+  private async synthesizeAndEmit(
+    sentence: string,
+    onChunk: (chunk: VoiceStreamChunk) => void | Promise<void>,
+  ): Promise<void> {
+    let synthesis: { audio: Buffer; sampleRate: number } | undefined;
+    try {
+      synthesis = await this.ttsService.synthesizeSync(sentence);
+    } catch (err) {
+      console.error("[voice:tts]", err);
+    }
+    await onChunk({ text: sentence, ...synthesis });
   }
 }

@@ -398,6 +398,61 @@ describe("ChatQVAC._streamResponseChunks delegation recovery", () => {
   });
 });
 
+describe("ChatQVAC.isRecovering", () => {
+  it("is true only while the reload triggered by delegation recovery is still in flight", async () => {
+    const runtime = new RecordingQvacModelPort();
+    runtime.chatCompleteOutcomes = ["provider-unreachable"];
+    const delegate = { providerPublicKey: "pk-abc", fallbackToLocal: true };
+
+    const chatModel = new ChatQVAC({
+      service: runtime,
+      modelSource: { kind: "url", url: "https://example.com/model.gguf" },
+      delegate,
+      isRetryableProviderError: (err) => err instanceof TestProviderUnreachableError,
+    });
+    runtime.delegationInfoResult = { isDelegated: true, providerPublicKey: "pk-abc" };
+    await chatModel.getDelegationInfo();
+    expect(chatModel.isRecovering()).toBe(false); // nothing in flight yet
+
+    // Freezes the reload that recovery triggers, right as ensureModel()
+    // calls load() again - lets the test observe the flag mid-recovery
+    // without ever letting the retry settle.
+    runtime.hangLoad = true;
+    void chatModel._generate([new HumanMessage("hi")], CALL_OPTIONS);
+
+    // Enough microtask ticks for: the rejected chatComplete to propagate,
+    // the catch handler to call recoverFromDelegationFailure(), and that
+    // function to run past its `this.recovering = true` line. It then
+    // suspends forever on the hanging reload, so this isn't a timing
+    // race - once true, it stays true for the rest of the test.
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+    }
+
+    expect(chatModel.isRecovering()).toBe(true);
+  });
+
+  it("returns to false once recovery completes successfully", async () => {
+    const runtime = new RecordingQvacModelPort();
+    runtime.chatCompleteOutcomes = ["provider-unreachable"];
+    const delegate = { providerPublicKey: "pk-abc", fallbackToLocal: true };
+
+    const chatModel = new ChatQVAC({
+      service: runtime,
+      modelSource: { kind: "url", url: "https://example.com/model.gguf" },
+      delegate,
+      isRetryableProviderError: (err) => err instanceof TestProviderUnreachableError,
+    });
+    runtime.delegationInfoResult = { isDelegated: true, providerPublicKey: "pk-abc" };
+    await chatModel.getDelegationInfo();
+
+    runtime.delegationInfoResult = { isDelegated: false };
+    await chatModel._generate([new HumanMessage("hi")], CALL_OPTIONS);
+
+    expect(chatModel.isRecovering()).toBe(false);
+  });
+});
+
 const JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x01, 0x02, 0x03]);
 
 const FAKE_SOURCE: QvacModelSource = {

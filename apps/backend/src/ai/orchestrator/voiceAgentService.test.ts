@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ModelManagementService } from "../../models/service/models.service.js";
 import type {
   ModelProvisioningPort,
@@ -186,6 +186,20 @@ class FakeTtsPort implements TextToSpeechPort {
   }
 }
 
+/** Resolves synthesize() immediately - one deterministic result per call, recorded in order. For streaming tests, where timing across several sequential TTS calls would otherwise need manual flushing per sentence. */
+class ImmediateTtsPort implements TextToSpeechPort {
+  synthesizeCalls: { modelId: string; text: string }[] = [];
+  constructor(private readonly failingText?: string) {}
+
+  async synthesize(modelId: string, text: string): Promise<SynthesisResult> {
+    this.synthesizeCalls.push({ modelId, text });
+    if (text === this.failingText) throw new Error("synthesis boom");
+    return { audio: Buffer.from(text), sampleRate: 16000 };
+  }
+
+  async cancel(): Promise<void> {}
+}
+
 /** Lets already-queued microtasks (model loads, the graph's internal chat round trips) run before assertions. */
 function flushMicrotasks(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
@@ -207,6 +221,35 @@ async function setup(responses: ChatCompletionResult[], transcript: string) {
   const ttsService = new TtsService(modelService, ttsPort);
 
   const voiceAgentService = new VoiceAgentService(agentService, transcriptionService, ttsService);
+
+  return { runtime, voiceAgentService, ttsPort };
+}
+
+async function setupStreaming(
+  responses: ChatCompletionResult[],
+  transcript: string,
+  options: { minSentenceChunkChars?: number; ttsPort?: TextToSpeechPort } = {},
+) {
+  const runtime = new FakeModelRuntime(responses);
+  const modelService = new ModelManagementService(runtime, runtime);
+
+  const embeddingPort = new FakeEmbeddingPort();
+  const vectorStore = await buildFixtureVectorStore(embeddingPort);
+  const ragService = new RagRetrievalService(embeddingPort, vectorStore);
+
+  const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository(FAKE_DOCUMENTS));
+
+  const transcriptionService = new TranscriptionService(modelService, new FakeSpeechPort(transcript));
+
+  const ttsPort = options.ttsPort ?? new ImmediateTtsPort();
+  const ttsService = new TtsService(modelService, ttsPort);
+
+  const voiceAgentService = new VoiceAgentService(
+    agentService,
+    transcriptionService,
+    ttsService,
+    options.minSentenceChunkChars ?? 1,
+  );
 
   return { runtime, voiceAgentService, ttsPort };
 }
@@ -272,5 +315,81 @@ describe("VoiceAgentService.invoke", () => {
 
     await expect(voiceAgentService.invoke([], Buffer.from([1, 2, 3]))).rejects.toThrow(EmptyTranscriptError);
     expect(runtime.lastChatRequest).toBeUndefined();
+  });
+});
+
+describe("VoiceAgentService.invokeStreaming", () => {
+  it("streams one chunk per detected sentence, synthesizing audio for each, in the order sentences complete", async () => {
+    const { voiceAgentService, ttsPort } = await setupStreaming(
+      [
+        { text: "", toolCalls: [{ id: "call_1", name: "list_documents", arguments: {} }] },
+        { text: "First sentence here. Second one follows.", toolCalls: [] },
+      ],
+      "What documents are ingested?",
+    );
+
+    const chunks: { text: string; audio?: Buffer; sampleRate?: number }[] = [];
+    const result = await voiceAgentService.invokeStreaming([], Buffer.from([1, 2, 3]), (chunk) => {
+      chunks.push(chunk);
+    });
+
+    expect(chunks).toEqual([
+      { text: "First sentence here.", audio: Buffer.from("First sentence here."), sampleRate: 16000 },
+      { text: "Second one follows.", audio: Buffer.from("Second one follows."), sampleRate: 16000 },
+    ]);
+    expect((ttsPort as ImmediateTtsPort).synthesizeCalls.map((call) => call.text)).toEqual([
+      "First sentence here.",
+      "Second one follows.",
+    ]);
+    expect(result.transcript).toBe("What documents are ingested?");
+    expect(result.answer).toBe("First sentence here. Second one follows.");
+  });
+
+  it("flushes a trailing sentence fragment with no terminal punctuation once generation ends", async () => {
+    const { voiceAgentService } = await setupStreaming(
+      [
+        { text: "", toolCalls: [{ id: "call_1", name: "list_documents", arguments: {} }] },
+        { text: "Just one fragment without a period", toolCalls: [] },
+      ],
+      "hi",
+    );
+
+    const chunks: { text: string }[] = [];
+    await voiceAgentService.invokeStreaming([], Buffer.from([1]), (chunk) => {
+      chunks.push(chunk);
+    });
+
+    expect(chunks.map((chunk) => chunk.text)).toEqual(["Just one fragment without a period"]);
+  });
+
+  it("degrades a single chunk to text-only when its synthesis fails, without failing the rest of the turn", async () => {
+    const failingPort = new ImmediateTtsPort("First sentence here.");
+    const { voiceAgentService } = await setupStreaming(
+      [
+        { text: "", toolCalls: [{ id: "call_1", name: "list_documents", arguments: {} }] },
+        { text: "First sentence here. Second one follows.", toolCalls: [] },
+      ],
+      "hi",
+      { ttsPort: failingPort },
+    );
+
+    const chunks: { text: string; audio?: Buffer }[] = [];
+    const result = await voiceAgentService.invokeStreaming([], Buffer.from([1]), (chunk) => {
+      chunks.push(chunk);
+    });
+
+    expect(chunks[0]).toEqual({ text: "First sentence here." });
+    expect(chunks[1]?.audio).toEqual(Buffer.from("Second one follows."));
+    expect(result.answer).toBe("First sentence here. Second one follows.");
+  });
+
+  it("rejects with EmptyTranscriptError without calling onChunk when transcription yields no text", async () => {
+    const { voiceAgentService } = await setupStreaming([{ text: "ok", toolCalls: [] }], "   ");
+
+    const onChunk = vi.fn();
+    await expect(voiceAgentService.invokeStreaming([], Buffer.from([1]), onChunk)).rejects.toThrow(
+      EmptyTranscriptError,
+    );
+    expect(onChunk).not.toHaveBeenCalled();
   });
 });

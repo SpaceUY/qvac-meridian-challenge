@@ -28,14 +28,9 @@ type ChatStore = {
   responseFinished: (id: string) => void
   responseFailed: (id: string, reason: string) => void
   imagesDropped: (id: string) => void
-  voiceTurnAdded: (params: {
-    userMessageId: string
-    transcript: string
-    assistantMessageId: string
-    answer: string
-    citations: Citation[]
-    audio?: { dataUrl: string }
-  }) => void
+  voiceTurnStarted: (userMessageId: string, assistantMessageId: string) => void
+  voiceAudioChunkReceived: (id: string, dataUrl: string) => void
+  voiceTranscriptReceived: (id: string, transcript: string) => void
   activeTurnStarted: (controller: AbortController) => void
   activeTurnSettled: (controller: AbortController) => void
   conversationReset: () => void
@@ -91,13 +86,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       history: withMessage(state.history, id, (m) => ({ ...m, images: undefined })),
     })),
 
-  voiceTurnAdded: ({ userMessageId, transcript, assistantMessageId, answer, citations, audio }) =>
+  /** The transcript isn't known yet (it arrives in the voice endpoint's final SSE event) - the user message starts empty, which MessageList already renders as no bubble at all (same as an image-only turn), until voiceTranscriptReceived backfills it. */
+  voiceTurnStarted: (userMessageId, assistantMessageId) =>
     set((state) => ({
       history: [
         ...state.history,
-        createMessage(userMessageId, 'user', transcript, 'done'),
-        { ...createMessage(assistantMessageId, 'assistant', answer, 'done'), citations, audio },
+        createMessage(userMessageId, 'user', '', 'done'),
+        createMessage(assistantMessageId, 'assistant', '', 'streaming'),
       ],
+    })),
+
+  voiceAudioChunkReceived: (id, dataUrl) =>
+    set((state) => ({
+      history: withMessage(state.history, id, (m) => ({
+        ...m,
+        audioChunks: [...(m.audioChunks ?? []), { dataUrl }],
+      })),
+    })),
+
+  voiceTranscriptReceived: (id, transcript) =>
+    set((state) => ({
+      history: withMessage(state.history, id, (m) => ({ ...m, text: transcript })),
     })),
 
   activeTurnStarted: (controller) => set({ activeTurn: controller }),

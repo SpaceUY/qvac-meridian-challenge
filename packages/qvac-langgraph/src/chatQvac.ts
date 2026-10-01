@@ -192,6 +192,8 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
   private modelIdPromise?: Promise<string>;
   /** Cache backing `getCachedDelegationInfo()`, kept fresh by `getDelegationInfo()` and by `recoverFromDelegationFailure()`. */
   private delegationInfo?: QvacLoadedModelDelegationInfo;
+  /** `true` for the duration of a `recoverFromDelegationFailure()` call - lets `AgentService.getStatus()` report "reconnecting" instead of the frontend inferring it 60s late from a state change that already finished. */
+  private recovering = false;
   /** The `requestId` of the `chatComplete` call currently in flight, if any - lets `cancelActive()` cancel it. */
   private activeRequestId?: string;
   /** The `requestId` of the `loadModel` call currently in flight, if any - lets `cancelLoad()` cancel it. */
@@ -339,6 +341,11 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
     return this.delegationInfo;
   }
 
+  /** Synchronous snapshot of whether a delegation-recovery reload is currently in flight. See the `recovering` field's doc comment. */
+  isRecovering(): boolean {
+    return this.recovering;
+  }
+
   /**
    * Called when a chat completion fails because the delegated model's
    * provider died mid-session (see the constructor's `isRetryableProviderError`
@@ -366,14 +373,19 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
    * again.
    */
   private async recoverFromDelegationFailure(): Promise<string> {
-    const staleModelId = await this.modelIdPromise;
-    this.modelIdPromise = undefined;
-    if (staleModelId) {
-      await this.service.unloadModel(staleModelId).catch(() => {});
+    this.recovering = true;
+    try {
+      const staleModelId = await this.modelIdPromise;
+      this.modelIdPromise = undefined;
+      if (staleModelId) {
+        await this.service.unloadModel(staleModelId).catch(() => {});
+      }
+      const modelId = await this.ensureModel();
+      await this.getDelegationInfo();
+      return modelId;
+    } finally {
+      this.recovering = false;
     }
-    const modelId = await this.ensureModel();
-    await this.getDelegationInfo();
-    return modelId;
   }
 
   /**

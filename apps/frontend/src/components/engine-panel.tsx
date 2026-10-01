@@ -2,7 +2,9 @@ import type { ReactNode } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import type { DelegationInfo, ModelInfo, ModelStatus } from '@/lib/model-status-client'
+import { countAvailablePeers } from '@/lib/peers'
 
 type Props = {
   model?: ModelInfo
@@ -78,6 +80,13 @@ export function EnginePanel({ model, modelStatus, statusError, delegation, cance
           )}
         </div>
         <p className="mt-1 text-muted-foreground">{subtitle}</p>
+      </Section>
+
+      <Section title="Peers">
+        <div className="flex items-center justify-between gap-1.5">
+          <span className="text-muted-foreground">Peers available</span>
+          <Badge variant="secondary">{countAvailablePeers(delegation)}</Badge>
+        </div>
       </Section>
 
       <Separator />

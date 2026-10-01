@@ -14,6 +14,9 @@ import {
   toTextChunk,
   toCitationsChunk,
   toDoneChunk,
+  toVoiceAudioChunk,
+  toVoiceDoneChunk,
+  toVoiceErrorChunk,
 } from "./chat.router.helpers.js";
 import {
   SSE_HEADERS,
@@ -140,9 +143,15 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
 }
 
 /** What the voice route needs - narrower than VoiceAgentService, so a test can pass a fake. */
-export type VoiceAgent = Pick<VoiceAgentService, "invoke">;
+export type VoiceAgent = Pick<VoiceAgentService, "invoke" | "invokeStreaming">;
 
-/** `POST /voice-completions`, mounted at `/v1/chat`. One full audio turn in, JSON out — never SSE, the client needs a complete synthesized-audio buffer, not incremental text. */
+/**
+ * `POST /voice-completions`, mounted at `/v1/chat`. One full audio turn in.
+ * JSON by default (one complete synthesized-audio buffer); SSE only for an
+ * explicit `stream: true`, which synthesizes and emits audio sentence by
+ * sentence as the answer streams in, same opt-in convention as
+ * `/completions`.
+ */
 export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatus">, voiceAgent: VoiceAgent): Router {
   const router = Router();
 
@@ -162,21 +171,53 @@ export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatu
       return;
     }
 
+    if (!wantsStream(req.body)) {
+      try {
+        const result = await voiceAgent.invoke(history, audio);
+        res.json({
+          transcript: result.transcript,
+          answer: result.answer,
+          citations: result.citations,
+          ...(result.audio ? { audioBase64: result.audio.toString("base64"), sampleRate: result.sampleRate } : {}),
+        });
+      } catch (err) {
+        if (err instanceof EmptyTranscriptError) {
+          res.status(400).json({ error: EMPTY_TRANSCRIPT_ERROR });
+          return;
+        }
+        console.error("[chat:voice-completions]", err);
+        res.status(500).json({ error: VOICE_COMPLETION_ERROR });
+      }
+      return;
+    }
+
+    const envelope = createEnvelope(req.body);
+    res.writeHead(200, SSE_HEADERS);
+    res.flushHeaders();
+
+    // Unlike the JSON path above, the empty-transcript/generation-failure
+    // cases below can't become a 400/500 - by the time either is known,
+    // headers are already committed to text/event-stream. They surface as
+    // an error event on the stream instead (still closed with [DONE]).
     try {
-      const result = await voiceAgent.invoke(history, audio);
-      res.json({
-        transcript: result.transcript,
-        answer: result.answer,
-        citations: result.citations,
-        ...(result.audio ? { audioBase64: result.audio.toString("base64"), sampleRate: result.sampleRate } : {}),
+      const result = await voiceAgent.invokeStreaming(history, audio, (chunk) => {
+        res.write(
+          toVoiceAudioChunk(envelope, {
+            text: chunk.text,
+            ...(chunk.audio ? { audioBase64: chunk.audio.toString("base64"), sampleRate: chunk.sampleRate } : {}),
+          }),
+        );
       });
+      res.write(toVoiceDoneChunk(envelope, { transcript: result.transcript, citations: result.citations }));
     } catch (err) {
       if (err instanceof EmptyTranscriptError) {
-        res.status(400).json({ error: EMPTY_TRANSCRIPT_ERROR });
-        return;
+        res.write(toVoiceErrorChunk(envelope, EMPTY_TRANSCRIPT_ERROR));
+      } else {
+        console.error("[chat:voice-completions]", err);
+        res.write(toVoiceErrorChunk(envelope, VOICE_COMPLETION_ERROR));
       }
-      console.error("[chat:voice-completions]", err);
-      res.status(500).json({ error: VOICE_COMPLETION_ERROR });
+    } finally {
+      if (!res.writableEnded && !res.destroyed) res.end();
     }
   });
 
