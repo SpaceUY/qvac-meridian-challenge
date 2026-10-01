@@ -305,6 +305,23 @@ export class ModelManagementService {
     }
   }
 
+  /**
+   * Checks that a delegated provider is reachable. `heartbeat` is optional
+   * on `ModelRuntimePort` (only the provider health monitor needs it) - a
+   * runtime that doesn't implement it fails with a distinct `"heartbeat"`
+   * stage, which the monitor counts as a failed check.
+   */
+  async heartbeat(delegate: { providerPublicKey: string; timeout: number }): Promise<void> {
+    if (!this.runtime.heartbeat) {
+      throw toModelManagementError("heartbeat", new Error("This runtime does not support heartbeat()"));
+    }
+    try {
+      await this.runtime.heartbeat(delegate);
+    } catch (err) {
+      throw toModelManagementError("heartbeat", err);
+    }
+  }
+
   isLoaded(modelId: string): boolean {
     return this.loaded.has(modelId);
   }

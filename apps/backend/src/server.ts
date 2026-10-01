@@ -22,7 +22,8 @@ import {
   DEFAULT_EMBEDDING_BATCH_SIZE,
   EMBEDDING_MODEL_SOURCE,
 } from "./config/models.config.js";
-import { PUBLIC_CHAT_MODEL } from "./chat/chat.router.const.js";
+import { ReadinessService } from "./health/readinessService.js";
+import { createHealthRouter, createPublicModelsRouter } from "./health/router/health.router.js";
 
 const app = express();
 
@@ -90,75 +91,10 @@ app.use("/v1/chat", createCompletionsRouter(agentService));
 // `warmUpEmbedding()` below mirrors `QvacEmbeddingService.ensureModel()`'s own
 // cached-promise-cleared-on-failure pattern so a later call actually retries
 // instead of reusing a rejected promise forever.
-let embeddingReady = false;
-let embeddingWarmupPromise: Promise<void> | undefined;
-
-function warmUpEmbedding(): Promise<void> {
-  if (!embeddingWarmupPromise) {
-    embeddingWarmupPromise = embeddingPort
-      .embed("readiness warm-up")
-      .then(() => {
-        embeddingReady = true;
-      })
-      .catch((err: unknown) => {
-        console.error("[server] embedding model warm-up failed", err);
-        // Clear so the next call (e.g. the next /health poll, since
-        // embeddingReady is still false) starts a fresh attempt instead of
-        // being stuck on this rejected promise forever.
-        embeddingWarmupPromise = undefined;
-        throw err;
-      });
-  }
-  return embeddingWarmupPromise;
-}
-
-agentService.preload().catch((err: unknown) => {
-  console.error("[server] initial chat model preload failed", err);
-});
-warmUpEmbedding().catch(() => {
-  // Logged inside warmUpEmbedding() already; swallow here so this fire-and-
-  // forget kick-off doesn't surface as an unhandled rejection.
-});
-
-app.get("/health", (_req, res) => {
-  let chatStatus = agentService.getStatus();
-  if (chatStatus.status === "error") {
-    // preload() sets status to "loading" synchronously before its first
-    // await, so re-reading getStatus() right after this call reflects the
-    // freshly-kicked attempt instead of the stale "error".
-    agentService.preload().catch((err: unknown) => {
-      console.error("[server] chat model preload retry failed", err);
-    });
-    chatStatus = agentService.getStatus();
-  }
-  if (!embeddingReady) {
-    warmUpEmbedding().catch(() => {
-      // Logged inside warmUpEmbedding() already.
-    });
-  }
-  if (chatStatus.status === "ready" && embeddingReady) {
-    res.status(200).json({ status: "ready" });
-    return;
-  }
-  res.status(503).json({
-    status: chatStatus.status,
-    embedding: embeddingReady ? "ready" : "loading",
-  });
-});
-
-app.get("/v1/models", (_req, res) => {
-  res.json({
-    object: "list",
-    data: [
-      {
-        id: PUBLIC_CHAT_MODEL,
-        object: "model",
-        created: Math.floor(Date.now() / 1000),
-        owned_by: "meridian",
-      },
-    ],
-  });
-});
+const readiness = new ReadinessService(agentService, embeddingPort);
+readiness.start();
+app.use(createHealthRouter(readiness));
+app.use(createPublicModelsRouter(readiness));
 
 const ttsService = new TtsService(modelManagementService, new QvacTtsAdapter());
 app.use("/api/tts", createTtsRouter(ttsService));

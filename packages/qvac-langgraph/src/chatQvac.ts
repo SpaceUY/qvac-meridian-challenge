@@ -192,8 +192,10 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
   private modelIdPromise?: Promise<string>;
   /** Cache backing `getCachedDelegationInfo()`, kept fresh by `getDelegationInfo()` and by `recoverFromDelegationFailure()`. */
   private delegationInfo?: QvacLoadedModelDelegationInfo;
-  /** `true` for the duration of a `recoverFromDelegationFailure()` call - lets `AgentService.getStatus()` report "reconnecting" instead of the frontend inferring it 60s late from a state change that already finished. */
+  /** `true` for the duration of a `recoverFromDelegationFailure()` or `switchTo("local")` call - lets `AgentService.getStatus()` report "reconnecting" instead of the frontend inferring it 60s late from a state change that already finished. Not raised by `switchTo("delegated")`: a move back to the provider is not a reconnect after a failure. */
   private recovering = false;
+  /** Number of `switchTo()` calls in flight, either direction - backs `isBusy()`, so overlapping switches keep it `true` until the last one settles. */
+  private switchesInFlight = 0;
   /** The `requestId` of the `chatComplete` call currently in flight, if any - lets `cancelActive()` cancel it. */
   private activeRequestId?: string;
   /** The `requestId` of the `loadModel` call currently in flight, if any - lets `cancelLoad()` cancel it. */
@@ -279,31 +281,40 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
    */
   async ensureModel(): Promise<string> {
     if (!this.modelIdPromise) {
-      const pending = this.service.loadModel(this.modelSource, {
-        ctxSize: this.ctxSize,
-        // The llamacpp-completion addon only parses tool calls when the model
-        // was loaded with `tools: true` *and* the request carries tools -
-        // load-time opt-in is required even though it's a no-op without the
-        // latter, so this can't be deferred to bindTools()/_generate().
-        tools: true,
-        engineConfig: this.engineConfig,
-        delegate: this.delegate,
+      this.modelIdPromise = this.startLoad(this.delegate).catch((error: unknown) => {
+        this.modelIdPromise = undefined;
+        throw error;
       });
-      this.loadRequestId = pending.requestId;
-      const abandoned = new Promise<never>((_, reject) => {
-        this.loadAbandonSignal = { reject };
-      });
-      this.modelIdPromise = Promise.race([pending.then((loaded) => loaded.modelId), abandoned])
-        .catch((error: unknown) => {
-          this.modelIdPromise = undefined;
-          throw error;
-        })
-        .finally(() => {
-          this.loadRequestId = undefined;
-          this.loadAbandonSignal = undefined;
-        });
     }
     return this.modelIdPromise;
+  }
+
+  /**
+   * The load itself, shared by `ensureModel()` and `switchTo()`: races the
+   * real load against `cancelLoad()`'s abandon signal and clears the
+   * in-flight bookkeeping when it settles. Deliberately does not touch
+   * `modelIdPromise` - each caller decides how the resulting promise is
+   * cached (and cleared on failure).
+   */
+  private startLoad(delegate: QvacDelegateOptions | undefined): Promise<string> {
+    const pending = this.service.loadModel(this.modelSource, {
+      ctxSize: this.ctxSize,
+      // The llamacpp-completion addon only parses tool calls when the model
+      // was loaded with `tools: true` *and* the request carries tools -
+      // load-time opt-in is required even though it's a no-op without the
+      // latter, so this can't be deferred to bindTools()/_generate().
+      tools: true,
+      engineConfig: this.engineConfig,
+      delegate,
+    });
+    this.loadRequestId = pending.requestId;
+    const abandoned = new Promise<never>((_, reject) => {
+      this.loadAbandonSignal = { reject };
+    });
+    return Promise.race([pending.then((loaded) => loaded.modelId), abandoned]).finally(() => {
+      this.loadRequestId = undefined;
+      this.loadAbandonSignal = undefined;
+    });
   }
 
   /**
@@ -344,6 +355,74 @@ export class ChatQVAC extends BaseChatModel<ChatQVACCallOptions> {
   /** Synchronous snapshot of whether a delegation-recovery reload is currently in flight. See the `recovering` field's doc comment. */
   isRecovering(): boolean {
     return this.recovering;
+  }
+
+  /**
+   * `true` while a completion, a load, a recovery reload or a `switchTo()`
+   * is in flight. A host uses it to defer a proactive `switchTo()` until
+   * nothing would be interrupted.
+   */
+  isBusy(): boolean {
+    return (
+      this.activeRequestId !== undefined ||
+      this.loadRequestId !== undefined ||
+      this.recovering ||
+      this.switchesInFlight > 0
+    );
+  }
+
+  /**
+   * Proactively moves the chat model between running locally and running
+   * on the configured delegate - the health-check counterpart to the
+   * reactive `recoverFromDelegationFailure()`. Callers should check
+   * `isBusy()` first; this does not wait for an in-flight completion.
+   *
+   * `"local"` loads with no `delegate`, so it starts immediately instead
+   * of waiting out a connect timeout against a provider that is known to be
+   * down. `"delegated"` loads with the configured `delegate` (still
+   * `fallbackToLocal`); if that load rejects anyway (e.g. the provider
+   * answers but fails to load the model, which the port does not fall back
+   * from), it loads locally within the same call, so the old model is
+   * never left unloaded just because the provider could not serve it.
+   * Only `"local"` raises `isRecovering()`; both directions count towards
+   * `isBusy()`.
+   *
+   * `modelIdPromise` is set to the switch itself synchronously, before any
+   * `await`, so a chat request arriving mid-switch awaits this load
+   * instead of starting a second one. The old model is unloaded first for
+   * the same reason `recoverFromDelegationFailure()` does (see its doc
+   * comment). On failure the cached promise and delegation info are
+   * cleared: the old model is already gone, so the next `ensureModel()`
+   * must reload rather than reuse a stale id.
+   */
+  async switchTo(mode: "local" | "delegated"): Promise<string> {
+    if (mode === "delegated" && !this.delegate) {
+      throw new Error("Cannot switch to a delegated model: no delegate is configured");
+    }
+    const staleModelIdPromise = this.modelIdPromise;
+    this.switchesInFlight += 1;
+    if (mode === "local") this.recovering = true;
+    const switching = (async () => {
+      const staleModelId = await staleModelIdPromise?.catch(() => undefined);
+      if (staleModelId) {
+        await this.service.unloadModel(staleModelId).catch(() => {});
+      }
+      if (mode === "local") return this.startLoad(undefined);
+      return this.startLoad(this.delegate).catch(() => this.startLoad(undefined));
+    })();
+    this.modelIdPromise = switching;
+    try {
+      const modelId = await switching;
+      this.delegationInfo = await this.service.getLoadedModelInfo(modelId).catch(() => undefined);
+      return modelId;
+    } catch (error) {
+      if (this.modelIdPromise === switching) this.modelIdPromise = undefined;
+      this.delegationInfo = undefined;
+      throw error;
+    } finally {
+      this.switchesInFlight -= 1;
+      if (mode === "local") this.recovering = false;
+    }
   }
 
   /**

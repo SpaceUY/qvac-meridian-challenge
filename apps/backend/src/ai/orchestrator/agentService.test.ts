@@ -342,6 +342,19 @@ describe("AgentService model selection", () => {
 
     expect(agentService.getStatus().hardwareTier).toBe("medium");
   });
+
+  it("never reports providerHealth when no delegate is configured", async () => {
+    const runtime = new FakeModelRuntime();
+    const modelService = new ModelManagementService(runtime, runtime);
+    const embeddingPort = new FakeEmbeddingPort();
+    const vectorStore = await buildFixtureVectorStore(embeddingPort);
+    const ragService = new RagRetrievalService(embeddingPort, vectorStore);
+    const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]));
+
+    await agentService.preload();
+
+    expect(agentService.getStatus().providerHealth).toBeUndefined();
+  });
 });
 
 /** A `FakeModelRuntime` that also implements the optional `deleteCache()`, recording every key it was asked to delete. */

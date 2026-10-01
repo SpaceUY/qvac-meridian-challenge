@@ -18,7 +18,10 @@ import {
 import type { LoadedModelDelegationInfo } from "../../models/domain/types.js";
 import { LLM_MODELS_BY_TIER, resolveEngineConfig } from "../../config/models.config.js";
 import { RESOURCE_TIER, type ResourceTier } from "../../config/resourceTier.js";
-import { DELEGATE_CONFIG } from "../../config/delegate.config.js";
+import { DELEGATE_CONFIG, HEARTBEAT_CONFIG } from "../../config/delegate.config.js";
+import { ProviderHealthMonitor, type DesiredProviderMode } from "./providerHealthMonitor.js";
+import type { ProviderHealth } from "./providerHealth.js";
+import { reconcileProviderMode } from "./reconcileProviderMode.js";
 
 export type AgentStatus = "idle" | "loading" | "ready" | "error";
 
@@ -32,6 +35,12 @@ export interface AgentStatusPayload {
   delegation?: LoadedModelDelegationInfo;
   /** Whether a delegation-recovery reload is in flight right now (see `ChatQVAC.isRecovering()`). Always present (never `undefined`) - simpler for the frontend to read than a third "unknown" state, and it's meaningfully `false` even when no delegate is configured at all. */
   recovering: boolean;
+  /** Present only when a delegate is configured and the provider health monitor has started (after a successful `preload()`): whether the provider is answering heartbeats. */
+  providerHealth?: ProviderHealth;
+}
+
+function describeMode({ isDelegated }: LoadedModelDelegationInfo): "delegated" | "local" {
+  return isDelegated ? "delegated" : "local";
 }
 
 export interface ConversationMessage {
@@ -77,6 +86,10 @@ export class AgentService {
   //private readonly corpusContext: Promise<string>;
   /** `requestId`s of `invoke()` calls still in flight - lets `cancel()` reject an unknown/already-settled `requestId` as a safe no-op. */
   private readonly pendingRequests = new Set<string>();
+  /** Only set when a delegate is configured, once `preload()` has succeeded; see `startHealthMonitor()`. */
+  private healthMonitor?: ProviderHealthMonitor;
+  /** Set once a proactive switch back to the provider has been attempted. Cleared when the provider's health calls for local again, and whenever a check observes the model running on the provider - so a provider that answers heartbeats but cannot serve the model gets one attempt per down->up transition instead of a reload every tick, while a model that later drifts off the provider still gets a fresh attempt. */
+  private redelegationAttempted = false;
 
   /** `tier` defaults to the process-wide `RESOURCE_TIER`, overridable for tests. */
   constructor(
@@ -123,6 +136,7 @@ export class AgentService {
       hardwareTier: this.tier,
       ...(delegation ? { delegation } : {}),
       recovering: this.chatModel.isRecovering(),
+      ...(this.healthMonitor ? { providerHealth: this.healthMonitor.getHealth() } : {}),
     };
   }
 
@@ -135,6 +149,7 @@ export class AgentService {
       await this.chatModel.ensureModel();
       await this.chatModel.getDelegationInfo();
       this.status = "ready";
+      this.startHealthMonitor();
     } catch (err) {
       // A cancelled load isn't a genuine failure - go back to "idle" so a
       // caller can start loading again, rather than getting stuck on "error".
@@ -146,6 +161,97 @@ export class AgentService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Starts polling the delegated provider's heartbeat once the chat model
+   * has loaded - no-op without a configured delegate, and idempotent. A
+   * model that fell back to local at preload starts as `down`, so the
+   * monitor notices the provider coming back and re-delegates. Ticks are
+   * skipped while a chat is in flight (any pending `invoke()`, streaming
+   * included), so a heartbeat never probes the connection a completion is
+   * using.
+   */
+  private startHealthMonitor(): void {
+    if (!DELEGATE_CONFIG || this.healthMonitor) return;
+    const { providerPublicKey } = DELEGATE_CONFIG;
+    const startedLocal = this.chatModel.getCachedDelegationInfo()?.isDelegated === false;
+    this.healthMonitor = new ProviderHealthMonitor({
+      intervalMs: HEARTBEAT_CONFIG.intervalMs,
+      timeoutMs: HEARTBEAT_CONFIG.timeoutMs,
+      initialState: startedLocal ? "down" : "up",
+      heartbeat: () => this.service.heartbeat({ providerPublicKey, timeout: HEARTBEAT_CONFIG.timeoutMs }),
+      shouldSkipTick: () => this.chatModel.isBusy() || this.pendingRequests.size > 0,
+      reconcile: (desired) => this.reconcileProviderMode(desired),
+    });
+    this.healthMonitor.start();
+  }
+
+  /** `reconcileProviderMode()` against the chat model, deciding from the model's live mode (see `readLiveDelegationInfo()`), with at most one `switchTo("delegated")` per attempt budget (see `redelegationAttempted`). */
+  private reconcileProviderMode(desired: DesiredProviderMode): Promise<void> {
+    if (desired === "local") this.redelegationAttempted = false;
+    return reconcileProviderMode(
+      {
+        isBusy: () => this.chatModel.isBusy(),
+        getDelegationInfo: () => this.readLiveDelegationInfo(),
+        switchTo: async (mode) => {
+          if (mode === "local") {
+            await this.chatModel.switchTo(mode);
+            return;
+          }
+          if (this.redelegationAttempted) return;
+          this.redelegationAttempted = true;
+          await this.redelegate();
+        },
+      },
+      desired,
+    );
+  }
+
+  /**
+   * Re-reads the chat model's real mode from the SDK. If it differs from
+   * what `ChatQVAC` last reported, something changed the model outside a
+   * tracked switch - logged, since nothing else reveals it (never logs the
+   * provider's key). A model observed on the provider restores the
+   * re-delegation budget, so the next divergence gets a fresh attempt.
+   */
+  private async readLiveDelegationInfo(): Promise<LoadedModelDelegationInfo | undefined> {
+    const reported = this.chatModel.getCachedDelegationInfo();
+    const live = await this.chatModel.getDelegationInfo();
+    if (reported && live && reported.isDelegated !== live.isDelegated) {
+      console.warn(
+        `[provider-health] the chat model's mode changed outside a tracked switch: it was reported as ${describeMode(reported)}, the SDK now reports ${describeMode(live)}`,
+      );
+    }
+    if (live?.isDelegated) this.redelegationAttempted = false;
+    return live;
+  }
+
+  /**
+   * One switch back to the provider, logged at both ends: the attempt can
+   * silently end up on a local model (the provider answers heartbeats but
+   * cannot serve the load), and since it is not retried until the provider
+   * recovers again, the log is the only place that outcome is visible.
+   * A successful attempt restores the attempt budget right away, so a drift
+   * before the next check has observed the model is still corrected.
+   * Never logs the provider's key.
+   */
+  private async redelegate(): Promise<void> {
+    console.info("[provider-health] re-delegation attempt started: provider is answering heartbeats again");
+    try {
+      await this.chatModel.switchTo("delegated");
+    } catch (error) {
+      console.error("[provider-health] re-delegation attempt failed; the chat model is not loaded until the next tick or chat request", error);
+      throw error;
+    }
+    if (this.chatModel.getCachedDelegationInfo()?.isDelegated) {
+      this.redelegationAttempted = false;
+      console.info("[provider-health] re-delegation attempt finished: the chat model is running on the provider");
+      return;
+    }
+    console.info(
+      "[provider-health] re-delegation attempt finished: the chat model is running locally (the provider could not serve the load); not retried until the provider recovers again",
+    );
   }
 
   /**

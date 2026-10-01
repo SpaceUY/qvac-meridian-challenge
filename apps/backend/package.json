@@ -17,6 +17,7 @@
     "serve:stop": "node scripts/serve-stop.mjs",
     "model-lifecycle-demo": "tsx src/models/demo.ts",
     "provider": "tsx src/models/provider.ts",
+    "seed:generate": "node scripts/generate-seed.mjs",
     "multimodal-demo": "tsx src/ai/multimodalDemo.ts",
     "speech-demo": "tsx src/speech/demo.ts",
     "tts-demo": "tsx src/tts/demo.ts",

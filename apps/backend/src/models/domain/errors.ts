@@ -14,6 +14,7 @@ export type ModelManagementStage =
   | 'cancel'
   | 'introspect'
   | 'cache'
+  | 'heartbeat'
   | 'not-found';
 
 /**
