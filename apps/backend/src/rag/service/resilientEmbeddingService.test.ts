@@ -36,13 +36,14 @@ function fakeNative(overrides: Partial<NativeEmbeddingLike> = {}): NativeEmbeddi
 }
 
 function service(native: NativeEmbeddingLike, createSdkFallback: () => QvacEmbeddingService): ResilientEmbeddingService {
-  // The first four args are never read when native/sdkFallback are both
+  // The first five args are never read when native/sdkFallback are both
   // injected (see constructor) - dummy values matching production shapes.
   return new ResilientEmbeddingService(
     fakeModels(vi.fn()),
     {} as QvacEmbeddingAdapter,
     MODEL_SOURCE,
     16,
+    0,
     native,
     createSdkFallback
   );
