@@ -386,7 +386,7 @@ function toDomainError(requestId: string, err: unknown): unknown {
  * `handleCompletionStreamDelegated` (`dist/server/rpc/handlers/completion-
  * stream-delegated.js`) sets for a connection failure specifically, the
  * same way the cancellation check above narrows on a code rather than a
- * class. `ChatQVAC.getDelegationInfo()`/`recoverFromDelegationFailure()`
+ * class. `QvacChatSession.getDelegationInfo()`/`recoverFromDelegationFailure()`
  * rely on this to tell "reload and retry locally" apart from "surface a
  * genuine completion error".
  */

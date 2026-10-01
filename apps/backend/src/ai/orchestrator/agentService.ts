@@ -4,17 +4,13 @@ import type { RagRetrievalService } from "../../rag/service/rag.service.js";
 import type { Citation, RetrievedChunk } from "../../rag/domain/types.js";
 import { selectCitations } from "./citationPolicy.js";
 import { ChatQVAC } from "qvac-langgraph";
+import { QvacChatSession } from "./qvacChatSession.js";
 import { createGraph } from "./graph.js";
 import { State, type GenerationOptions } from "./domain.js";
 import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
 import type { ModelManagementService } from "../../models/service/models.service.js";
 import type { SupportedImageMimeType } from "../../models/domain/types.js";
-import {
-  isCancellationError,
-  isDelegatedProviderUnreachableError,
-  ModelManagementError,
-  OperationCancelledError,
-} from "../../models/domain/errors.js";
+import { isCancellationError } from "../../models/domain/errors.js";
 import type { LoadedModelDelegationInfo } from "../../models/domain/types.js";
 import { LLM_MODELS_BY_TIER, resolveEngineConfig } from "../../config/models.config.js";
 import { RESOURCE_TIER, type ResourceTier } from "../../config/resourceTier.js";
@@ -33,7 +29,7 @@ export interface AgentStatusPayload {
   hardwareTier: ResourceTier;
   /** Present once known (after a successful `preload()`) - whether the chat model is running on a remote provider or locally. Absent while idle/loading/error, or if delegation status couldn't be confirmed. */
   delegation?: LoadedModelDelegationInfo;
-  /** Whether a delegation-recovery reload is in flight right now (see `ChatQVAC.isRecovering()`). Always present (never `undefined`) - simpler for the frontend to read than a third "unknown" state, and it's meaningfully `false` even when no delegate is configured at all. */
+  /** Whether a delegation-recovery reload is in flight right now (see `QvacChatSession.isRecovering()`). Always present (never `undefined`) - simpler for the frontend to read than a third "unknown" state, and it's meaningfully `false` even when no delegate is configured at all. */
   recovering: boolean;
   /** Present only when a delegate is configured and the provider health monitor has started (after a successful `preload()`): whether the provider is answering heartbeats. */
   providerHealth?: ProviderHealth;
@@ -79,6 +75,7 @@ export interface InvokeResult {
  */
 export class AgentService {
   private readonly chatModel: ChatQVAC;
+  private readonly chatSession: QvacChatSession;
   private readonly graph: ReturnType<typeof createGraph>;
   private readonly modelInfo: { name: string; quantization: string };
   private status: AgentStatus = "idle";
@@ -102,18 +99,15 @@ export class AgentService {
     const { modelSource, modelName, quantization, temperature, ctxSize, kvCacheEnabled } =
       selectedModel;
     this.modelInfo = { name: modelName, quantization };
-    this.chatModel = new ChatQVAC({
+    this.chatSession = new QvacChatSession({
       service,
       modelSource,
-      temperature,
       ctxSize,
       engineConfig: resolveEngineConfig(selectedModel),
       kvCacheEnabled,
       delegate: DELEGATE_CONFIG,
-      isRetryableProviderError: isDelegatedProviderUnreachableError,
-      createCancelledError: (requestId) =>
-        new ModelManagementError("cancel", "Operation cancelled", new OperationCancelledError(requestId)),
     });
+    this.chatModel = new ChatQVAC({ complete: this.chatSession.complete, temperature });
     this.graph = createGraph(this.chatModel, ragService, documentRepository);
     //this.corpusContext = loadCorpusContext();
   }
@@ -121,21 +115,21 @@ export class AgentService {
   /**
    * The current load status — polled by `GET /api/chat/status` (Task 2).
    * Also carries a model snapshot for the engine panel. `delegation` is
-   * read live off `chatModel.getCachedDelegationInfo()` rather than a
+   * read live off `chatSession.getCachedDelegationInfo()` rather than a
    * snapshot taken once at `preload()` time, so it reflects a mid-session
    * recovery (the chat model falling back to local after its delegated
    * provider died) instead of staying stuck on stale "still delegated"
    * status forever.
    */
   getStatus(): AgentStatusPayload {
-    const delegation = this.chatModel.getCachedDelegationInfo();
+    const delegation = this.chatSession.getCachedDelegationInfo();
     return {
       status: this.status,
       ...(this.statusError ? { error: this.statusError } : {}),
       model: this.modelInfo,
       hardwareTier: this.tier,
       ...(delegation ? { delegation } : {}),
-      recovering: this.chatModel.isRecovering(),
+      recovering: this.chatSession.isRecovering(),
       ...(this.healthMonitor ? { providerHealth: this.healthMonitor.getHealth() } : {}),
     };
   }
@@ -146,8 +140,8 @@ export class AgentService {
     this.status = "loading";
     this.statusError = undefined;
     try {
-      await this.chatModel.ensureModel();
-      await this.chatModel.getDelegationInfo();
+      await this.chatSession.ensureModel();
+      await this.chatSession.getDelegationInfo();
       this.status = "ready";
       this.startHealthMonitor();
     } catch (err) {
@@ -175,13 +169,13 @@ export class AgentService {
   private startHealthMonitor(): void {
     if (!DELEGATE_CONFIG || this.healthMonitor) return;
     const { providerPublicKey } = DELEGATE_CONFIG;
-    const startedLocal = this.chatModel.getCachedDelegationInfo()?.isDelegated === false;
+    const startedLocal = this.chatSession.getCachedDelegationInfo()?.isDelegated === false;
     this.healthMonitor = new ProviderHealthMonitor({
       intervalMs: HEARTBEAT_CONFIG.intervalMs,
       timeoutMs: HEARTBEAT_CONFIG.timeoutMs,
       initialState: startedLocal ? "down" : "up",
       heartbeat: () => this.service.heartbeat({ providerPublicKey, timeout: HEARTBEAT_CONFIG.timeoutMs }),
-      shouldSkipTick: () => this.chatModel.isBusy() || this.pendingRequests.size > 0,
+      shouldSkipTick: () => this.chatSession.isBusy() || this.pendingRequests.size > 0,
       reconcile: (desired) => this.reconcileProviderMode(desired),
     });
     this.healthMonitor.start();
@@ -192,11 +186,11 @@ export class AgentService {
     if (desired === "local") this.redelegationAttempted = false;
     return reconcileProviderMode(
       {
-        isBusy: () => this.chatModel.isBusy(),
+        isBusy: () => this.chatSession.isBusy(),
         getDelegationInfo: () => this.readLiveDelegationInfo(),
         switchTo: async (mode) => {
           if (mode === "local") {
-            await this.chatModel.switchTo(mode);
+            await this.chatSession.switchTo(mode);
             return;
           }
           if (this.redelegationAttempted) return;
@@ -210,14 +204,14 @@ export class AgentService {
 
   /**
    * Re-reads the chat model's real mode from the SDK. If it differs from
-   * what `ChatQVAC` last reported, something changed the model outside a
+   * what `QvacChatSession` last reported, something changed the model outside a
    * tracked switch - logged, since nothing else reveals it (never logs the
    * provider's key). A model observed on the provider restores the
    * re-delegation budget, so the next divergence gets a fresh attempt.
    */
   private async readLiveDelegationInfo(): Promise<LoadedModelDelegationInfo | undefined> {
-    const reported = this.chatModel.getCachedDelegationInfo();
-    const live = await this.chatModel.getDelegationInfo();
+    const reported = this.chatSession.getCachedDelegationInfo();
+    const live = await this.chatSession.getDelegationInfo();
     if (reported && live && reported.isDelegated !== live.isDelegated) {
       console.warn(
         `[provider-health] the chat model's mode changed outside a tracked switch: it was reported as ${describeMode(reported)}, the SDK now reports ${describeMode(live)}`,
@@ -239,12 +233,12 @@ export class AgentService {
   private async redelegate(): Promise<void> {
     console.info("[provider-health] re-delegation attempt started: provider is answering heartbeats again");
     try {
-      await this.chatModel.switchTo("delegated");
+      await this.chatSession.switchTo("delegated");
     } catch (error) {
       console.error("[provider-health] re-delegation attempt failed; the chat model is not loaded until the next tick or chat request", error);
       throw error;
     }
-    if (this.chatModel.getCachedDelegationInfo()?.isDelegated) {
+    if (this.chatSession.getCachedDelegationInfo()?.isDelegated) {
       this.redelegationAttempted = false;
       console.info("[provider-health] re-delegation attempt finished: the chat model is running on the provider");
       return;
@@ -260,7 +254,7 @@ export class AgentService {
    * convention as `ModelManagementService.cancel()`.
    */
   async cancelPreload(): Promise<void> {
-    await this.chatModel.cancelLoad();
+    await this.chatSession.cancelLoad();
   }
 
   /**
@@ -294,7 +288,7 @@ export class AgentService {
    * Safe to call with an unknown or already-settled `requestId`, same
    * no-op convention as `ModelManagementService.cancel()`.
    *
-   * Only one LLM call is ever in flight on `this.chatModel` at a time in
+   * Only one LLM call is ever in flight on `this.chatSession` at a time in
    * practice (`invoke()`'s tool loop awaits each turn before starting the
    * next, and the underlying SDK connection isn't safe for concurrent use -
    * see `ModelManagementService.unloadAll()`), so cancelling "whatever
@@ -303,7 +297,7 @@ export class AgentService {
    */
   async cancel(requestId: string): Promise<void> {
     if (!this.pendingRequests.has(requestId)) return;
-    await this.chatModel.cancelActive();
+    await this.chatSession.cancelActive();
   }
 
   /** Deletes the KV cache of a chat session - `sessionId` doubles as the SDK's `kvCache` key (see `QvacRuntimeAdapter.chatComplete`). Safe for a session that has no cache. */

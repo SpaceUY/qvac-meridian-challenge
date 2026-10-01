@@ -19,6 +19,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { HumanMessage } from "@langchain/core/messages";
 import { ChatQVAC } from "qvac-langgraph";
+import { QvacChatSession } from "./orchestrator/qvacChatSession.js";
 import { ModelManagementService } from "../models/service/models.service.js";
 import { QvacRuntimeAdapter } from "../models/infra/qvacRuntimeAdapter.js";
 import { CORPUS_DIR } from "../document/infra/corpusDocumentRepository.js";
@@ -51,12 +52,15 @@ async function main(): Promise<void> {
   const adapter = new QvacRuntimeAdapter();
   const service = new ModelManagementService(adapter, adapter);
 
-  const model = new ChatQVAC({
+  const chatSession = new QvacChatSession({
     service,
     modelSource: LLM_MODELS_BY_TIER.low.modelSource,
-    temperature: LLM_MODELS_BY_TIER.low.temperature,
     ctxSize: LLM_MODELS_BY_TIER.low.ctxSize,
     engineConfig: LLM_MODELS_BY_TIER.low.engineConfig,
+  });
+  const model = new ChatQVAC({
+    complete: chatSession.complete,
+    temperature: LLM_MODELS_BY_TIER.low.temperature,
   });
 
   try {

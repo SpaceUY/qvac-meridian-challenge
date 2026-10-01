@@ -9,8 +9,9 @@ import {
   AIMessage,
   HumanMessage,
   SystemMessage,
+  type BaseMessage,
 } from "@langchain/core/messages";
-import { hasImageContent, type ChatQVAC } from "qvac-langgraph";
+import type { ChatQVAC } from "qvac-langgraph";
 import type { RagRetrievalService } from "../../rag/service/rag.service.js";
 import { buildGroundedContext } from "../../rag/service/contextBuilder.js";
 import {
@@ -18,6 +19,11 @@ import {
   INSUFFICIENT_CONTEXT_MESSAGE,
 } from "./ragGraph.const.js";
 import { State } from "./domain.js";
+
+/** Whether `message` carries at least one image content block - used to compute `hasVisualInput` for the graph state. */
+export function hasImageContent(message: BaseMessage): boolean {
+  return message.contentBlocks.some((block) => block.type === "image");
+}
 
 /** Gathers evidence only - does not decide what happens next (see `routeOnEvidence`). */
 export function buildRetrieveNode(

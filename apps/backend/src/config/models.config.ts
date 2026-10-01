@@ -66,7 +66,7 @@ export interface AgentModelConfig {
   /** Catalog name/quantization of `modelSource`, surfaced as-is (not re-derived) so callers (e.g. `AgentService.getStatus()`, the engine panel) can report which model is actually loaded. */
   modelName: string;
   quantization: string;
-  /** Whether `chatComplete()` calls against this model use the SDK's KV cache. Defaults to enabled (`true`) when omitted - see `ChatQVAC`'s `kvCacheEnabled` field. */
+  /** Whether `chatComplete()` calls against this model use the SDK's KV cache. Defaults to enabled (`true`) when omitted - see `QvacChatSession`'s `kvCacheEnabled` option. */
   kvCacheEnabled?: boolean;
   /** Whether this model's KV cache is quantized via TurboQuant - see `TURBOQUANT_KV_CACHE_ENGINE_CONFIG`/`resolveEngineConfig` below. Defaults to disabled (`false`) when omitted. */
   kvCacheQuantEnabled?: boolean;
