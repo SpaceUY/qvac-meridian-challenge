@@ -26,9 +26,12 @@ import {
   VOICE_COMPLETION_ERROR,
   EMPTY_TRANSCRIPT_ERROR,
   CANCEL_PRELOAD_ERROR,
+  INVALID_SESSION_ID_ERROR,
+  DELETE_SESSION_CACHE_ERROR,
+  SESSION_ID_PATTERN,
 } from "./chat.router.const.js";
 
-/** `GET /status` + `POST /preload` + `POST /preload/cancel`, mounted at `/api/chat` in server.ts. */
+/** `GET /status` + `POST /preload` + `POST /preload/cancel` + `DELETE /sessions/:sessionId/cache`, mounted at `/api/chat` in server.ts. */
 export function createChatStatusRouter(agentService: AgentService): Router {
   const router = Router();
 
@@ -55,6 +58,23 @@ export function createChatStatusRouter(agentService: AgentService): Router {
     } catch (err) {
       console.error("[chat:preload:cancel]", err);
       res.status(500).json({ error: CANCEL_PRELOAD_ERROR });
+    }
+  });
+
+  // The frontend's "New chat": the old conversation's KV cache is no longer
+  // reachable, so free it. Deleting a session that has no cache succeeds.
+  router.delete("/sessions/:sessionId/cache", async (req: Request, res: Response) => {
+    const sessionId = String(req.params.sessionId);
+    if (!SESSION_ID_PATTERN.test(sessionId)) {
+      res.status(400).json({ error: INVALID_SESSION_ID_ERROR });
+      return;
+    }
+    try {
+      await agentService.deleteSessionCache(sessionId);
+      res.status(204).end();
+    } catch (err) {
+      console.error("[chat:session-cache:delete]", err);
+      res.status(500).json({ error: DELETE_SESSION_CACHE_ERROR });
     }
   });
 

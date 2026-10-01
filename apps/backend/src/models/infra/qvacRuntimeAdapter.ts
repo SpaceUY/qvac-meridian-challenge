@@ -7,6 +7,7 @@ import {
   close,
   completion,
   CompletionFinal,
+  deleteCache,
   downloadAsset,
   getLoadedModelInfo,
   InferenceCancelledError,
@@ -281,6 +282,11 @@ export class QvacRuntimeAdapter
    */
   async cancel(requestId: string): Promise<void> {
     await cancel({ requestId });
+  }
+
+  /** Omits `modelId` on purpose, so the SDK removes the key's caches for every model, not just one. */
+  async deleteCache(kvCacheKey: string): Promise<void> {
+    await deleteCache({ kvCacheKey });
   }
 
   /**

@@ -327,6 +327,30 @@ describe("AgentService model selection", () => {
   });
 });
 
+/** A `FakeModelRuntime` that also implements the optional `deleteCache()`, recording every key it was asked to delete. */
+class CacheableModelRuntime extends FakeModelRuntime {
+  readonly deletedCacheKeys: string[] = [];
+
+  async deleteCache(kvCacheKey: string): Promise<void> {
+    this.deletedCacheKeys.push(kvCacheKey);
+  }
+}
+
+describe("AgentService.deleteSessionCache", () => {
+  it("deletes the KV cache stored under the session id", async () => {
+    const runtime = new CacheableModelRuntime();
+    const modelService = new ModelManagementService(runtime, runtime);
+    const embeddingPort = new FakeEmbeddingPort();
+    const vectorStore = await buildFixtureVectorStore(embeddingPort);
+    const ragService = new RagRetrievalService(embeddingPort, vectorStore);
+    const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]));
+
+    await agentService.deleteSessionCache("session-1");
+
+    expect(runtime.deletedCacheKeys).toEqual(["session-1"]);
+  });
+});
+
 describe("AgentService.invoke", () => {
   it("sends the corpus content to the model as part of the chat history", async () => {
     const runtime = new FakeModelRuntime();

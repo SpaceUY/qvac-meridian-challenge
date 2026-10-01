@@ -3,6 +3,7 @@
 // parameters that used to live inside the action object.
 
 import { create } from 'zustand'
+import { deleteSessionCache } from '@/lib/chat-client'
 import type { Citation, History, Message, Role } from '@/lib/chat-types'
 import { revokeAttachments, type ImageAttachment } from '@/lib/image-attachments'
 
@@ -122,12 +123,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   /**
    * New chat. Aborts the turn in flight (the backend cancels generation on
    * disconnect - req. [1.4]), frees the image previews, and starts over
-   * with a fresh sessionId. Chunks still arriving for the old turn are
+   * with a fresh sessionId, and asks the backend to free the old session's
+   * KV cache - fire-and-forget: a failure is only logged, it never blocks
+   * or undoes the new chat. Chunks still arriving for the old turn are
    * harmless: withMessage on an id that no longer exists changes nothing.
    */
   conversationReset: () => {
-    const { activeTurn, history } = get()
+    const { activeTurn, history, sessionId } = get()
     activeTurn?.abort()
+    deleteSessionCache(sessionId).catch((error: unknown) => {
+      console.error('Could not delete the KV cache of the previous chat', error)
+    })
     revokeAttachments(history.flatMap((message) => message.images ?? []))
     set({ history: [], sessionId: crypto.randomUUID(), activeTurn: null })
   },

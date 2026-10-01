@@ -83,6 +83,12 @@ export async function requestCompletion({
   return res.body
 }
 
+/** Frees the backend's KV cache for a conversation that no longer exists (New chat). The backend treats a session with no cache as success. */
+export async function deleteSessionCache(sessionId: string): Promise<void> {
+  const res = await fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}/cache`, { method: 'DELETE' })
+  if (!res.ok) throw new EngineError(await readErrorMessage(res), res.status)
+}
+
 /** The backend's own `{ error: "..." }` body (chat.router.ts's 400s carry a specific, human-readable reason - e.g. "Only JPEG or PNG images are supported") - falls back to the generic status-code message only if the body isn't that shape. Exported: voice-client.ts's requestVoiceCompletion hits the same backend error shape on its own 400s. */
 export async function readErrorMessage(res: Response): Promise<string> {
   const body = safeJsonParse(await res.text())
