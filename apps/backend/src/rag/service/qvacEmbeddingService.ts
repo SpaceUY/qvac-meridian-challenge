@@ -79,6 +79,13 @@ export class QvacEmbeddingService implements EmbeddingPort {
     return vectors;
   }
 
+  /** Idempotent, like `NativeEmbeddingProvider.unload()`. No-op if this instance never loaded a model. */
+  async unload(): Promise<void> {
+    if (!this.modelIdPromise) return;
+    const modelId = await this.modelIdPromise;
+    await this.models.unloadModel(modelId);
+  }
+
   private validate(vector: number[]): number[] {
     if (vector.length === 0 || !vector.every((value) => Number.isFinite(value))) {
       throw new MalformedEmbeddingError(vector.length === 0 ? 'empty vector' : 'non-finite value in vector');
