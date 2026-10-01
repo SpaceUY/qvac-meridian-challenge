@@ -182,6 +182,7 @@ export class QvacRuntimeAdapter
       modelId,
       history: [{ role: "user", content: prompt }],
       stream: false,
+      kvCache: true,
     });
     const requestId = run.requestId;
     const result = run.final
@@ -213,6 +214,7 @@ export class QvacRuntimeAdapter
       tools: request.tools,
       captureThinking: true,
       stream: Boolean(onToken),
+      kvCache: true,
       generationParams:
         request.temperature !== undefined || request.seed !== undefined
           ? { temp: request.temperature, seed: request.seed }
