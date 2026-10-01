@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
-import type { ModelInfo, ModelStatus } from '@/lib/model-status-client'
+import type { DelegationInfo, ModelInfo, ModelStatus } from '@/lib/model-status-client'
 
 type Props = {
   model?: ModelInfo
   modelStatus: ModelStatus
   statusError?: string
+  delegation?: DelegationInfo
   cancelled: boolean
   onCancelLoad: () => void
   onRetryLoad: () => void
@@ -25,13 +26,33 @@ const STATUS_COLOR: Record<ModelStatus, string> = {
   error: 'text-destructive',
 }
 
+/** Truncated the same way the backend's own provider.ts log lines do (first 16 hex chars + "…"), so this matches what a developer sees in the terminal. */
+function formatProviderKey(providerPublicKey: string): string {
+  return `${providerPublicKey.slice(0, 16)}…`
+}
+
 /** Right panel: "with what" the assistant runs. Req. [5.1] + [5.1.1]. */
-export function EnginePanel({ model, modelStatus, statusError, cancelled, onCancelLoad, onRetryLoad }: Props) {
+export function EnginePanel({ model, modelStatus, statusError, delegation, cancelled, onCancelLoad, onRetryLoad }: Props) {
   // A cancelled load is still reported as 'idle' by the server (it's not a
   // failure) - `cancelled` is what tells that apart from the app's initial
   // "about to auto-start" idle, so the label/action match what happened.
   const showCancelledState = modelStatus === 'idle' && cancelled
-  const label = showCancelledState ? 'Load cancelled' : STATUS_LABEL[modelStatus]
+  // 'ready' has two sub-labels depending on where the model actually ran -
+  // not delegated (or delegation status unknown) still reads "Running
+  // locally", which is correct: a configured delegate that fell back to
+  // local is genuinely running locally now, not a bug.
+  const isRunningRemotely = modelStatus === 'ready' && delegation?.isDelegated === true
+  const label = showCancelledState
+    ? 'Load cancelled'
+    : isRunningRemotely
+      ? 'Running on remote peer'
+      : STATUS_LABEL[modelStatus]
+  const subtitle =
+    modelStatus === 'error'
+      ? statusError
+      : isRunningRemotely && delegation?.providerPublicKey
+        ? `Provider: ${formatProviderKey(delegation.providerPublicKey)}`
+        : 'No peers available.'
 
   return (
     <div className="flex flex-col gap-4 text-sm">
@@ -52,9 +73,7 @@ export function EnginePanel({ model, modelStatus, statusError, cancelled, onCanc
             </Button>
           )}
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {modelStatus === 'error' ? statusError : 'No peers available.'}
-        </p>
+        <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
       </Section>
 
       <Separator />

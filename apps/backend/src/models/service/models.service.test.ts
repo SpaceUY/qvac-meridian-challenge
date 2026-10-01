@@ -6,6 +6,7 @@ import type {
   ChatCompletionResult,
   InferenceResult,
   LoadedModel,
+  LoadedModelDelegationInfo,
   LoadModelOptions,
   ModelDownloadProgress,
   ModelSource,
@@ -114,6 +115,17 @@ class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
 class FailingCancelRuntime extends FakeModelRuntime {
   override async cancel(_requestId: string): Promise<void> {
     throw new Error('boom');
+  }
+}
+
+/** A runtime that implements the optional `getLoadedModelInfo()`, keyed by `modelId`, for `ModelManagementService.getLoadedModelInfo()` tests. */
+class IntrospectableRuntime extends FakeModelRuntime {
+  readonly delegationInfo = new Map<string, LoadedModelDelegationInfo>();
+
+  async getLoadedModelInfo(modelId: string): Promise<LoadedModelDelegationInfo> {
+    const info = this.delegationInfo.get(modelId);
+    if (!info) throw new Error(`no delegation info stubbed for "${modelId}"`);
+    return info;
   }
 }
 
@@ -234,6 +246,43 @@ describe('ModelManagementService cancellation', () => {
 
     await expect(failingService.cancel('any-id')).rejects.toMatchObject({
       stage: 'cancel'
+    });
+  });
+});
+
+describe('ModelManagementService.getLoadedModelInfo', () => {
+  it('rejects with a "not-found" error when the model is not currently loaded', async () => {
+    const runtime = new IntrospectableRuntime();
+    const service = new ModelManagementService(runtime, runtime);
+
+    await expect(service.getLoadedModelInfo('unknown-model')).rejects.toMatchObject({
+      stage: 'not-found'
+    });
+  });
+
+  it("delegates to the runtime's getLoadedModelInfo() for a loaded model", async () => {
+    const runtime = new IntrospectableRuntime();
+    const service = new ModelManagementService(runtime, runtime);
+    const load = service.loadModel(SOURCE);
+    runtime.settle(load.requestId);
+    const loaded = await load;
+    runtime.delegationInfo.set(loaded.modelId, { isDelegated: true, providerPublicKey: 'pk-abc' });
+
+    await expect(service.getLoadedModelInfo(loaded.modelId)).resolves.toEqual({
+      isDelegated: true,
+      providerPublicKey: 'pk-abc'
+    });
+  });
+
+  it('rejects with an "introspect" error when the runtime does not implement getLoadedModelInfo()', async () => {
+    const runtime = new FakeModelRuntime();
+    const service = new ModelManagementService(runtime, runtime);
+    const load = service.loadModel(SOURCE);
+    runtime.settle(load.requestId);
+    const loaded = await load;
+
+    await expect(service.getLoadedModelInfo(loaded.modelId)).rejects.toMatchObject({
+      stage: 'introspect'
     });
   });
 });

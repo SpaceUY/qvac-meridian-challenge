@@ -11,6 +11,7 @@ import type {
   ChatCompletionResult,
   InferenceResult,
   LoadedModel,
+  LoadedModelDelegationInfo,
   LoadModelOptions,
   ModelDownloadProgress,
   ModelRequestStatus,
@@ -262,6 +263,28 @@ export class ModelManagementService {
       await this.runtime.cancel(requestId);
     } catch (err) {
       throw toModelManagementError("cancel", err);
+    }
+  }
+
+  /**
+   * Introspection on a loaded model: whether it's running locally or was
+   * delegated to a remote provider. `getLoadedModelInfo` is optional on
+   * `ModelRuntimePort` (only the chat-completion delegation path needs
+   * it) - a runtime that doesn't implement it fails with a distinct
+   * `"introspect"` stage rather than silently reporting "not delegated".
+   */
+  async getLoadedModelInfo(modelId: string): Promise<LoadedModelDelegationInfo> {
+    this.assertLoaded(modelId);
+    if (!this.runtime.getLoadedModelInfo) {
+      throw toModelManagementError(
+        "introspect",
+        new Error("This runtime does not support getLoadedModelInfo()"),
+      );
+    }
+    try {
+      return await this.runtime.getLoadedModelInfo(modelId);
+    } catch (err) {
+      throw toModelManagementError("introspect", err);
     }
   }
 

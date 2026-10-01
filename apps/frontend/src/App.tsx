@@ -15,6 +15,7 @@ export default function App() {
           model={modelStatus.model}
           modelStatus={modelStatus.status}
           statusError={modelStatus.error}
+          delegation={modelStatus.delegation}
           cancelled={modelStatus.cancelled}
           onCancelLoad={modelStatus.cancelLoad}
           onRetryLoad={modelStatus.retryLoad}

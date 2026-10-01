@@ -12,6 +12,7 @@ export type ModelManagementStage =
   | 'unload'
   | 'close'
   | 'cancel'
+  | 'introspect'
   | 'not-found';
 
 /**
@@ -60,4 +61,31 @@ export class OperationCancelledError extends Error {
 /** True if `err` is a `ModelManagementError` caused by `cancel()`, as opposed to a genuine failure. */
 export function isCancellationError(err: unknown): boolean {
   return err instanceof ModelManagementError && err.cause instanceof OperationCancelledError;
+}
+
+/**
+ * Thrown by a `ModelRuntimePort` implementation when a chat completion
+ * fails specifically because a *delegated* model's remote provider could
+ * not be reached (the provider process is down/unreachable), as opposed
+ * to a genuine completion failure (bad input, a model crash, etc.) on an
+ * otherwise-healthy connection. Distinct from `OperationCancelledError`
+ * for the same reason: `@qvac/sdk`'s `fallbackToLocal` only ever applies
+ * at `loadModel()` time - once a model is loaded and registered as
+ * delegated, a later completion against a now-dead provider just fails,
+ * with no SDK-level recovery. `ChatQVAC` uses this to tell "the provider
+ * died mid-session, reload (which will itself fall back to local) and
+ * retry once" apart from any other inference failure, which it should
+ * not blindly retry.
+ */
+export class DelegatedProviderUnreachableError extends Error {
+  constructor(cause?: unknown) {
+    super('The delegated model\'s provider could not be reached');
+    this.name = 'DelegatedProviderUnreachableError';
+    this.cause = cause;
+  }
+}
+
+/** True if `err` is a `ModelManagementError` caused by the delegated provider being unreachable (see `DelegatedProviderUnreachableError`). */
+export function isDelegatedProviderUnreachableError(err: unknown): boolean {
+  return err instanceof ModelManagementError && err.cause instanceof DelegatedProviderUnreachableError;
 }

@@ -15,6 +15,7 @@
     "qvac-server": "qvac serve openai --config=./qvac.config.json",
     "basic-prompt": "npm run basic-prompt --workspace=apps/backend",
     "model-lifecycle-demo": "npm run model-lifecycle-demo --workspace=apps/backend",
+    "provider": "npm run provider --workspace=apps/backend",
     "speech-demo": "npm run speech-demo --workspace=apps/backend"
   },
   "keywords": [],

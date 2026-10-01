@@ -8,6 +8,7 @@ import {
   completion,
   CompletionFinal,
   downloadAsset,
+  getLoadedModelInfo,
   InferenceCancelledError,
   loadModel,
   modelRegistryList,
@@ -15,7 +16,10 @@ import {
   SDK_SERVER_ERROR_CODES,
   unloadModel,
 } from "@qvac/sdk";
-import { OperationCancelledError } from "../domain/errors.js";
+import {
+  DelegatedProviderUnreachableError,
+  OperationCancelledError,
+} from "../domain/errors.js";
 import type {
   ModelProvisioningPort,
   ModelRuntimePort,
@@ -26,15 +30,16 @@ import type {
   ChatMessage,
   InferenceResult,
   LoadedModel,
+  LoadedModelDelegationInfo,
   LoadModelOptions,
   ModelDownloadProgress,
   ModelSource,
   RegistryModelSummary,
   RegistrySearchQuery,
-  SupportedImageMimeType
-} from '../domain/types.js';
-import { DEFAULT_MODEL_TYPE } from '../../config/models.config.js';
-import { toSdkModelConfig } from './loadModelConfig.js';
+  SupportedImageMimeType,
+} from "../domain/types.js";
+import { DEFAULT_MODEL_TYPE } from "../../config/models.config.js";
+import { toSdkModelConfig } from "./loadModelConfig.js";
 
 const EXTENSION_BY_MIME_TYPE: Record<SupportedImageMimeType, string> = {
   "image/jpeg": "jpg",
@@ -156,6 +161,7 @@ export class QvacRuntimeAdapter
       modelSrc: toModelSrc(source),
       modelType: source.modelType ?? DEFAULT_MODEL_TYPE,
       modelConfig: toSdkModelConfig(options),
+      delegate: options?.delegate,
       onProgress: toSdkProgressCallback(onProgress),
     });
     const requestId = call.requestId;
@@ -197,7 +203,9 @@ export class QvacRuntimeAdapter
     request: ChatCompletionRequest,
     onToken?: (textDelta: string) => void,
   ): Promise<ChatCompletionResult> & { requestId: string } {
-    const { sdkHistory, tempFilePaths } = materializeAttachments(request.history);
+    const { sdkHistory, tempFilePaths } = materializeAttachments(
+      request.history,
+    );
 
     const run = completion({
       modelId,
@@ -206,8 +214,8 @@ export class QvacRuntimeAdapter
       captureThinking: true,
       stream: Boolean(onToken),
       generationParams:
-        request.temperature !== undefined
-          ? { temp: request.temperature }
+        request.temperature !== undefined || request.seed !== undefined
+          ? { temp: request.temperature, seed: request.seed }
           : undefined,
     });
     const requestId = run.requestId;
@@ -263,6 +271,26 @@ export class QvacRuntimeAdapter
   async cancel(requestId: string): Promise<void> {
     await cancel({ requestId });
   }
+
+  /**
+   * The SDK's `getLoadedModelInfo()` returns a discriminated union keyed on
+   * `isDelegated` (`providerInfo.providerPublicKey` only present when
+   * `true`) - narrowed here to the two fields this feature's domain
+   * actually needs, so a caller never has to know about `handlers`/
+   * `modelType`/etc., which only matter for the local-model preflight use
+   * case this feature doesn't use.
+   */
+  async getLoadedModelInfo(
+    modelId: string,
+  ): Promise<LoadedModelDelegationInfo> {
+    const info = await getLoadedModelInfo({ modelId });
+    return {
+      isDelegated: info.isDelegated,
+      providerPublicKey: info.isDelegated
+        ? info.providerInfo.providerPublicKey
+        : undefined,
+    };
+  }
 }
 
 function toRegistryModelSummary(entry: {
@@ -296,8 +324,11 @@ function toRegistryModelSummary(entry: {
  * confirmed against the SDK's server-side resolver, which parses exactly
  * this scheme via `registryUrlSchema` (regex `^registry:\/\/([^/]+)\/(.+)$`
  * in `dist/schemas/load-model.js`) and looks up the path in its own
- * catalog (`dist/server/rpc/handlers/load-model/resolve.js`). Shared by
- * `load()` and `provision()` so the scheme is defined in exactly one place.
+ * catalog (`dist/server/rpc/handlers/load-model/resolve.js`). For `rawSrc`
+ * sources the string is already in whatever form the SDK's own catalog
+ * exports it in (e.g. a VLM projection model's `.src`), so it's passed
+ * through unwrapped, same as `url`. Shared by `load()` and `provision()` so
+ * the scheme is defined in exactly one place.
  */
 /**
  * Translates the SDK's cancellation errors into the domain-level
@@ -317,11 +348,37 @@ function toDomainError(requestId: string, err: unknown): unknown {
     (err instanceof Error &&
       "code" in err &&
       err.code === SDK_SERVER_ERROR_CODES.INFERENCE_CANCELLED);
-  return isCancelled ? new OperationCancelledError(requestId) : err;
+  if (isCancelled) return new OperationCancelledError(requestId);
+  if (isProviderUnreachableError(err))
+    return new DelegatedProviderUnreachableError(err);
+  return err;
+}
+
+/**
+ * A delegated model's completion fails with the SDK's generic
+ * `COMPLETION_FAILED` code both for this (the provider is unreachable)
+ * and for a genuine completion failure (bad input, a model crash, etc.) -
+ * `CompletionFailedError` itself isn't part of `@qvac/sdk`'s public API to
+ * `instanceof`-check against, so this narrows on the exact message
+ * `handleCompletionStreamDelegated` (`dist/server/rpc/handlers/completion-
+ * stream-delegated.js`) sets for a connection failure specifically, the
+ * same way the cancellation check above narrows on a code rather than a
+ * class. `ChatQVAC.getDelegationInfo()`/`recoverFromDelegationFailure()`
+ * rely on this to tell "reload and retry locally" apart from "surface a
+ * genuine completion error".
+ */
+function isProviderUnreachableError(err: unknown): boolean {
+  return (
+    err instanceof Error &&
+    "code" in err &&
+    err.code === SDK_SERVER_ERROR_CODES.COMPLETION_FAILED &&
+    /communicating with provider/i.test(err.message)
+  );
 }
 
 function toModelSrc(source: ModelSource): string {
   if (source.kind === "url") return source.url;
+  if (source.kind === "rawSrc") return source.src;
   return `registry://${source.registrySource}/${source.registryPath}`;
 }
 

@@ -3,6 +3,7 @@ import type {
   ChatCompletionResult,
   InferenceResult,
   LoadedModel,
+  LoadedModelDelegationInfo,
   LoadModelOptions,
   ModelDownloadProgress,
   ModelSource,
@@ -62,6 +63,13 @@ export interface ModelRuntimePort {
   ): Promise<ChatCompletionResult> & { requestId: string };
   unload(modelId: string): Promise<void>;
   close(): Promise<void>;
+  /**
+   * Introspection on a loaded model - whether it's running locally or was
+   * delegated to a remote provider. Optional: only the chat-completion
+   * delegation path (`ChatQVAC`) needs it, so a `ModelRuntimePort` fake used
+   * by an unrelated feature's tests doesn't have to implement it.
+   */
+  getLoadedModelInfo?(modelId: string): Promise<LoadedModelDelegationInfo>;
   /**
    * Cancels the in-flight load or inference identified by `requestId`
    * (as exposed by `load()`/`infer()`). Safe to call with a `requestId`
