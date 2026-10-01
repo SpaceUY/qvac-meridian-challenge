@@ -26,6 +26,8 @@ export type Message = {
   text: string
   citations: Citation[]
   status: MessageStatus
+  /** Present only on assistant messages that came from a voice turn with a successful TTS synthesis. */
+  audio?: { dataUrl: string }
 }
 
 /**
