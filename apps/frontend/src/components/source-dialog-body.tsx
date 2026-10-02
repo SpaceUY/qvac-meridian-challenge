@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { Markdown } from '@/components/markdown'
-import { useDocumentContent } from '@/hooks/use-document-content'
-import { chunkLabel, formatChunk, formatScore } from '@/lib/citation-label'
+import { DocumentContentLoader, FormattedContent } from '@/components/document-content'
+import { chunkLabel, formatScore } from '@/lib/citation-label'
 import type { CitedChunk } from '@/lib/chat-types'
 import { highlightSegments } from '@/lib/document-highlight'
 
@@ -55,28 +54,11 @@ function Passages({ chunks }: { chunks: CitedChunk[] }) {
               {formatScore(chunk.score)}
             </span>
           </div>
-          <ChunkBody chunk={chunk} />
+          <FormattedContent file={chunk.file} content={chunk.content} />
         </li>
       ))}
     </ul>
   )
-}
-
-/** One passage, shown the way its file's format calls for - see `formatChunk` for why html is never rendered. */
-function ChunkBody({ chunk }: { chunk: CitedChunk }) {
-  const { kind, text } = formatChunk(chunk.file, chunk.content)
-
-  if (kind === 'markdown') {
-    return (
-      <div className="text-sm leading-relaxed">
-        <Markdown text={text} />
-      </div>
-    )
-  }
-  if (kind === 'code') {
-    return <pre className="chat-scrollbar overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs leading-relaxed">{text}</pre>
-  }
-  return <p className="text-sm leading-relaxed whitespace-pre-wrap">{text}</p>
 }
 
 /**
@@ -85,12 +67,13 @@ function ChunkBody({ chunk }: { chunk: CitedChunk }) {
  * text, and rendering markdown would lose the mapping.
  */
 function FullDocument({ file, chunks }: { file: string; chunks: CitedChunk[] }) {
-  const document = useDocumentContent(file)
+  return (
+    <DocumentContentLoader file={file}>{(content) => <HighlightedDocument content={content} chunks={chunks} />}</DocumentContentLoader>
+  )
+}
 
-  if (document.isPending) return <p className="py-6 text-center text-sm text-muted-foreground">Loading document…</p>
-  if (document.isError) return <p className="py-6 text-center text-sm text-muted-foreground">Couldn't load the document.</p>
-
-  const { segments, missing } = highlightSegments(document.data.content, chunks)
+function HighlightedDocument({ content, chunks }: { content: string; chunks: CitedChunk[] }) {
+  const { segments, missing } = highlightSegments(content, chunks)
   const firstHighlight = segments.findIndex((segment) => segment.highlighted)
 
   return (
