@@ -13,6 +13,8 @@ import {
   toCitationsChunk,
   toToolsChunk,
   toDoneChunk,
+  toContextChunk,
+  toVoiceDoneChunk,
 } from "./chat.router.helpers.js";
 import { MAX_IMAGE_BYTES, MAX_IMAGES_PER_MESSAGE } from "./chat.router.const.js";
 
@@ -340,5 +342,23 @@ describe("stream chunks", () => {
     const [finishEvent, doneEvent] = toDoneChunk(ENVELOPE).split("\n\n");
     expect(parseEvent(finishEvent).choices[0]).toMatchObject({ delta: {}, finish_reason: "stop" });
     expect(doneEvent).toBe("data: [DONE]");
+  });
+});
+
+describe("context usage", () => {
+  const CONTEXT = { usedTokens: 13200, maxTokens: 16384, exhausted: true };
+
+  it("travels as its own stream delta", () => {
+    expect(parseEvent(toContextChunk(ENVELOPE, CONTEXT)).choices[0].delta).toEqual({ context: CONTEXT });
+  });
+
+  it("rides on the voice done event when there is one", () => {
+    const [doneEvent] = toVoiceDoneChunk(ENVELOPE, { transcript: "hi", toolsUsed: [], citations: [], context: CONTEXT }).split("\n\n");
+    expect(JSON.parse(doneEvent.slice("data: ".length))).toMatchObject({ type: "done", context: CONTEXT });
+  });
+
+  it("is left out of the voice done event when nothing was measured", () => {
+    const [doneEvent] = toVoiceDoneChunk(ENVELOPE, { transcript: "hi", toolsUsed: [], citations: [] }).split("\n\n");
+    expect(JSON.parse(doneEvent.slice("data: ".length))).not.toHaveProperty("context");
   });
 });

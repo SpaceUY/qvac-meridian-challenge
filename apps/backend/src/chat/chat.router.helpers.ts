@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ConversationMessage } from "../ai/orchestrator/agentService.js";
 import type { GenerationOptions } from "../ai/orchestrator/domain.js";
+import type { ContextUsage } from "../ai/orchestrator/contextBudget.js";
 import type { SupportedImageMimeType } from "../models/domain/types.js";
 import type { Citation } from "../rag/domain/types.js";
 import {
@@ -262,7 +263,7 @@ export function toCompletionResponse(
   };
 }
 
-type StreamDelta = { role?: "assistant"; content?: string; tools?: string[]; citations?: Citation[] };
+type StreamDelta = { role?: "assistant"; content?: string; tools?: string[]; citations?: Citation[]; context?: ContextUsage };
 
 /** One `chat.completion.chunk` as an SSE event. */
 function toChunkEvent(envelope: CompletionEnvelope, delta: StreamDelta, finishReason: "stop" | null = null): string {
@@ -293,6 +294,11 @@ export function toCitationsChunk(envelope: CompletionEnvelope, citations: Citati
   return toChunkEvent(envelope, { citations });
 }
 
+/** How full this conversation's context window is, sent once the answer is final (after citations, before the closing chunk). Only written when the agent measured it - see `InvokeResult.context`. */
+export function toContextChunk(envelope: CompletionEnvelope, context: ContextUsage): string {
+  return toChunkEvent(envelope, { context });
+}
+
 /** The closing chunk (empty delta + finish_reason) followed by the SSE terminator. */
 export function toDoneChunk(envelope: CompletionEnvelope): string {
   return `${toChunkEvent(envelope, {}, "stop")}data: [DONE]\n\n`;
@@ -311,12 +317,18 @@ export function toVoiceAudioChunk(
   return toVoiceEvent(envelope, { type: "audio", ...chunk });
 }
 
-/** The closing event on a successful turn: full transcript + tools + citations, then the SSE terminator. */
+/** The closing event on a successful turn: full transcript + tools + citations (+ context usage, when measured), then the SSE terminator. */
 export function toVoiceDoneChunk(
   envelope: CompletionEnvelope,
-  payload: { transcript: string; toolsUsed: string[]; citations: Citation[] },
+  payload: { transcript: string; toolsUsed: string[]; citations: Citation[]; context?: ContextUsage },
 ): string {
-  return `${toVoiceEvent(envelope, { type: "done", transcript: payload.transcript, tools: payload.toolsUsed, citations: payload.citations })}data: [DONE]\n\n`;
+  return `${toVoiceEvent(envelope, {
+    type: "done",
+    transcript: payload.transcript,
+    tools: payload.toolsUsed,
+    citations: payload.citations,
+    ...(payload.context ? { context: payload.context } : {}),
+  })}data: [DONE]\n\n`;
 }
 
 /** Sent instead of `toVoiceDoneChunk` when the turn fails after SSE headers are already committed (so a JSON 4xx/5xx is no longer possible) - includes the SSE terminator. */
