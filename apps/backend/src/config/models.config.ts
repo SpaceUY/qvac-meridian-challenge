@@ -78,6 +78,13 @@ export interface AgentModelConfig {
   kvCacheEnabled?: boolean;
   /** Whether this model's KV cache is quantized via TurboQuant - see `TURBOQUANT_KV_CACHE_ENGINE_CONFIG`/`resolveEngineConfig` below. Defaults to disabled (`false`) when omitted. */
   kvCacheQuantEnabled?: boolean;
+  /**
+   * Max concurrent `completion()` calls this tier admits against its loaded
+   * model (continuous batching - see I.2's spike/results doc). Merged into
+   * `engineConfig.parallel` by `resolveEngineConfig()` below when greater
+   * than 1. Defaults to 1 (today's sequential behavior) when omitted.
+   */
+  maxConcurrency?: number;
 }
 
 /**
@@ -108,8 +115,12 @@ export const TURBOQUANT_KV_CACHE_ENGINE_CONFIG: Record<string, string> = {
 export function resolveEngineConfig(
   config: AgentModelConfig,
 ): Record<string, unknown> | undefined {
-  if (!config.kvCacheQuantEnabled) return config.engineConfig;
-  return { ...config.engineConfig, ...TURBOQUANT_KV_CACHE_ENGINE_CONFIG };
+  const kvCacheConfig = config.kvCacheQuantEnabled ? TURBOQUANT_KV_CACHE_ENGINE_CONFIG : undefined;
+  const parallelConfig = config.maxConcurrency && config.maxConcurrency > 1
+    ? { parallel: config.maxConcurrency }
+    : undefined;
+  if (!kvCacheConfig && !parallelConfig) return config.engineConfig;
+  return { ...config.engineConfig, ...kvCacheConfig, ...parallelConfig };
 }
 
 const QWEN3VL_2B_MODEL_SOURCE: ModelSource = {
@@ -171,6 +182,12 @@ export const LLM_MODELS_BY_TIER: Record<ResourceTier, AgentModelConfig> = {
     },
     modelName: QWEN3_6_35B_A3B_MULTIMODAL_Q4_K_M.name,
     quantization: QWEN3_6_35B_A3B_MULTIMODAL_Q4_K_M.quantization,
+    // I.2: bounded continuous batching via concurrent completion() calls
+    // (see docs/i2-simultaneous-completions-results.md) - conservative
+    // starting point, raise after benchmarking real high-tier hardware.
+    // Only the high tier runs completions in parallel; low/medium stay at
+    // the sequential default (DEFAULT_MAX_CONCURRENCY = 1).
+    maxConcurrency: 2,
   },
 };
 

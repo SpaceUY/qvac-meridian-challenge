@@ -46,4 +46,32 @@ describe("resolveEngineConfig", () => {
     };
     expect(resolveEngineConfig(config)).toEqual({ projectionModelSrc: "src" });
   });
+
+  it("merges parallel into engineConfig when maxConcurrency is greater than 1", () => {
+    const config: AgentModelConfig = { ...BASE_CONFIG, maxConcurrency: 2 };
+    expect(resolveEngineConfig(config)).toEqual({ parallel: 2 });
+  });
+
+  it("does not add parallel when maxConcurrency is 1", () => {
+    const config: AgentModelConfig = { ...BASE_CONFIG, maxConcurrency: 1 };
+    expect(resolveEngineConfig(config)).toBeUndefined();
+  });
+
+  it("does not add parallel when maxConcurrency is unset", () => {
+    expect(resolveEngineConfig(BASE_CONFIG)).toBeUndefined();
+  });
+
+  it("merges parallel alongside an existing engineConfig and TurboQuant", () => {
+    const config: AgentModelConfig = {
+      ...BASE_CONFIG,
+      engineConfig: { projectionModelSrc: "src" },
+      kvCacheQuantEnabled: true,
+      maxConcurrency: 2,
+    };
+    expect(resolveEngineConfig(config)).toEqual({
+      projectionModelSrc: "src",
+      ...TURBOQUANT_KV_CACHE_ENGINE_CONFIG,
+      parallel: 2,
+    });
+  });
 });

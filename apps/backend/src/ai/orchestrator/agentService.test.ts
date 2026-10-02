@@ -307,6 +307,120 @@ const FAKE_DOCUMENTS: ArchitectureDocument[] = [
   },
 ];
 
+/** Enough microtask ticks for a suspended async function to run up to its next real wait. */
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 20; i++) {
+    await Promise.resolve();
+  }
+}
+
+const PERMISSIVE_RAG_CONFIG_FOR_CONCURRENCY = { topK: 5, minScore: -1, maxContextChunks: 4, dedupeExactContent: true };
+
+describe("AgentService concurrency (high tier)", () => {
+  it("runs two concurrent invokes against a maxConcurrency=2 tier without one waiting on the other", async () => {
+    const runtime = new ControllableModelRuntime();
+    const modelService = new ModelManagementService(runtime, runtime);
+    const embeddingPort = new StubEmbeddingPort();
+    const vectorStore = await buildFixtureVectorStore(embeddingPort);
+    const ragService = new RagRetrievalService(embeddingPort, vectorStore, PERMISSIVE_RAG_CONFIG_FOR_CONCURRENCY);
+    const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]), "high");
+
+    const pendingA = agentService.invoke([{ role: "user", message: "Question A" }]);
+    runtime.settleLoad(await runtime.nextLoadRequestId());
+    const chatRequestIdA = await runtime.nextChatRequestId();
+
+    const pendingB = agentService.invoke([{ role: "user", message: "Question B" }]);
+    const chatRequestIdB = await runtime.nextChatRequestId();
+
+    expect(chatRequestIdB).not.toBe(chatRequestIdA);
+
+    runtime.settle(chatRequestIdA, { text: "answer A", toolCalls: [] });
+    runtime.settle(chatRequestIdB, { text: "answer B", toolCalls: [] });
+
+    // ControllableModelRuntime never streams tokens, so the graph's streamed
+    // reply is empty regardless of settle()'s text - what matters here is
+    // that both resolve independently, proving neither blocked on the other
+    // (chatRequestIdB above was obtained without ever settling A).
+    await expect(pendingA).resolves.toEqual(expect.objectContaining({ answer: expect.any(String) }));
+    await expect(pendingB).resolves.toEqual(expect.objectContaining({ answer: expect.any(String) }));
+  });
+
+  it("queues a third invoke until a slot frees, at the tier's concurrency limit of 2", async () => {
+    const runtime = new ControllableModelRuntime();
+    const modelService = new ModelManagementService(runtime, runtime);
+    const embeddingPort = new StubEmbeddingPort();
+    const vectorStore = await buildFixtureVectorStore(embeddingPort);
+    const ragService = new RagRetrievalService(embeddingPort, vectorStore, PERMISSIVE_RAG_CONFIG_FOR_CONCURRENCY);
+    const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]), "high");
+
+    const pendingA = agentService.invoke([{ role: "user", message: "Question A" }]);
+    runtime.settleLoad(await runtime.nextLoadRequestId());
+    const chatRequestIdA = await runtime.nextChatRequestId();
+    const pendingB = agentService.invoke([{ role: "user", message: "Question B" }]);
+    const chatRequestIdB = await runtime.nextChatRequestId();
+
+    let thirdDispatched = false;
+    const nextChatRequestIdPromise = runtime.nextChatRequestId().then((id) => {
+      thirdDispatched = true;
+      return id;
+    });
+    const pendingC = agentService.invoke([{ role: "user", message: "Question C" }]);
+    await flushMicrotasks();
+
+    expect(thirdDispatched).toBe(false); // both slots (A, B) still taken
+
+    runtime.settle(chatRequestIdA, { text: "answer A", toolCalls: [] });
+    await pendingA;
+    const chatRequestIdC = await nextChatRequestIdPromise;
+
+    expect(thirdDispatched).toBe(true); // freed by A settling
+    runtime.settle(chatRequestIdC, { text: "answer C", toolCalls: [] });
+    await expect(pendingC).resolves.toEqual(expect.objectContaining({ answer: expect.any(String) }));
+
+    runtime.settle(chatRequestIdB, { text: "answer B", toolCalls: [] });
+    await pendingB;
+  });
+
+  it("cancels one concurrent invoke without affecting the other", async () => {
+    const runtime = new ControllableModelRuntime();
+    const modelService = new ModelManagementService(runtime, runtime);
+    const embeddingPort = new StubEmbeddingPort();
+    const vectorStore = await buildFixtureVectorStore(embeddingPort);
+    const ragService = new RagRetrievalService(embeddingPort, vectorStore, PERMISSIVE_RAG_CONFIG_FOR_CONCURRENCY);
+    const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]), "high");
+
+    const pendingA = agentService.invoke([{ role: "user", message: "Question A" }]);
+    runtime.settleLoad(await runtime.nextLoadRequestId());
+    await runtime.nextChatRequestId();
+    const pendingB = agentService.invoke([{ role: "user", message: "Question B" }]);
+    const chatRequestIdB = await runtime.nextChatRequestId();
+
+    await agentService.cancel(pendingA.requestId);
+    runtime.settle(chatRequestIdB, { text: "answer B", toolCalls: [] });
+
+    await expect(pendingA).rejects.toBeInstanceOf(ModelManagementError);
+    await expect(pendingB).resolves.toEqual(expect.objectContaining({ answer: expect.any(String) }));
+  });
+
+  it("keeps each concurrent invoke's KV cache session id intact (no cross-talk between sessions)", async () => {
+    const runtime = new FakeModelRuntime();
+    const modelService = new ModelManagementService(runtime, runtime);
+    const embeddingPort = new StubEmbeddingPort();
+    const vectorStore = await buildFixtureVectorStore(embeddingPort);
+    const ragService = new RagRetrievalService(embeddingPort, vectorStore, PERMISSIVE_RAG_CONFIG_FOR_CONCURRENCY);
+    const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]), "high");
+
+    await Promise.all([
+      agentService.invoke([{ role: "user", message: "Question A" }], { sessionId: "session-a" }),
+      agentService.invoke([{ role: "user", message: "Question B" }], { sessionId: "session-b" }),
+    ]);
+
+    const sessionIds = runtime.chatRequests.map((request) => request.sessionId);
+    expect(sessionIds).toContain("session-a");
+    expect(sessionIds).toContain("session-b");
+  });
+});
+
 describe("AgentService model selection", () => {
   it("loads the tier-specific chat model instead of always the default tier", async () => {
     const runtime = new FakeModelRuntime();

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ModelManagementService } from "../../models/service/models.service.js";
 import {
   isDelegatedProviderUnreachableError,
@@ -11,8 +12,10 @@ import type {
   LoadedModelDelegationInfo,
   ModelSource,
 } from "../../models/domain/types.js";
+import { ConcurrencyLimiter } from "./concurrencyLimiter.js";
 
 const DEFAULT_CTX_SIZE = 4096;
+const DEFAULT_MAX_CONCURRENCY = 1;
 
 /** The slice of `ModelManagementService` a chat session needs - structural, so tests can pass a plain fake. */
 export type QvacChatSessionService = Pick<
@@ -31,6 +34,8 @@ export interface QvacChatSessionOptions {
   kvCacheEnabled?: boolean;
   /** When set, routes this session's model load (and the inference that follows it) to a remote provider instead of running locally. */
   delegate?: DelegateOptions;
+  /** Max `complete()` calls this session admits concurrently against the loaded model (continuous batching - see I.2's spike/results doc); extra calls queue FIFO. Defaults to 1 (today's sequential behavior) when omitted. */
+  maxConcurrency?: number;
 }
 
 /**
@@ -54,12 +59,24 @@ export class QvacChatSession {
   private recovering = false;
   /** Number of `switchTo()` calls in flight, either direction - backs `isBusy()`, so overlapping switches keep it `true` until the last one settles. */
   private switchesInFlight = 0;
-  /** The `requestId` of the `chatComplete` call currently in flight, if any - lets `cancelActive()` cancel it. */
-  private activeRequestId?: string;
-  /** The model `activeRequestId` is running on - `cancelActive()` needs it for the model-wide cancel. */
-  private activeModelId?: string;
-  /** Set while a completion is in flight; `cancelActive()` uses it to reject `complete()` immediately. See `cancelActive()`. */
-  private completionAbandonSignal?: { reject: (err: unknown) => void };
+  /** Bounds how many `complete()` calls run concurrently against the loaded model; extra calls queue (see `maxConcurrency`). */
+  private readonly limiter: ConcurrencyLimiter;
+  /**
+   * `requestId` (the caller's own, from `ChatCompletionRequest.requestId`) ->
+   * the sdk-level `requestId` `chatComplete()` minted for that specific call,
+   * for every completion currently ADMITTED (past the limiter, dispatched to
+   * the service) - lets `cancelActive(requestId)` target exactly that one
+   * without disturbing any other concurrently in-flight completion. A
+   * request still queued behind the concurrency limit has no entry here yet;
+   * see `limiter.cancel()` for that case.
+   */
+  private readonly activeRequestIds = new Map<string, string>();
+  /** Same keys as `activeRequestIds` - the model each admitted completion is running on, needed to decide whether a model-wide `cancelCompletions()` fallback is safe (see `cancelActive()`). */
+  private readonly activeModelIds = new Map<string, string>();
+  /** Same keys as `activeRequestIds` - lets `cancelActive()` free that specific caller immediately, regardless of whether the underlying cancel RPC(s) actually stop anything in time. */
+  private readonly completionAbandonSignals = new Map<string, (err: unknown) => void>();
+  /** Shared by every concurrent `complete()` call whose provider died before it recovers, so N simultaneous failures reload the model once, not N times - see `complete()`'s catch block. */
+  private recoveryPromise?: Promise<string>;
   /** The `requestId` of the `loadModel` call currently in flight, if any - lets `cancelLoad()` cancel it. */
   private loadRequestId?: string;
   /**
@@ -77,6 +94,7 @@ export class QvacChatSession {
     this.engineConfig = options.engineConfig;
     this.kvCacheEnabled = options.kvCacheEnabled;
     this.delegate = options.delegate;
+    this.limiter = new ConcurrencyLimiter(options.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY);
   }
 
   /**
@@ -92,6 +110,16 @@ export class QvacChatSession {
    * surfaces the error as-is instead. A call without `onToken` never
    * streams, so it is always eligible.
    *
+   * Bounded by `limiter`: a call past `maxConcurrency` queues here until an
+   * earlier one releases its slot, rather than starting unbounded
+   * concurrent inference. `request.requestId`, when present, is what
+   * `cancelActive()` targets this specific call by - both while queued
+   * (rejected without ever reaching the service) and once admitted
+   * (forwarded to `service.cancel()`/`cancelCompletions()`). Falls back to a
+   * locally-generated id when absent (e.g. a caller that doesn't thread one
+   * through) so the queue itself still works; that call just isn't
+   * externally cancellable by name.
+   *
    * An arrow property so it can be handed to `ChatQVAC` directly.
    */
   readonly complete = async (
@@ -100,6 +128,8 @@ export class QvacChatSession {
   ): Promise<ChatCompletionResult> => {
     const modelId = await this.ensureModel();
     const fullRequest: ChatCompletionRequest = { ...request, kvCacheEnabled: this.kvCacheEnabled };
+    const limiterKey = request.requestId ?? randomUUID();
+    const release = await this.limiter.acquire(limiterKey);
 
     let anyTokenEmitted = false;
     const trackedOnToken = onToken
@@ -110,58 +140,103 @@ export class QvacChatSession {
       : undefined;
 
     try {
-      return await this.runCancellable(modelId, this.service.chatComplete(modelId, fullRequest, trackedOnToken));
+      return await this.runCancellable(
+        limiterKey,
+        modelId,
+        this.service.chatComplete(modelId, fullRequest, trackedOnToken),
+      );
     } catch (error) {
       if (anyTokenEmitted || !isDelegatedProviderUnreachableError(error)) throw error;
-      const recoveredModelId = await this.recoverFromDelegationFailure();
+      const recoveredModelId = await this.recoverOnce();
       return await this.runCancellable(
+        limiterKey,
         recoveredModelId,
         this.service.chatComplete(recoveredModelId, fullRequest, trackedOnToken),
       );
     } finally {
-      this.activeRequestId = undefined;
-      this.activeModelId = undefined;
-      this.completionAbandonSignal = undefined;
+      this.activeRequestIds.delete(limiterKey);
+      this.activeModelIds.delete(limiterKey);
+      this.completionAbandonSignals.delete(limiterKey);
+      release();
     }
   };
 
-  /** Registers `pending` as the in-flight completion and races it against `cancelActive()`'s abandon signal. */
+  /** Registers `pending` as admitted under `limiterKey` and races it against `cancelActive(limiterKey)`'s abandon signal. */
   private runCancellable(
+    limiterKey: string,
     modelId: string,
     pending: Promise<ChatCompletionResult> & { requestId: string },
   ): Promise<ChatCompletionResult> {
-    this.activeRequestId = pending.requestId;
-    this.activeModelId = modelId;
+    this.activeRequestIds.set(limiterKey, pending.requestId);
+    this.activeModelIds.set(limiterKey, modelId);
     const abandoned = new Promise<never>((_, reject) => {
-      this.completionAbandonSignal = { reject };
+      this.completionAbandonSignals.set(limiterKey, reject);
     });
     return Promise.race([pending, abandoned]);
   }
 
   /**
-   * Cancels the `chatComplete` call currently in flight on this session, if
-   * any - used by a host's cancel endpoint to stop a running generation.
-   * No-op when nothing is in flight (e.g. it already settled).
+   * Cancels the `complete()` call identified by `requestId` - used by a
+   * host's cancel endpoint to stop a running (or still-queued) generation
+   * without disturbing any other concurrently active or queued one. No-op
+   * when `requestId` is unknown (already settled, or never existed).
    *
-   * `service.cancel()` cannot stop a completion running on a *delegated*
-   * model: the SDK handles a request-id cancel locally and reports success
-   * without forwarding it to the provider, which keeps generating (and
-   * keeps this session busy) until it finishes. So when a delegate is
-   * configured, a model-wide cancel follows - that one is forwarded.
-   * Rejecting `completionAbandonSignal` first (before any cancel RPC)
-   * frees the caller immediately, regardless of whether either cancel
-   * takes effect or how long it takes. The real completion keeps running
-   * in the background until a cancel lands.
+   * Checks the concurrency queue first: a call still waiting for a slot has
+   * never reached the service, so cancelling it there (via `limiter`)
+   * rejects it directly instead of forwarding to `service.cancel()`, which
+   * has nothing to target yet.
+   *
+   * For an admitted call, rejecting its abandon signal frees the caller
+   * immediately regardless of whether the cancel RPC(s) below actually land
+   * in time, then `service.cancel(requestId)` targets that one completion.
+   *
+   * `service.cancel()` alone cannot stop a completion running on a
+   * *delegated* model (the SDK handles a request-id cancel locally and
+   * reports success without forwarding it to the provider, which keeps
+   * generating), so a model-wide `cancelCompletions(modelId)` normally
+   * follows for the delegated case - but that cancels *every* completion on
+   * that model, not just this one. Under concurrency, calling it while a
+   * sibling completion is still active on the same model would cancel that
+   * sibling too, violating "cancelling one must never affect another". So
+   * it's only called when this is the sole active completion on that
+   * model; otherwise cancellation here is best-effort by request-id alone -
+   * the caller is freed either way via the abandon signal, but the remote
+   * generation may keep running on the provider until it finishes. This is
+   * an inherent limitation of delegating to a model that only exposes a
+   * model-wide remote cancel, not something concurrency itself introduces
+   * the risk of avoiding.
    */
-  async cancelActive(): Promise<void> {
-    const requestId = this.activeRequestId;
-    if (!requestId) return;
-    const modelId = this.activeModelId;
-    this.completionAbandonSignal?.reject(
+  async cancelActive(requestId: string): Promise<void> {
+    if (this.limiter.cancel(requestId)) return;
+    const sdkRequestId = this.activeRequestIds.get(requestId);
+    if (!sdkRequestId) return;
+    const modelId = this.activeModelIds.get(requestId);
+    this.completionAbandonSignals.get(requestId)?.(
       new ModelManagementError("cancel", "Operation cancelled", new OperationCancelledError(requestId)),
     );
-    await this.service.cancel(requestId);
-    if (this.delegate && modelId) await this.service.cancelCompletions(modelId);
+    await this.service.cancel(sdkRequestId);
+    const hasActiveSiblingOnSameModel = [...this.activeModelIds.entries()].some(
+      ([key, activeModelId]) => key !== requestId && activeModelId === modelId,
+    );
+    if (this.delegate && modelId && !hasActiveSiblingOnSameModel) {
+      await this.service.cancelCompletions(modelId);
+    }
+  }
+
+  /**
+   * Coalesces concurrent recovery attempts into one reload: if two (or
+   * more) `complete()` calls discover the delegated provider died at
+   * roughly the same time, only the first starts `recoverFromDelegationFailure()`;
+   * the rest await that same in-flight attempt instead of each unloading/
+   * reloading the model independently.
+   */
+  private recoverOnce(): Promise<string> {
+    if (!this.recoveryPromise) {
+      this.recoveryPromise = this.recoverFromDelegationFailure().finally(() => {
+        this.recoveryPromise = undefined;
+      });
+    }
+    return this.recoveryPromise;
   }
 
   /**
@@ -279,13 +354,18 @@ export class QvacChatSession {
   }
 
   /**
-   * `true` while a completion, a load, a recovery reload or a `switchTo()`
-   * is in flight. A host uses it to defer a proactive `switchTo()` until
-   * nothing would be interrupted.
+   * `true` while any completion - active or still queued behind the
+   * concurrency limit - a load, a recovery reload or a `switchTo()` is in
+   * flight. A host uses it to defer a proactive `switchTo()` until nothing
+   * would be interrupted. Queued completions count too: each already
+   * captured the `modelId` it will call `service.chatComplete()` with once
+   * admitted, so a switch that unloads the model out from under a merely
+   * *queued* call would be just as disruptive as interrupting an active one.
    */
   isBusy(): boolean {
     return (
-      this.activeRequestId !== undefined ||
+      this.activeRequestIds.size > 0 ||
+      this.limiter.queuedCount > 0 ||
       this.loadRequestId !== undefined ||
       this.recovering ||
       this.switchesInFlight > 0

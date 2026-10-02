@@ -3,6 +3,7 @@ import {
   DelegatedProviderUnreachableError,
   isCancellationError,
   ModelManagementError,
+  OperationCancelledError,
 } from "../../models/domain/errors.js";
 import type {
   ChatCompletionRequest,
@@ -122,15 +123,92 @@ class RecordingChatService implements QvacChatSessionService {
   }
 }
 
+interface PendingChatCall {
+  resolve: (result: ChatCompletionResult) => void;
+  reject: (err: unknown) => void;
+  onToken?: (textDelta: string) => void;
+}
+
+/**
+ * Like `RecordingChatService` but `chatComplete()` calls stay genuinely
+ * pending until the test explicitly `settleFor()`s or cancels them - needed
+ * to exercise real concurrency (two calls in flight at once), queueing, and
+ * per-request cancellation, none of which `RecordingChatService`'s
+ * synchronous outcome queue can represent.
+ */
+class ControllableChatService implements QvacChatSessionService {
+  private nextSdkRequestId = 0;
+  private readonly pendingChat = new Map<string, PendingChatCall>();
+  /** `ChatCompletionRequest.requestId` (the app-level id) -> the sdk-level requestId `chatComplete()` minted for it. */
+  readonly sdkRequestIdByAppRequestId = new Map<string, string>();
+  readonly cancelledRequestIds: string[] = [];
+  readonly cancelledCompletionModelIds: string[] = [];
+  chatCompleteCallCount = 0;
+
+  loadModel(source: ModelSource): Promise<LoadedModel> & { requestId: string } {
+    return Object.assign(Promise.resolve({ modelId: "fake-model", source, loadedAt: new Date() }), {
+      requestId: "req-load",
+    });
+  }
+
+  chatComplete(
+    _modelId: string,
+    request: ChatCompletionRequest,
+    onToken?: (textDelta: string) => void,
+  ): Promise<ChatCompletionResult> & { requestId: string } {
+    this.chatCompleteCallCount += 1;
+    const requestId = `sdk-req-${(this.nextSdkRequestId += 1)}`;
+    if (request.requestId) this.sdkRequestIdByAppRequestId.set(request.requestId, requestId);
+    const promise = new Promise<ChatCompletionResult>((resolve, reject) => {
+      this.pendingChat.set(requestId, { resolve, reject, onToken });
+    });
+    return Object.assign(promise, { requestId });
+  }
+
+  async cancel(requestId: string): Promise<void> {
+    this.cancelledRequestIds.push(requestId);
+    const call = this.pendingChat.get(requestId);
+    if (!call) return;
+    this.pendingChat.delete(requestId);
+    call.reject(new OperationCancelledError(requestId));
+  }
+
+  async cancelCompletions(modelId: string): Promise<void> {
+    this.cancelledCompletionModelIds.push(modelId);
+  }
+
+  async unloadModel(): Promise<void> {}
+
+  async getLoadedModelInfo(): Promise<LoadedModelDelegationInfo> {
+    return { isDelegated: false };
+  }
+
+  /** Emits a token through the `onToken` callback the given app-level request registered, if it's still pending. */
+  emitToken(appRequestId: string, textDelta: string): void {
+    const sdkRequestId = this.sdkRequestIdByAppRequestId.get(appRequestId);
+    const call = sdkRequestId ? this.pendingChat.get(sdkRequestId) : undefined;
+    call?.onToken?.(textDelta);
+  }
+
+  /** Resolves the pending call for the given app-level request. Throws if it isn't (no longer) pending. */
+  settleFor(appRequestId: string, result: ChatCompletionResult = { text: "ok", toolCalls: [] }): void {
+    const sdkRequestId = this.sdkRequestIdByAppRequestId.get(appRequestId);
+    const call = sdkRequestId ? this.pendingChat.get(sdkRequestId) : undefined;
+    if (!sdkRequestId || !call) throw new Error(`no pending chat call for app requestId "${appRequestId}"`);
+    this.pendingChat.delete(sdkRequestId);
+    call.resolve(result);
+  }
+}
+
 function buildSession(
-  service: RecordingChatService,
+  service: QvacChatSessionService,
   overrides: Partial<QvacChatSessionOptions> = {},
 ): QvacChatSession {
   return new QvacChatSession({ service, modelSource: MODEL_SOURCE, ...overrides });
 }
 
-function buildDelegatingSession(service: RecordingChatService): QvacChatSession {
-  return buildSession(service, { delegate: DELEGATE });
+function buildDelegatingSession(service: RecordingChatService, maxConcurrency?: number): QvacChatSession {
+  return buildSession(service, { delegate: DELEGATE, maxConcurrency });
 }
 
 /** Enough microtask ticks for a suspended async function to run up to its next real wait. */
@@ -220,9 +298,9 @@ describe("QvacChatSession.cancelActive", () => {
     await session.ensureModel();
     service.hangChat = true;
 
-    session.complete(REQUEST).catch(() => {}); // rejects on cancel, as asserted elsewhere
+    session.complete({ ...REQUEST, requestId: "app-1" }).catch(() => {}); // rejects on cancel, as asserted elsewhere
     await flushMicrotasks();
-    await session.cancelActive();
+    await session.cancelActive("app-1");
 
     expect(service.cancelledRequestIds).toEqual(["req-chat-1"]);
   });
@@ -231,7 +309,7 @@ describe("QvacChatSession.cancelActive", () => {
     const service = new RecordingChatService();
     const session = buildSession(service);
 
-    await expect(session.cancelActive()).resolves.toBeUndefined();
+    await expect(session.cancelActive("unknown")).resolves.toBeUndefined();
     expect(service.cancelledRequestIds).toEqual([]);
     expect(service.cancelledCompletionModelIds).toEqual([]);
   });
@@ -242,26 +320,42 @@ describe("QvacChatSession.cancelActive", () => {
     await session.ensureModel();
     service.hangChat = true;
 
-    const pending = session.complete(REQUEST);
+    const pending = session.complete({ ...REQUEST, requestId: "app-1" });
     await flushMicrotasks();
-    await session.cancelActive();
+    await session.cancelActive("app-1");
 
     const error = await pending.catch((err: unknown) => err);
     expect(isCancellationError(error)).toBe(true);
     expect(session.isBusy()).toBe(false);
   });
 
-  it("also cancels every completion on the model when a delegate is configured, because the SDK never aborts a delegated stream by request id", async () => {
+  it("also cancels every completion on the model when a delegate is configured and it's the only active one, because the SDK never aborts a delegated stream by request id", async () => {
     const service = new RecordingChatService();
     const session = buildDelegatingSession(service);
     await session.ensureModel();
     service.hangChat = true;
 
-    session.complete(REQUEST).catch(() => {}); // rejects on cancel, as asserted elsewhere
+    session.complete({ ...REQUEST, requestId: "app-1" }).catch(() => {}); // rejects on cancel, as asserted elsewhere
     await flushMicrotasks();
-    await session.cancelActive();
+    await session.cancelActive("app-1");
 
     expect(service.cancelledCompletionModelIds).toEqual(["fake-model-1"]);
+  });
+
+  it("does NOT model-wide cancel when another completion is still active on the same delegated model - cancelling one must never affect another", async () => {
+    const service = new RecordingChatService();
+    const session = buildDelegatingSession(service, 2);
+    await session.ensureModel();
+    service.hangChat = true;
+
+    session.complete({ ...REQUEST, requestId: "app-1" }).catch(() => {});
+    session.complete({ ...REQUEST, requestId: "app-2" }).catch(() => {});
+    await flushMicrotasks();
+    await session.cancelActive("app-1");
+
+    // Request-id-only cancel still happened; the unsafe model-wide fallback did not.
+    expect(service.cancelledRequestIds).toEqual(["req-chat-1"]);
+    expect(service.cancelledCompletionModelIds).toEqual([]);
   });
 
   it("still rejects the pending complete() when the service-level cancel fails", async () => {
@@ -273,9 +367,9 @@ describe("QvacChatSession.cancelActive", () => {
     await session.ensureModel();
     service.hangChat = true;
 
-    const pending = session.complete(REQUEST);
+    const pending = session.complete({ ...REQUEST, requestId: "app-1" });
     await flushMicrotasks();
-    await expect(session.cancelActive()).rejects.toThrow("provider unreachable");
+    await expect(session.cancelActive("app-1")).rejects.toThrow("provider unreachable");
 
     expect(isCancellationError(await pending.catch((err: unknown) => err))).toBe(true);
   });
@@ -286,9 +380,9 @@ describe("QvacChatSession.cancelActive", () => {
     await session.ensureModel();
     service.hangChat = true;
 
-    session.complete(REQUEST).catch(() => {}); // rejects on cancel, as asserted elsewhere
+    session.complete({ ...REQUEST, requestId: "app-1" }).catch(() => {}); // rejects on cancel, as asserted elsewhere
     await flushMicrotasks();
-    await session.cancelActive();
+    await session.cancelActive("app-1");
 
     expect(service.cancelledCompletionModelIds).toEqual([]);
   });
@@ -667,6 +761,160 @@ describe("QvacChatSession.isBusy", () => {
 
     expect(service.operations).toEqual(["load", "unload:fake-model-1"]);
     expect(session.isBusy()).toBe(true);
+  });
+});
+
+describe("QvacChatSession concurrency", () => {
+  it("runs two completions concurrently up to maxConcurrency", async () => {
+    const service = new ControllableChatService();
+    const session = buildSession(service, { maxConcurrency: 2 });
+    await session.ensureModel();
+
+    const pendingA = session.complete({ ...REQUEST, requestId: "app-a" });
+    const pendingB = session.complete({ ...REQUEST, requestId: "app-b" });
+    await flushMicrotasks();
+
+    expect(service.chatCompleteCallCount).toBe(2);
+
+    service.settleFor("app-a", { text: "a", toolCalls: [] });
+    service.settleFor("app-b", { text: "b", toolCalls: [] });
+
+    await expect(pendingA).resolves.toEqual({ text: "a", toolCalls: [] });
+    await expect(pendingB).resolves.toEqual({ text: "b", toolCalls: [] });
+  });
+
+  it("queues a third completion until a slot frees, at maxConcurrency 2", async () => {
+    const service = new ControllableChatService();
+    const session = buildSession(service, { maxConcurrency: 2 });
+    await session.ensureModel();
+
+    const pendingA = session.complete({ ...REQUEST, requestId: "app-a" });
+    const pendingB = session.complete({ ...REQUEST, requestId: "app-b" });
+    await flushMicrotasks();
+    let cSettled = false;
+    const pendingC = session.complete({ ...REQUEST, requestId: "app-c" }).then((result) => {
+      cSettled = true;
+      return result;
+    });
+    await flushMicrotasks();
+
+    expect(service.chatCompleteCallCount).toBe(2); // C not dispatched yet - both slots taken
+    expect(cSettled).toBe(false);
+
+    service.settleFor("app-a", { text: "a", toolCalls: [] });
+    await pendingA;
+    await flushMicrotasks();
+
+    expect(service.chatCompleteCallCount).toBe(3); // a freed slot admitted C
+    service.settleFor("app-c", { text: "c", toolCalls: [] });
+    await expect(pendingC).resolves.toEqual({ text: "c", toolCalls: [] });
+
+    service.settleFor("app-b", { text: "b", toolCalls: [] });
+    await pendingB;
+  });
+
+  it("cancels one active completion without affecting a concurrently active one", async () => {
+    const service = new ControllableChatService();
+    const session = buildSession(service, { maxConcurrency: 2 });
+    await session.ensureModel();
+
+    const pendingA = session.complete({ ...REQUEST, requestId: "app-a" });
+    const pendingB = session.complete({ ...REQUEST, requestId: "app-b" });
+    await flushMicrotasks();
+
+    await session.cancelActive("app-a");
+    service.settleFor("app-b", { text: "b", toolCalls: [] });
+
+    const sdkRequestIdA = service.sdkRequestIdByAppRequestId.get("app-a");
+    expect(service.cancelledRequestIds).toEqual([sdkRequestIdA]);
+    await expect(pendingA).rejects.toThrow();
+    await expect(pendingB).resolves.toEqual({ text: "b", toolCalls: [] });
+  });
+
+  it("cancels a queued completion without ever dispatching it to the service, and without disturbing the active one", async () => {
+    const service = new ControllableChatService();
+    const session = buildSession(service, { maxConcurrency: 1 });
+    await session.ensureModel();
+
+    const pendingA = session.complete({ ...REQUEST, requestId: "app-a" });
+    await flushMicrotasks();
+    const pendingB = session.complete({ ...REQUEST, requestId: "app-b" });
+    await flushMicrotasks();
+
+    expect(service.chatCompleteCallCount).toBe(1); // B is queued, never reached the service
+
+    await session.cancelActive("app-b");
+
+    await expect(pendingB).rejects.toThrow();
+    expect(service.chatCompleteCallCount).toBe(1); // still never dispatched
+
+    service.settleFor("app-a", { text: "a", toolCalls: [] });
+    await expect(pendingA).resolves.toEqual({ text: "a", toolCalls: [] });
+  });
+
+  it("keeps onToken streams isolated between two concurrent completions", async () => {
+    const service = new ControllableChatService();
+    const session = buildSession(service, { maxConcurrency: 2 });
+    await session.ensureModel();
+
+    const tokensA: string[] = [];
+    const tokensB: string[] = [];
+    const pendingA = session.complete({ ...REQUEST, requestId: "app-a" }, (delta) => tokensA.push(delta));
+    const pendingB = session.complete({ ...REQUEST, requestId: "app-b" }, (delta) => tokensB.push(delta));
+    await flushMicrotasks();
+
+    service.emitToken("app-a", "hello-a");
+    service.emitToken("app-b", "hello-b");
+    service.settleFor("app-a", { text: "hello-a", toolCalls: [] });
+    service.settleFor("app-b", { text: "hello-b", toolCalls: [] });
+
+    await pendingA;
+    await pendingB;
+    expect(tokensA).toEqual(["hello-a"]);
+    expect(tokensB).toEqual(["hello-b"]);
+  });
+
+  it("keeps isBusy() true while any concurrent or queued completion is pending, false once all settle", async () => {
+    const service = new ControllableChatService();
+    const session = buildSession(service, { maxConcurrency: 1 });
+    await session.ensureModel();
+
+    void session.complete({ ...REQUEST, requestId: "app-a" });
+    await flushMicrotasks();
+    void session.complete({ ...REQUEST, requestId: "app-b" }); // queued behind app-a
+    await flushMicrotasks();
+
+    expect(session.isBusy()).toBe(true);
+
+    service.settleFor("app-a", { text: "a", toolCalls: [] });
+    await flushMicrotasks(); // frees the slot, admits app-b
+
+    expect(session.isBusy()).toBe(true);
+
+    service.settleFor("app-b", { text: "b", toolCalls: [] });
+    await flushMicrotasks();
+
+    expect(session.isBusy()).toBe(false);
+  });
+
+  it("coalesces concurrent recovery attempts into a single reload when two concurrent completions both hit an unreachable provider", async () => {
+    const service = new RecordingChatService();
+    service.chatCompleteOutcomes = ["provider-unreachable", "provider-unreachable"];
+    const session = buildDelegatingSession(service, 2);
+    service.delegationInfoResult = { isDelegated: true, providerPublicKey: "pk-abc" };
+    await session.getDelegationInfo();
+
+    service.delegationInfoResult = { isDelegated: false };
+    const [resultA, resultB] = await Promise.all([
+      session.complete({ ...REQUEST, requestId: "app-a" }),
+      session.complete({ ...REQUEST, requestId: "app-b" }),
+    ]);
+
+    expect(resultA.text).toBe("ok");
+    expect(resultB.text).toBe("ok");
+    // One initial load + ONE shared recovery reload, not two - two concurrent
+    // provider failures must not each unload/reload the model independently.
+    expect(service.loadCallCount).toBe(2);
   });
 });
 
