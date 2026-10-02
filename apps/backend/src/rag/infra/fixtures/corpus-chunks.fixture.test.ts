@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEFAULT_RAG_CONFIG } from '../../../config/rag.config.js';
-import { InMemoryVectorStore } from '../inMemoryVectorStore.js';
+import type { LanceDbVectorStore } from '../lanceDbVectorStore.js';
 import { buildFixtureVectorStore } from './corpus-chunks.fixture.js';
 import { createRealEmbedding, isEmbeddingModelCached, type RealEmbedding } from './realEmbedding.testSupport.js';
 
-describe.skipIf(!isEmbeddingModelCached())('corpus-chunks fixtures + InMemoryVectorStore + real embeddings', () => {
+describe.skipIf(!isEmbeddingModelCached())('corpus-chunks fixtures + LanceDbVectorStore + real embeddings', () => {
   let embedding: RealEmbedding;
-  let store: InMemoryVectorStore;
+  let store: LanceDbVectorStore;
 
   beforeAll(async () => {
     embedding = createRealEmbedding();

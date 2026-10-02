@@ -1,6 +1,9 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { DocumentType } from '../../../document/domain/document.model.js';
 import type { EmbeddingPort } from '../../domain/ports.js';
-import { InMemoryVectorStore } from '../inMemoryVectorStore.js';
+import { LanceDbVectorStore, LanceDbVectorStoreWriter } from '../lanceDbVectorStore.js';
 
 export interface FixtureChunk {
   id: string;
@@ -61,16 +64,41 @@ export const CORPUS_CHUNK_FIXTURES: FixtureChunk[] = [
   }
 ];
 
-/** Embeds every fixture chunk and indexes it into a fresh `InMemoryVectorStore`. */
-export async function buildFixtureVectorStore(embeddingPort: EmbeddingPort): Promise<InMemoryVectorStore> {
-  const indexed = await Promise.all(
-    CORPUS_CHUNK_FIXTURES.map(async (fixture) => ({
-      id: fixture.id,
-      content: fixture.content,
-      source: fixture.source,
-      metadata: fixture.metadata,
-      embedding: await embeddingPort.embed(fixture.content)
-    }))
-  );
-  return new InMemoryVectorStore(indexed);
+const fixtureDbDirs: string[] = [];
+
+/** Registered once, on first use. Covers scripts (demos); under vitest the worker may not run it, so `vitest.globalSetup.ts` removes `FIXTURE_DB_ROOT` instead. */
+function removeFixtureDbDirsOnExit(): void {
+  if (fixtureDbDirs.length > 0) return;
+  process.once('exit', () => {
+    for (const dir of fixtureDbDirs) fs.rmSync(dir, { recursive: true, force: true });
+  });
+}
+
+/**
+ * Embeds every fixture chunk and writes it into a fresh LanceDB table in a
+ * temp directory, returning the same `LanceDbVectorStore` the server queries.
+ * The directory is removed when the process exits (or with `FIXTURE_DB_ROOT`, see `vitest.globalSetup.ts`).
+ */
+export async function buildFixtureVectorStore(embeddingPort: EmbeddingPort): Promise<LanceDbVectorStore> {
+  removeFixtureDbDirsOnExit();
+  const dbDir = fs.mkdtempSync(path.join(process.env.FIXTURE_DB_ROOT ?? os.tmpdir(), 'fixture-chunks-'));
+  fixtureDbDirs.push(dbDir);
+
+  const embeddings = await embeddingPort.embedBatch(CORPUS_CHUNK_FIXTURES.map((fixture) => fixture.content));
+  const writer = await LanceDbVectorStoreWriter.open(dbDir);
+  for (const [index, fixture] of CORPUS_CHUNK_FIXTURES.entries()) {
+    await writer.replaceDocumentChunks(fixture.source, [
+      {
+        id: fixture.id,
+        content: fixture.content,
+        embedding: embeddings[index],
+        source: fixture.source,
+        chunkIndex: 0,
+        title: fixture.metadata.title,
+        documentType: fixture.metadata.documentType,
+        contentHash: fixture.id
+      }
+    ]);
+  }
+  return LanceDbVectorStore.open(dbDir);
 }

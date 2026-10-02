@@ -200,9 +200,9 @@ class ImmediateTtsPort implements TextToSpeechPort {
   async cancel(): Promise<void> {}
 }
 
-/** Lets already-queued microtasks (model loads, the graph's internal chat round trips) run before assertions. */
-function flushMicrotasks(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
+/** Waits until the pipeline (retrieval, model round trips) has reached TTS, so `resolveNext`/`rejectNext` don't fire before there is anything pending. Retrieval does real I/O, so a fixed number of event-loop ticks is not enough. */
+async function waitForSynthesis(ttsPort: FakeTtsPort): Promise<void> {
+  await vi.waitFor(() => expect(ttsPort.synthesizeCalls).toHaveLength(1));
 }
 
 async function setup(responses: ChatCompletionResult[], transcript: string) {
@@ -270,7 +270,7 @@ describe("VoiceAgentService.invoke", () => {
     ];
 
     const resultPromise = voiceAgentService.invoke(history, Buffer.from([1, 2, 3]));
-    await flushMicrotasks();
+    await waitForSynthesis(ttsPort);
     const synthesizedAudio = Buffer.from([9, 9]);
     ttsPort.resolveNext({ audio: synthesizedAudio, sampleRate: 44100 });
     const result = await resultPromise;
@@ -297,7 +297,7 @@ describe("VoiceAgentService.invoke", () => {
     );
 
     const resultPromise = voiceAgentService.invoke([], Buffer.from([1, 2, 3]));
-    await flushMicrotasks();
+    await waitForSynthesis(ttsPort);
     ttsPort.rejectNext(new Error("synthesis boom"));
     const result = await resultPromise;
 

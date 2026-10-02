@@ -81,7 +81,6 @@ src/
       lanceDbVectorStore.ts    The real vector store: read side (server) + write side (ingest only)
       qvacEmbeddingAdapter.ts  SDK embed() calls
       qvacChunker.adapter.ts   SDK ragChunk() calls
-      inMemoryVectorStore.ts   Test double: in-memory store
       fixtures/                Corpus chunk fixtures + real/stub embedding helpers for tests
     ingest/
       corpusReader.ts          Walks corpus/, hashes each text file
