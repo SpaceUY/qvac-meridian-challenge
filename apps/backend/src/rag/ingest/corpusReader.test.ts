@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { DocumentType } from '../../document/domain/document.model.js';
 import { readCorpus, sha256 } from './corpusReader.js';
 
 describe('readCorpus', () => {
@@ -48,10 +49,10 @@ describe('readCorpus', () => {
 
     expect(documents.find((d) => d.source === 'reports/q1.md')).toMatchObject({
       title: 'q1',
-      documentType: 'reports'
+      documentType: DocumentType.REPORTS
     });
     // A file sitting at the corpus root has no folder to take a type from.
-    expect(documents.find((d) => d.source === 'notes.txt')?.documentType).toBe('');
+    expect(documents.find((d) => d.source === 'notes.txt')?.documentType).toBe(DocumentType.DATA);
   });
 
   it('hashes the content, and the hash changes when the content changes', async () => {

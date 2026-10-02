@@ -149,7 +149,6 @@ export class AgentService {
       temperature,
     });
     this.graph = createGraph(this.chatModel, ragService, documentRepository);
-    //this.corpusContext = loadCorpusContext();
   }
 
   /**

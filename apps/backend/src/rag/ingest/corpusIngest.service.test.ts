@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { CorpusIngestService } from './corpusIngest.service.js';
+import { DocumentType } from '../../document/domain/document.model.js';
 import type { ChunkerPort, EmbeddingPort, VectorStoreWriterPort } from '../domain/ports.js';
 import type { ChunkRecord } from '../domain/types.js';
 
@@ -136,7 +137,7 @@ describe('CorpusIngestService', () => {
     const records = writer.rows.get('reports/a.md');
     expect(records?.map((r) => r.id)).toEqual(['reports/a.md#0', 'reports/a.md#1']);
     expect(records?.[0].source).toBe('reports/a.md');
-    expect(records?.[0].documentType).toBe('reports');
+    expect(records?.[0].documentType).toBe(DocumentType.REPORTS);
     expect(records?.[0].title).toBe('a');
     // Every chunk of a document carries the SAME document-level hash.
     expect(records?.[0].contentHash).toBe(records?.[1].contentHash);

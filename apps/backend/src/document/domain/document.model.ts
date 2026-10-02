@@ -1,7 +1,7 @@
 export const DocumentStatus = {
   ACTIVE: "ACTIVE",
   ARCHIVED: "ARCHIVED",
-};
+} as const;
 
 export type DocumentStatus =
   (typeof DocumentStatus)[keyof typeof DocumentStatus];
@@ -13,7 +13,7 @@ export const DocumentType = {
   TRANSCRIPT: "TRANSCRIPT",
   FAQ: "FAQ",
   EMAIL: "EMAIL",
-};
+} as const;
 
 export type DocumentType = (typeof DocumentType)[keyof typeof DocumentType];
 
@@ -23,7 +23,7 @@ export const DocumentFormat = {
   CSV: "CSV",
   HTML: "HTML",
   TEXT: "TEXT",
-};
+} as const;
 
 export type DocumentFormat =
   (typeof DocumentFormat)[keyof typeof DocumentFormat];

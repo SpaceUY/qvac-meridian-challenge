@@ -24,10 +24,15 @@ import {
   warnIfUnexpectedFormat,
 } from "./infra/wavPcm.js";
 import { STREAM_CHUNK_BYTES } from "./demo.const.js";
-import { FakeEmbeddingPort } from "./../rag/infra/fakeEmbedding.adapter.js";
+import { ResilientEmbeddingService } from "../rag/service/resilientEmbeddingService.js";
+import { QvacEmbeddingAdapter } from "../rag/infra/qvacEmbeddingAdapter.js";
+import {
+  DEFAULT_EMBEDDING_BATCH_SIZE,
+  EMBEDDING_MODEL_EXPECTED_SIZE,
+  EMBEDDING_MODEL_SOURCE,
+} from "../config/models.config.js";
 import { buildFixtureVectorStore } from "../rag/infra/fixtures/corpus-chunks.fixture.js";
 import { RagRetrievalService } from "../rag/service/rag.service.js";
-import type { RagRetrievalConfig } from "../rag/domain/types.js";
 import { CorpusDocumentRepository } from "../document/infra/corpusDocumentRepository.js";
 
 // Safety net for this CLI script only (not the adapter/service): the SDK's
@@ -82,20 +87,6 @@ async function transcribeViaStream(
   }
 }
 
-/**
- * The FakeEmbeddingPort's raw hashed-bag-of-words cosine scores run lower
- * than a real embedding model's, so this demo overrides `minScore` well
- * below `DEFAULT_RAG_CONFIG`'s 0.54 - tuned for `FakeEmbeddingPort`/the
- * bundled fixtures only, not a value to carry over to a real embedding
- * adapter.
- */
-const DEMO_RAG_CONFIG: RagRetrievalConfig = {
-  topK: 3,
-  minScore: 0.3,
-  maxContextChunks: 2,
-  dedupeExactContent: true,
-};
-
 async function main(): Promise<void> {
   const { audioEnPath, audioEsPath } = parseArgs(process.argv.slice(2));
 
@@ -106,13 +97,15 @@ async function main(): Promise<void> {
     new QvacTranscriptionAdapter(),
   );
 
-  const embeddingPort = new FakeEmbeddingPort();
-  const vectorStore = await buildFixtureVectorStore(embeddingPort);
-  const ragService = new RagRetrievalService(
-    embeddingPort,
-    vectorStore,
-    DEMO_RAG_CONFIG,
+  const embeddingPort = new ResilientEmbeddingService(
+    models,
+    new QvacEmbeddingAdapter(),
+    EMBEDDING_MODEL_SOURCE,
+    DEFAULT_EMBEDDING_BATCH_SIZE,
+    EMBEDDING_MODEL_EXPECTED_SIZE,
   );
+  const vectorStore = await buildFixtureVectorStore(embeddingPort);
+  const ragService = new RagRetrievalService(embeddingPort, vectorStore);
 
   const documentRepository = new CorpusDocumentRepository();
   const agent = new AgentService(models, ragService, documentRepository);
@@ -151,6 +144,7 @@ async function main(): Promise<void> {
   }
 
   try {
+    await embeddingPort.unload();
     await models.unloadAll();
     await models.close();
   } catch (cleanupErr) {

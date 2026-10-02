@@ -12,7 +12,7 @@ import {
 } from "@langchain/core/messages";
 import { lookupStockTool } from "./stockTool.js";
 import { createListDocumentsTool } from "./listDocumentsTool.js";
-import { ChatQVAC } from "qvac-langgraph";
+import { ChatQVAC } from "@space-uy/qvac-langgraph";
 import { buildGroundedContext } from "../../rag/service/contextBuilder.js";
 import { isCancellationError } from "../../models/domain/errors.js";
 import { State } from "./domain.js";

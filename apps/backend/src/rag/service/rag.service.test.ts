@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DocumentType } from '../../document/domain/document.model.js';
 import type { EmbeddingPort, VectorStorePort } from '../domain/ports.js';
 import type { RetrievedChunk } from '../domain/types.js';
 import { RagRetrievalService } from './rag.service.js';
@@ -136,7 +137,7 @@ describe('RagRetrievalService', () => {
       content: 'Chunk A',
       score: 0.9,
       source: 'faqs/support-sla-faq.html',
-      metadata: { documentType: 'faqs', title: 'Support SLA - Internal FAQ' }
+      metadata: { documentType: DocumentType.FAQ, title: 'Support SLA - Internal FAQ' }
     };
     const service = new RagRetrievalService(new FakeEmbedding(), new FakeVectorStore([chunk]), {
       topK: 5,
