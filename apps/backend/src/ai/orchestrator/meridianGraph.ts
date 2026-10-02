@@ -18,8 +18,6 @@ import * as z from "zod";
 import { tool } from "@langchain/core/tools";
 import {
   DATA_AS_OF,
-  INVENTORY,
-  listSkus,
   lookupStock,
 } from "meridian-stock-tool";
 

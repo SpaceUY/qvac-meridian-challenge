@@ -14,7 +14,7 @@ import type {
 import { AgentService } from "./agentService.js";
 import type { ConversationMessage } from "./agentService.js";
 import { RagRetrievalService } from "../../rag/service/rag.service.js";
-import { FakeEmbeddingPort } from "../../rag/infra/fakeEmbedding.adapter.js";
+import { StubEmbeddingPort } from "../../rag/infra/fixtures/stubEmbedding.testSupport.js";
 import { buildFixtureVectorStore } from "../../rag/infra/fixtures/corpus-chunks.fixture.js";
 import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
 import {
@@ -200,16 +200,16 @@ class ImmediateTtsPort implements TextToSpeechPort {
   async cancel(): Promise<void> {}
 }
 
-/** Lets already-queued microtasks (model loads, the graph's internal chat round trips) run before assertions. */
-function flushMicrotasks(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
+/** Waits until the pipeline (retrieval, model round trips) has reached TTS, so `resolveNext`/`rejectNext` don't fire before there is anything pending. Retrieval does real I/O, so a fixed number of event-loop ticks is not enough. */
+async function waitForSynthesis(ttsPort: FakeTtsPort): Promise<void> {
+  await vi.waitFor(() => expect(ttsPort.synthesizeCalls).toHaveLength(1));
 }
 
 async function setup(responses: ChatCompletionResult[], transcript: string) {
   const runtime = new FakeModelRuntime(responses);
   const modelService = new ModelManagementService(runtime, runtime);
 
-  const embeddingPort = new FakeEmbeddingPort();
+  const embeddingPort = new StubEmbeddingPort();
   const vectorStore = await buildFixtureVectorStore(embeddingPort);
   const ragService = new RagRetrievalService(embeddingPort, vectorStore);
 
@@ -233,7 +233,7 @@ async function setupStreaming(
   const runtime = new FakeModelRuntime(responses);
   const modelService = new ModelManagementService(runtime, runtime);
 
-  const embeddingPort = new FakeEmbeddingPort();
+  const embeddingPort = new StubEmbeddingPort();
   const vectorStore = await buildFixtureVectorStore(embeddingPort);
   const ragService = new RagRetrievalService(embeddingPort, vectorStore);
 
@@ -270,7 +270,7 @@ describe("VoiceAgentService.invoke", () => {
     ];
 
     const resultPromise = voiceAgentService.invoke(history, Buffer.from([1, 2, 3]));
-    await flushMicrotasks();
+    await waitForSynthesis(ttsPort);
     const synthesizedAudio = Buffer.from([9, 9]);
     ttsPort.resolveNext({ audio: synthesizedAudio, sampleRate: 44100 });
     const result = await resultPromise;
@@ -297,7 +297,7 @@ describe("VoiceAgentService.invoke", () => {
     );
 
     const resultPromise = voiceAgentService.invoke([], Buffer.from([1, 2, 3]));
-    await flushMicrotasks();
+    await waitForSynthesis(ttsPort);
     ttsPort.rejectNext(new Error("synthesis boom"));
     const result = await resultPromise;
 

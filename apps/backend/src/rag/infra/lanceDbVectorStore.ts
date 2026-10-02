@@ -67,9 +67,7 @@ export class LanceDbVectorStore implements VectorStorePort {
       .vectorSearch(embedding)
       // Not LanceDB's default (l2). Cosine ignores vector magnitude, which
       // is what text embeddings need, AND it makes `score` below land on the
-      // same [-1, 1] similarity scale `InMemoryVectorStore` produces - so a
-      // single `minScore` in `RagRetrievalConfig` means the same thing
-      // whichever store is plugged in.
+      // [-1, 1] similarity scale `RagRetrievalConfig.minScore` is expressed in.
       .distanceType('cosine')
       .limit(options.topK)
       .toArray()) as ChunkRow[];

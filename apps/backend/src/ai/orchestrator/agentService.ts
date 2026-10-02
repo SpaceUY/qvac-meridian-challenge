@@ -3,7 +3,7 @@ import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import type { RagRetrievalService } from "../../rag/service/rag.service.js";
 import type { Citation, RetrievedChunk } from "../../rag/domain/types.js";
 import { selectCitations } from "./citationPolicy.js";
-import { ChatQVAC } from "qvac-langgraph";
+import { ChatQVAC } from "@space-uy/qvac-langgraph";
 import { QvacChatSession } from "./qvacChatSession.js";
 import { createGraph } from "./graph.js";
 import { State, type GenerationOptions } from "./domain.js";
@@ -12,10 +12,21 @@ import type { ModelManagementService } from "../../models/service/models.service
 import type { SupportedImageMimeType } from "../../models/domain/types.js";
 import { isCancellationError } from "../../models/domain/errors.js";
 import type { LoadedModelDelegationInfo } from "../../models/domain/types.js";
-import { LLM_MODELS_BY_TIER, WHISPER_MODEL_NAMES_BY_TIER, TTS_MODEL_NAMES_BY_TIER, resolveEngineConfig } from "../../config/models.config.js";
+import {
+  LLM_MODELS_BY_TIER,
+  WHISPER_MODEL_NAMES_BY_TIER,
+  TTS_MODEL_NAMES_BY_TIER,
+  resolveEngineConfig,
+} from "../../config/models.config.js";
 import { RESOURCE_TIER, type ResourceTier } from "../../config/resourceTier.js";
-import { DELEGATE_CONFIG, HEARTBEAT_CONFIG } from "../../config/delegate.config.js";
-import { ProviderHealthMonitor, type DesiredProviderMode } from "./providerHealthMonitor.js";
+import {
+  DELEGATE_CONFIG,
+  HEARTBEAT_CONFIG,
+} from "../../config/delegate.config.js";
+import {
+  ProviderHealthMonitor,
+  type DesiredProviderMode,
+} from "./providerHealthMonitor.js";
 import type { ProviderHealth } from "./providerHealth.js";
 import { reconcileProviderMode } from "./reconcileProviderMode.js";
 
@@ -39,7 +50,9 @@ export interface AgentStatusPayload {
   providerHealth?: ProviderHealth;
 }
 
-function describeMode({ isDelegated }: LoadedModelDelegationInfo): "delegated" | "local" {
+function describeMode({
+  isDelegated,
+}: LoadedModelDelegationInfo): "delegated" | "local" {
   return isDelegated ? "delegated" : "local";
 }
 
@@ -49,14 +62,22 @@ export interface ConversationMessage {
   images?: { mimeType: SupportedImageMimeType; data: Buffer }[];
 }
 
-function toLangChainMessage({ role, message, images }: ConversationMessage): HumanMessage | AIMessage {
+function toLangChainMessage({
+  role,
+  message,
+  images,
+}: ConversationMessage): HumanMessage | AIMessage {
   if (role === "assistant") return new AIMessage(message);
   if (!images?.length) return new HumanMessage(message);
 
   return new HumanMessage({
     content: [
       { type: "text", text: message },
-      ...images.map((image) => ({ type: "image" as const, mimeType: image.mimeType, data: image.data })),
+      ...images.map((image) => ({
+        type: "image" as const,
+        mimeType: image.mimeType,
+        data: image.data,
+      })),
     ],
   });
 }
@@ -118,9 +139,11 @@ export class AgentService {
       delegate: DELEGATE_CONFIG,
       maxConcurrency,
     });
-    this.chatModel = new ChatQVAC({ complete: this.chatSession.complete, temperature });
+    this.chatModel = new ChatQVAC({
+      complete: this.chatSession.complete,
+      temperature,
+    });
     this.graph = createGraph(this.chatModel, ragService, documentRepository);
-    //this.corpusContext = loadCorpusContext();
   }
 
   /**
@@ -143,7 +166,9 @@ export class AgentService {
       ttsModel: this.ttsModel,
       ...(delegation ? { delegation } : {}),
       recovering: this.chatSession.isRecovering(),
-      ...(this.healthMonitor ? { providerHealth: this.healthMonitor.getHealth() } : {}),
+      ...(this.healthMonitor
+        ? { providerHealth: this.healthMonitor.getHealth() }
+        : {}),
     };
   }
 
@@ -182,13 +207,19 @@ export class AgentService {
   private startHealthMonitor(): void {
     if (!DELEGATE_CONFIG || this.healthMonitor) return;
     const { providerPublicKey } = DELEGATE_CONFIG;
-    const startedLocal = this.chatSession.getCachedDelegationInfo()?.isDelegated === false;
+    const startedLocal =
+      this.chatSession.getCachedDelegationInfo()?.isDelegated === false;
     this.healthMonitor = new ProviderHealthMonitor({
       intervalMs: HEARTBEAT_CONFIG.intervalMs,
       timeoutMs: HEARTBEAT_CONFIG.timeoutMs,
       initialState: startedLocal ? "down" : "up",
-      heartbeat: () => this.service.heartbeat({ providerPublicKey, timeout: HEARTBEAT_CONFIG.timeoutMs }),
-      shouldSkipTick: () => this.chatSession.isBusy() || this.pendingRequests.size > 0,
+      heartbeat: () =>
+        this.service.heartbeat({
+          providerPublicKey,
+          timeout: HEARTBEAT_CONFIG.timeoutMs,
+        }),
+      shouldSkipTick: () =>
+        this.chatSession.isBusy() || this.pendingRequests.size > 0,
       reconcile: (desired) => this.reconcileProviderMode(desired),
     });
     this.healthMonitor.start();
@@ -222,7 +253,9 @@ export class AgentService {
    * provider's key). A model observed on the provider restores the
    * re-delegation budget, so the next divergence gets a fresh attempt.
    */
-  private async readLiveDelegationInfo(): Promise<LoadedModelDelegationInfo | undefined> {
+  private async readLiveDelegationInfo(): Promise<
+    LoadedModelDelegationInfo | undefined
+  > {
     const reported = this.chatSession.getCachedDelegationInfo();
     const live = await this.chatSession.getDelegationInfo();
     if (reported && live && reported.isDelegated !== live.isDelegated) {
@@ -244,16 +277,23 @@ export class AgentService {
    * Never logs the provider's key.
    */
   private async redelegate(): Promise<void> {
-    console.info("[provider-health] re-delegation attempt started: provider is answering heartbeats again");
+    console.info(
+      "[provider-health] re-delegation attempt started: provider is answering heartbeats again",
+    );
     try {
       await this.chatSession.switchTo("delegated");
     } catch (error) {
-      console.error("[provider-health] re-delegation attempt failed; the chat model is not loaded until the next tick or chat request", error);
+      console.error(
+        "[provider-health] re-delegation attempt failed; the chat model is not loaded until the next tick or chat request",
+        error,
+      );
       throw error;
     }
     if (this.chatSession.getCachedDelegationInfo()?.isDelegated) {
       this.redelegationAttempted = false;
-      console.info("[provider-health] re-delegation attempt finished: the chat model is running on the provider");
+      console.info(
+        "[provider-health] re-delegation attempt finished: the chat model is running on the provider",
+      );
       return;
     }
     console.info(
@@ -365,13 +405,20 @@ export class AgentService {
 
     const thinkingText = lastAIMessage?.additional_kwargs.thinkingText;
     const chunks = finalState?.chunks ?? [];
-    const toolsUsed = [...new Set(
-      (finalState?.messages ?? [])
-        .filter((message): message is ToolMessage => ToolMessage.isInstance(message))
-        .filter((message) => message.status !== "error")
-        .map((message) => message.name)
-        .filter((name): name is string => typeof name === "string" && name.length > 0),
-    )];
+    const toolsUsed = [
+      ...new Set(
+        (finalState?.messages ?? [])
+          .filter((message): message is ToolMessage =>
+            ToolMessage.isInstance(message),
+          )
+          .filter((message) => message.status !== "error")
+          .map((message) => message.name)
+          .filter(
+            (name): name is string =>
+              typeof name === "string" && name.length > 0,
+          ),
+      ),
+    ];
 
     return {
       answer,

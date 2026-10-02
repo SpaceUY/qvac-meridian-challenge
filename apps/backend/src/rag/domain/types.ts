@@ -38,7 +38,7 @@ export interface ChunkRecord {
   chunkIndex: number;
   /** Human-readable document name, surfaced in the grounded-context header. */
   title: string;
-  /** Corpus top-level folder: 'reports', 'emails', 'policies', ... */
+  /** A `DocumentType` value ('REPORTS', 'EMAIL', 'POLICIES', ...), derived from the corpus top-level folder. Stored as a plain string. */
   documentType: string;
   /** SHA-256 of the WHOLE source document (not this chunk). This column IS the ingest state: the ingest compares it with the file on disk to decide whether to re-embed. */
   contentHash: string;

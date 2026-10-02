@@ -39,6 +39,7 @@
     "vitest": "^5.0.1"
   },
   "dependencies": {
+    "@space-uy/qvac-langgraph": "1.1.0",
     "@lancedb/lancedb": "0.39.0",
     "@langchain/core": "^1.2.12",
     "@langchain/langgraph": "^1.4.16",
@@ -46,7 +47,6 @@
     "@qvac/sdk": "0.18.2",
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "meridian-stock-tool": "^1.0.0",
-    "qvac-langgraph": "^1.0.0"
+    "meridian-stock-tool": "^1.0.0"
   }
 }

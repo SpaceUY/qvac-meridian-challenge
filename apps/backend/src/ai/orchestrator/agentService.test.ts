@@ -14,7 +14,8 @@ import type {
 } from "../../models/domain/types.js";
 import { AgentService } from "./agentService.js";
 import { RagRetrievalService } from "../../rag/service/rag.service.js";
-import { FakeEmbeddingPort } from "../../rag/infra/fakeEmbedding.adapter.js";
+import { StubEmbeddingPort } from "../../rag/infra/fixtures/stubEmbedding.testSupport.js";
+import { createRealEmbedding, isEmbeddingModelCached } from "../../rag/infra/fixtures/realEmbedding.testSupport.js";
 import { buildFixtureVectorStore } from "../../rag/infra/fixtures/corpus-chunks.fixture.js";
 import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
 import {
@@ -318,7 +319,7 @@ describe("AgentService concurrency (medium/high tiers)", () => {
   it("runs two concurrent invokes against a maxConcurrency=2 tier without one waiting on the other", async () => {
     const runtime = new ControllableModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
-    const embeddingPort = new FakeEmbeddingPort();
+    const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore, PERMISSIVE_RAG_CONFIG_FOR_CONCURRENCY);
     const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]), "medium");
@@ -346,7 +347,7 @@ describe("AgentService concurrency (medium/high tiers)", () => {
   it("queues a third invoke until a slot frees, at the tier's concurrency limit of 2", async () => {
     const runtime = new ControllableModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
-    const embeddingPort = new FakeEmbeddingPort();
+    const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore, PERMISSIVE_RAG_CONFIG_FOR_CONCURRENCY);
     const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]), "high");
@@ -382,7 +383,7 @@ describe("AgentService concurrency (medium/high tiers)", () => {
   it("cancels one concurrent invoke without affecting the other", async () => {
     const runtime = new ControllableModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
-    const embeddingPort = new FakeEmbeddingPort();
+    const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore, PERMISSIVE_RAG_CONFIG_FOR_CONCURRENCY);
     const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]), "medium");
@@ -403,7 +404,7 @@ describe("AgentService concurrency (medium/high tiers)", () => {
   it("keeps each concurrent invoke's KV cache session id intact (no cross-talk between sessions)", async () => {
     const runtime = new FakeModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
-    const embeddingPort = new FakeEmbeddingPort();
+    const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore, PERMISSIVE_RAG_CONFIG_FOR_CONCURRENCY);
     const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]), "medium");
@@ -423,7 +424,7 @@ describe("AgentService model selection", () => {
   it("loads the tier-specific chat model instead of always the default tier", async () => {
     const runtime = new FakeModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
-    const embeddingPort = new FakeEmbeddingPort();
+    const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore);
 
@@ -443,7 +444,7 @@ describe("AgentService model selection", () => {
   it("reports the resolved hardware tier in its status payload", async () => {
     const runtime = new FakeModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
-    const embeddingPort = new FakeEmbeddingPort();
+    const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore);
 
@@ -460,7 +461,7 @@ describe("AgentService model selection", () => {
   it("reports the STT and TTS model names resolved for the tier, alongside the chat model", async () => {
     const runtime = new FakeModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
-    const embeddingPort = new FakeEmbeddingPort();
+    const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore);
 
@@ -479,7 +480,7 @@ describe("AgentService model selection", () => {
   it("never reports providerHealth when no delegate is configured", async () => {
     const runtime = new FakeModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
-    const embeddingPort = new FakeEmbeddingPort();
+    const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore);
     const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]));
@@ -503,7 +504,7 @@ describe("AgentService.deleteSessionCache", () => {
   it("deletes the KV cache stored under the session id", async () => {
     const runtime = new CacheableModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
-    const embeddingPort = new FakeEmbeddingPort();
+    const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore);
     const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]));
@@ -515,46 +516,42 @@ describe("AgentService.deleteSessionCache", () => {
 });
 
 describe("AgentService.invoke", () => {
-  it("sends the corpus content to the model as part of the chat history", async () => {
+  it.skipIf(!isEmbeddingModelCached())("sends the corpus content to the model as part of the chat history", async () => {
     const runtime = new FakeModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
 
-    const embeddingPort = new FakeEmbeddingPort();
-    const vectorStore = await buildFixtureVectorStore(embeddingPort);
-    // DEFAULT_RAG_CONFIG's minScore (0.65) is calibrated for the real
-    // embedding model - FakeEmbeddingPort's crude hashed bag-of-words only
-    // scores ~0.14 for this query against the actually-relevant chunk, so
-    // this test needs its own lower threshold to exercise real evidence
-    // instead of always falling through to "no evidence".
-    const ragService = new RagRetrievalService(embeddingPort, vectorStore, {
-      topK: 5,
-      minScore: 0.1,
-      maxContextChunks: 4,
-      dedupeExactContent: true,
-    });
+    const embedding = createRealEmbedding();
+    try {
+      const vectorStore = await buildFixtureVectorStore(embedding.embeddingPort);
+      const ragService = new RagRetrievalService(embedding.embeddingPort, vectorStore);
 
-    const agentService = new AgentService(
-      modelService,
-      ragService,
-      new FakeDocumentRepository([]),
-    );
+      const agentService = new AgentService(
+        modelService,
+        ragService,
+        new FakeDocumentRepository([]),
+      );
 
-    await agentService.invoke([
-      { role: "user", message: "What's the warranty policy?" },
-    ]);
+      // Specific on purpose: the terse "What's the warranty policy?" scores
+      // ~0.52 with the real model, just under DEFAULT_RAG_CONFIG's minScore.
+      await agentService.invoke([
+        { role: "user", message: "What is the standard hardware warranty period?" },
+      ]);
 
-    const history = runtime.lastChatRequest?.history ?? [];
-    expect(
-      history.some(
-        (message) =>
-          message.role === "system" &&
-          // CORPUS_CHUNK_FIXTURES' actual wording (not "Standard warranty
-          // covers 24 months." - that's FAKE_DOCUMENTS' text, used by the
-          // list_documents test below, a different fixture entirely).
-          message.content.includes("Standard hardware warranty"),
-      ),
-    ).toBe(true);
-  });
+      const history = runtime.lastChatRequest?.history ?? [];
+      expect(
+        history.some(
+          (message) =>
+            message.role === "system" &&
+            // CORPUS_CHUNK_FIXTURES' actual wording (not "Standard warranty
+            // covers 24 months." - that's FAKE_DOCUMENTS' text, used by the
+            // list_documents test below, a different fixture entirely).
+            message.content.includes("Standard hardware warranty"),
+        ),
+      ).toBe(true);
+    } finally {
+      await embedding.dispose();
+    }
+  }, 120_000);
 
   it("invokes list_documents when the model requests it and feeds the real inventory back for the final answer", async () => {
     const runtime = new FakeModelRuntime([
@@ -566,7 +563,7 @@ describe("AgentService.invoke", () => {
     ]);
     const modelService = new ModelManagementService(runtime, runtime);
 
-    const embeddingPort = new FakeEmbeddingPort();
+    const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore);
 
@@ -600,7 +597,7 @@ describe("AgentService.invoke", () => {
       { text: "There are 2 documents ingested.", toolCalls: [] },
     ]);
     const modelService = new ModelManagementService(runtime, runtime);
-    const embeddingPort = new FakeEmbeddingPort();
+    const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore);
     const agentService = new AgentService(
@@ -646,7 +643,7 @@ describe("AgentService.invoke", () => {
     const runtime = new FakeModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
 
-    const embeddingPort = new FakeEmbeddingPort();
+    const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore);
 
@@ -673,7 +670,7 @@ describe("AgentService.invoke", () => {
   it("forwards temperature and seed from invoke() options to the underlying chat request", async () => {
     const runtime = new FakeModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
-    const embeddingPort = new FakeEmbeddingPort();
+    const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore);
     const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]));
@@ -691,7 +688,7 @@ describe("AgentService.invoke", () => {
     const runtime = new ControllableModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
 
-    const embeddingPort = new FakeEmbeddingPort();
+    const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore);
 
@@ -731,7 +728,7 @@ describe("AgentService.invoke", () => {
     const runtime = new ControllableModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
 
-    const embeddingPort = new FakeEmbeddingPort();
+    const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore);
 
@@ -765,7 +762,7 @@ describe("AgentService.invoke", () => {
     const runtime = new HangingLoadModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
 
-    const embeddingPort = new FakeEmbeddingPort();
+    const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore);
 
@@ -792,7 +789,7 @@ const NO_EVIDENCE_CONFIG: RagRetrievalConfig = { ...DEFAULT_RAG_CONFIG, minScore
 const ALWAYS_EVIDENCE_CONFIG: RagRetrievalConfig = { ...DEFAULT_RAG_CONFIG, minScore: -1 };
 
 async function buildAgent(runtime: FakeModelRuntime, ragConfig: RagRetrievalConfig): Promise<AgentService> {
-  const embeddingPort = new FakeEmbeddingPort();
+  const embeddingPort = new StubEmbeddingPort();
   const vectorStore = await buildFixtureVectorStore(embeddingPort);
   return new AgentService(
     new ModelManagementService(runtime, runtime),
@@ -856,11 +853,11 @@ describe("AgentService.invoke streaming", () => {
   });
 });
 
-/** Lets every fixture chunk through: these tests are about what AgentService does WITH chunks, not about the threshold (FakeEmbeddingPort scores are not real similarities). */
+/** Lets every fixture chunk through: these tests are about what AgentService does WITH chunks, not about the threshold (StubEmbeddingPort scores are not real similarities). */
 const PERMISSIVE_RAG_CONFIG = { topK: 5, minScore: -1, maxContextChunks: 4, dedupeExactContent: true };
 
 async function buildAgentWithPermissiveRag(runtime: FakeModelRuntime): Promise<AgentService> {
-  const embeddingPort = new FakeEmbeddingPort();
+  const embeddingPort = new StubEmbeddingPort();
   const vectorStore = await buildFixtureVectorStore(embeddingPort);
   return new AgentService(
     new ModelManagementService(runtime, runtime),

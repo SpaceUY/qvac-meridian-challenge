@@ -41,6 +41,17 @@ describe("CorpusDocumentRepository", () => {
     ]);
   });
 
+  it("skips hidden files and __MACOSX/ metadata even though they carry a text extension", async () => {
+    await fs.mkdir(path.join(corpusDir, "__MACOSX", "emails"), { recursive: true });
+    await fs.writeFile(path.join(corpusDir, "__MACOSX", "emails", "._004-hiring-plan.md"), Buffer.from([0, 5, 22, 7]));
+    await fs.writeFile(path.join(corpusDir, "emails", "._004-hiring-plan.md"), Buffer.from([0, 5, 22, 7]));
+    const repository = new CorpusDocumentRepository(corpusDir);
+
+    const ids = (await repository.findAll()).map((document) => document.id).sort();
+
+    expect(ids).toEqual(["emails/004-hiring-plan.md", "policies/escalation-matrix.txt"]);
+  });
+
   it("derives type from the top-level folder and format from the file extension", async () => {
     const repository = new CorpusDocumentRepository(corpusDir);
 

@@ -68,15 +68,17 @@ export function EnginePanel(props: Props) {
       {!serverUnreachable && <ActiveModels model={props.model} sttModel={props.sttModel} ttsModel={props.ttsModel} />}
 
       <SidebarSection title="Peers">
-        <div className="flex items-center gap-2.5 px-0.5">
-          <Users className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <div className="flex min-w-0 flex-1 flex-col">
-            <span className="text-sm">{peers.title}</span>
-            <span className="truncate text-xs text-muted-foreground">{peers.detail}</span>
+        <div className="flex flex-col gap-3 rounded-xl border bg-card p-3.5">
+          <div className="flex items-center gap-2.5">
+            <Users className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="text-sm">{peers.title}</span>
+              <span className="truncate text-xs text-muted-foreground">{peers.detail}</span>
+            </div>
+            <Chip>{peers.count}</Chip>
           </div>
-          <Chip>{peers.count}</Chip>
+          {providerHealth && <ProviderHealthLine health={providerHealth} />}
         </div>
-        {providerHealth && <ProviderHealthLine health={providerHealth} />}
       </SidebarSection>
     </div>
   )
@@ -113,7 +115,7 @@ function ModelRow({ kind, name, extra }: { kind: string; name: string; extra?: s
 function ProviderHealthLine({ health }: { health: ProviderHealth }) {
   const view = describeProviderHealth(health)
   return (
-    <p title={view.tooltip} className={cn('flex items-center gap-1.5 px-0.5 text-xs', view.up ? 'text-primary' : 'text-destructive')}>
+    <p title={view.tooltip} className={cn('flex items-center gap-1.5 text-xs', view.up ? 'text-primary' : 'text-destructive')}>
       <span aria-hidden className="size-1.5 rounded-full bg-current" />
       {view.label}
     </p>

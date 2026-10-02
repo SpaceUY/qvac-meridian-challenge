@@ -4,11 +4,10 @@
   "description": "",
   "workspaces": [
     "apps/*",
-    "packages/*",
     "stock-tool"
   ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npx vitest run",
     "dev:client": "npm run dev --workspace=apps/frontend",
     "dev:server": "npm run dev --workspace=apps/backend",
     "build:client": "npm run build --workspace=apps/frontend",
@@ -17,9 +16,9 @@
     "corpus:ingest": "npm run corpus:ingest --workspace=apps/backend",
     "serve": "npm run serve --workspace=apps/backend",
     "serve:stop": "npm run serve:stop --workspace=apps/backend",
-    "basic-prompt": "npm run basic-prompt --workspace=apps/backend",
-    "model-lifecycle-demo": "npm run model-lifecycle-demo --workspace=apps/backend",
     "provider": "npm run provider --workspace=apps/backend",
+    "model-lifecycle-demo": "npm run model-lifecycle-demo --workspace=apps/backend",
+    "basic-prompt": "npm run basic-prompt --workspace=apps/backend",
     "speech-demo": "npm run speech-demo --workspace=apps/backend"
   },
   "keywords": [],

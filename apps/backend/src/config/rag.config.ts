@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DocumentType } from '../document/domain/document.model.js';
 import type { RagRetrievalConfig } from '../rag/domain/types.js';
 
 /** Every RAG tuning knob (chunking, retrieval sizing, rerank weights) lives in this file. */
@@ -103,14 +104,14 @@ export const AUTHORITY_WEIGHT = 0.02;
 /** Score penalty for a source listed in `SUPERSEDED_SOURCES`. */
 export const SUPERSEDED_PENALTY = 0.03;
 
-/** `documentType` (corpus top-level folder) -> authority label. No `pictures` entry: `ragChunk()` never processes binaries. */
+/** `DocumentType` -> authority label. No `pictures` entry: `ragChunk()` never processes binaries. */
 export const AUTHORITY_BY_DOCUMENT_TYPE: Record<string, AuthorityLabel> = {
-  policies: 'official-policy',
-  data: 'system-of-record',
-  emails: 'operational-email',
-  reports: 'aggregated-report',
-  faqs: 'internal-reference',
-  transcripts: 'informal-notes'
+  [DocumentType.POLICIES]: 'official-policy',
+  [DocumentType.DATA]: 'system-of-record',
+  [DocumentType.EMAIL]: 'operational-email',
+  [DocumentType.REPORTS]: 'aggregated-report',
+  [DocumentType.FAQ]: 'internal-reference',
+  [DocumentType.TRANSCRIPT]: 'informal-notes'
 };
 
 /**
