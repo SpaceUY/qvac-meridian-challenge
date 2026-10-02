@@ -72,6 +72,18 @@ export const DEFAULT_RAG_CONFIG: RagRetrievalConfig = {
 };
 
 /**
+ * Longest text, in UTF-16 characters, embedded for one retrieval search -
+ * see `toRetrievalQuery()` (`rag/service/retrievalQuery.ts`). Mirrors the
+ * frontend composer's `MAX_PROMPT_CHARS` (`apps/frontend/src/lib/prompt-limit.ts`);
+ * the backend still clips on its own because API clients and voice
+ * transcripts never pass through that composer. A message pasted whole
+ * (tens of thousands of characters) overflows the embedder's context and
+ * fails the turn; 700 characters stay far below it even at one token per
+ * character.
+ */
+export const MAX_RETRIEVAL_QUERY_CHARS = 700;
+
+/**
  * Tunable data for `metadataRerank()` (`../rag/service/metadataRerank.ts`).
  * Re-tuned specifically for BGE-M3 (120-combination sweep, validated against
  * a 13-question holdout never used to pick the weights) - see
