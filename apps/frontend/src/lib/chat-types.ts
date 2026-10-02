@@ -11,6 +11,14 @@ export type Citation = {
   score?: number
 }
 
+/** How full this conversation's context window is, as the backend measured it after a reply. Mirrors ContextUsage in apps/backend/src/ai/orchestrator/contextBudget.ts by hand (no shared package - same convention as model-status-client.ts). */
+export type ContextUsage = {
+  usedTokens: number
+  maxTokens: number
+  /** The conversation reached the budget threshold: it takes no new messages. */
+  exhausted: boolean
+}
+
 /**
  * Where a message is in its life. A discriminated union: `type` is the tag
  * TypeScript reads to know which of the three shapes it is holding, and only

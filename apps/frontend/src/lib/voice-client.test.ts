@@ -92,3 +92,14 @@ describe('readVoiceDeltas', () => {
     expect(deltas).toEqual([{ type: 'done', transcript: 'hi', tools: [], citations: [] }])
   })
 })
+
+describe('readVoiceDeltas - context usage', () => {
+  it('carries the context usage on the done event', async () => {
+    const context = { usedTokens: 13200, maxTokens: 16384, exhausted: true }
+    const deltas: VoiceDelta[] = []
+    for await (const delta of readVoiceDeltas(sseBody([{ type: 'done', transcript: 'hi', tools: [], citations: [], context }]))) {
+      deltas.push(delta)
+    }
+    expect(deltas).toEqual([{ type: 'done', transcript: 'hi', tools: [], citations: [], context }])
+  })
+})

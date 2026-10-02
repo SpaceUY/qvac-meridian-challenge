@@ -4,7 +4,7 @@
 
 import { create } from 'zustand'
 import { deleteSessionCache } from '@/lib/chat-client'
-import type { Citation, History, Message, Role } from '@/lib/chat-types'
+import type { Citation, ContextUsage, History, Message, Role } from '@/lib/chat-types'
 import { revokeAttachments, type ImageAttachment } from '@/lib/image-attachments'
 
 type ChatStore = {
@@ -18,6 +18,12 @@ type ChatStore = {
    * same handle from different parts of the tree.
    */
   activeTurn: AbortController | null
+  /** The backend reported this conversation's context window full (ContextUsage.exhausted). Stays true until New chat: the composer is disabled, the conversation stays readable. */
+  contextExhausted: boolean
+  /** Whether the "conversation full" notice is showing. Opens once, when contextExhausted first turns true; OK closes it without unlocking anything. */
+  contextNoticeOpen: boolean
+  contextUsageReceived: (usage: ContextUsage) => void
+  contextNoticeDismissed: () => void
   turnStarted: (
     userMessageId: string,
     assistantMessageId: string,
@@ -42,6 +48,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   history: [],
   sessionId: crypto.randomUUID(),
   activeTurn: null,
+  contextExhausted: false,
+  contextNoticeOpen: false,
 
   turnStarted: (userMessageId, assistantMessageId, text, images) =>
     set((state) => ({
@@ -126,6 +134,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   activeTurnSettled: (controller) =>
     set((state) => (state.activeTurn === controller ? { activeTurn: null } : {})),
 
+  /** Only the first "exhausted" opens the notice - later ones (a voice turn that was already in flight) leave it as the user left it. */
+  contextUsageReceived: (usage) =>
+    set((state) => (usage.exhausted && !state.contextExhausted ? { contextExhausted: true, contextNoticeOpen: true } : {})),
+
+  contextNoticeDismissed: () => set({ contextNoticeOpen: false }),
+
   /**
    * New chat. Aborts the turn in flight (the backend cancels generation on
    * disconnect - req. [1.4]), frees the image previews, and starts over
@@ -141,7 +155,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       console.error('Could not delete the KV cache of the previous chat', error)
     })
     revokeAttachments(history.flatMap((message) => message.images ?? []))
-    set({ history: [], sessionId: crypto.randomUUID(), activeTurn: null })
+    set({ history: [], sessionId: crypto.randomUUID(), activeTurn: null, contextExhausted: false, contextNoticeOpen: false })
   },
 }))
 

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useChatStore } from '@/lib/chat-store'
 
 describe('conversationReset', () => {
@@ -39,5 +39,39 @@ describe('toolsReceived', () => {
 
     const message = useChatStore.getState().history.find((m) => m.id === 'assistant-1')
     expect(message?.tools).toEqual(['lookup_stock'])
+  })
+})
+
+describe('context budget', () => {
+  const FULL = { usedTokens: 13200, maxTokens: 16384, exhausted: true }
+  const ROOMY = { usedTokens: 900, maxTokens: 16384, exhausted: false }
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })))
+    useChatStore.getState().conversationReset()
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('locks the conversation and opens the notice once the backend says it is full', () => {
+    useChatStore.getState().contextUsageReceived(FULL)
+    expect(useChatStore.getState()).toMatchObject({ contextExhausted: true, contextNoticeOpen: true })
+  })
+
+  it('ignores a usage that still has room', () => {
+    useChatStore.getState().contextUsageReceived(ROOMY)
+    expect(useChatStore.getState()).toMatchObject({ contextExhausted: false, contextNoticeOpen: false })
+  })
+
+  it('stays locked after OK, without reopening the notice', () => {
+    useChatStore.getState().contextUsageReceived(FULL)
+    useChatStore.getState().contextNoticeDismissed()
+    useChatStore.getState().contextUsageReceived(FULL)
+    expect(useChatStore.getState()).toMatchObject({ contextExhausted: true, contextNoticeOpen: false })
+  })
+
+  it('unlocks on New chat', () => {
+    useChatStore.getState().contextUsageReceived(FULL)
+    useChatStore.getState().conversationReset()
+    expect(useChatStore.getState()).toMatchObject({ contextExhausted: false, contextNoticeOpen: false })
   })
 })
