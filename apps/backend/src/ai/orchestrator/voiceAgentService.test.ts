@@ -14,7 +14,7 @@ import type {
 import { AgentService } from "./agentService.js";
 import type { ConversationMessage } from "./agentService.js";
 import { RagRetrievalService } from "../../rag/service/rag.service.js";
-import { FakeEmbeddingPort } from "../../rag/infra/fakeEmbedding.adapter.js";
+import { StubEmbeddingPort } from "../../rag/infra/fixtures/stubEmbedding.testSupport.js";
 import { buildFixtureVectorStore } from "../../rag/infra/fixtures/corpus-chunks.fixture.js";
 import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
 import {
@@ -209,7 +209,7 @@ async function setup(responses: ChatCompletionResult[], transcript: string) {
   const runtime = new FakeModelRuntime(responses);
   const modelService = new ModelManagementService(runtime, runtime);
 
-  const embeddingPort = new FakeEmbeddingPort();
+  const embeddingPort = new StubEmbeddingPort();
   const vectorStore = await buildFixtureVectorStore(embeddingPort);
   const ragService = new RagRetrievalService(embeddingPort, vectorStore);
 
@@ -233,7 +233,7 @@ async function setupStreaming(
   const runtime = new FakeModelRuntime(responses);
   const modelService = new ModelManagementService(runtime, runtime);
 
-  const embeddingPort = new FakeEmbeddingPort();
+  const embeddingPort = new StubEmbeddingPort();
   const vectorStore = await buildFixtureVectorStore(embeddingPort);
   const ragService = new RagRetrievalService(embeddingPort, vectorStore);
 

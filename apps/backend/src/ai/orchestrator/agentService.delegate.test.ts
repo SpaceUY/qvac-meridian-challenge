@@ -11,7 +11,7 @@ import type {
   ModelSource,
 } from "../../models/domain/types.js";
 import { RagRetrievalService } from "../../rag/service/rag.service.js";
-import { FakeEmbeddingPort } from "../../rag/infra/fakeEmbedding.adapter.js";
+import { StubEmbeddingPort } from "../../rag/infra/fixtures/stubEmbedding.testSupport.js";
 import { buildFixtureVectorStore } from "../../rag/infra/fixtures/corpus-chunks.fixture.js";
 import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
 
@@ -129,7 +129,7 @@ class RecordingModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
 }
 
 /** When `hang` is set, `embed()` never settles - freezes an `invoke()` in RAG retrieval, before any chat completion starts. */
-class HangingEmbeddingPort extends FakeEmbeddingPort {
+class HangingEmbeddingPort extends StubEmbeddingPort {
   hang = false;
 
   override async embed(text: string): Promise<number[]> {
@@ -140,7 +140,7 @@ class HangingEmbeddingPort extends FakeEmbeddingPort {
 
 async function buildAgentService(
   runtime: RecordingModelRuntime,
-  embeddingPort: FakeEmbeddingPort = new FakeEmbeddingPort(),
+  embeddingPort: StubEmbeddingPort = new StubEmbeddingPort(),
 ) {
   const modelService = new ModelManagementService(runtime, runtime);
   const vectorStore = await buildFixtureVectorStore(embeddingPort);
