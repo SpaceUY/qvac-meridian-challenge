@@ -95,9 +95,9 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
   const router = Router();
 
   router.post("/completions", async (req: Request, res: Response) => {
-    const messages = parseMessages(req.body);
+    const messages = await parseMessages(req.body);
     if (!messages) {
-      res.status(400).json({ error: describeParseError(req.body) });
+      res.status(400).json({ error: await describeParseError(req.body) });
       return;
     }
     if (agent.getStatus().status !== "ready") {
@@ -190,9 +190,9 @@ export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatu
   const router = Router();
 
   router.post("/voice-completions", async (req: Request, res: Response) => {
-    const history = parseHistory(req.body);
+    const history = await parseHistory(req.body);
     if (!history) {
-      res.status(400).json({ error: describeParseError(req.body) });
+      res.status(400).json({ error: await describeParseError(req.body) });
       return;
     }
     const audio = parseAudioBase64(req.body);

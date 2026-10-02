@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import sharp from "sharp";
 import type { ConversationMessage } from "../ai/orchestrator/agentService.js";
 import type { GenerationOptions } from "../ai/orchestrator/domain.js";
 import type { ContextUsage } from "../ai/orchestrator/contextBudget.js";
@@ -18,8 +19,8 @@ import {
  * (`{role, message, images?}`) — `AgentService.invoke()`'s own shape — so this
  * file is the one place that knows the wire format (`content`) differs from it.
  */
-export function parseMessages(body: unknown): ConversationMessage[] | undefined {
-  const result = parseMessageEntries(body);
+export async function parseMessages(body: unknown): Promise<ConversationMessage[] | undefined> {
+  const result = await parseMessageEntries(body);
   if ("error" in result) return undefined;
   return result.messages.length > 0 ? result.messages : undefined;
 }
@@ -30,8 +31,8 @@ export function parseMessages(body: unknown): ConversationMessage[] | undefined 
  * appended separately by VoiceAgentService after transcription) - only a
  * missing/malformed `messages` field is rejected, not an empty array.
  */
-export function parseHistory(body: unknown): ConversationMessage[] | undefined {
-  const result = parseMessageEntries(body);
+export async function parseHistory(body: unknown): Promise<ConversationMessage[] | undefined> {
+  const result = await parseMessageEntries(body);
   return "error" in result ? undefined : result.messages;
 }
 
@@ -44,14 +45,16 @@ export function parseHistory(body: unknown): ConversationMessage[] | undefined {
  * existing caller and test keeps working against the same `ConversationMessage[]
  * | undefined` shape - only the router's error branch needs the reason.
  */
-export function describeParseError(body: unknown): string {
-  const result = parseMessageEntries(body);
+export async function describeParseError(body: unknown): Promise<string> {
+  const result = await parseMessageEntries(body);
   return "error" in result ? result.error : INVALID_MESSAGES_ERROR;
 }
 
 type ParseResult<T> = T | { error: string };
 
-function parseMessageEntries(body: unknown): ParseResult<{ messages: ConversationMessage[] }> {
+async function parseMessageEntries(
+  body: unknown,
+): Promise<ParseResult<{ messages: ConversationMessage[] }>> {
   if (!isRecord(body) || !Array.isArray(body.messages)) return { error: INVALID_MESSAGES_ERROR };
   const messages: ConversationMessage[] = [];
   for (const entry of body.messages) {
@@ -59,7 +62,7 @@ function parseMessageEntries(body: unknown): ParseResult<{ messages: Conversatio
     if (entry.role === "system") continue;
     if (entry.role !== "user" && entry.role !== "assistant") return { error: INVALID_MESSAGES_ERROR };
 
-    const parsedContent = parseContent(entry.content, entry.role);
+    const parsedContent = await parseContent(entry.content, entry.role);
     if ("error" in parsedContent) return parsedContent;
 
     messages.push({
@@ -82,7 +85,10 @@ interface ParsedContent {
  * `image_url` part — an assistant/tool turn with an attached image has no
  * defined meaning for this pipeline (see the design spec).
  */
-function parseContent(content: unknown, role: "user" | "assistant"): ParseResult<ParsedContent> {
+async function parseContent(
+  content: unknown,
+  role: "user" | "assistant",
+): Promise<ParseResult<ParsedContent>> {
   if (typeof content === "string") return { text: content, images: [] };
   if (!Array.isArray(content)) return { error: INVALID_MESSAGES_ERROR };
 
@@ -100,7 +106,7 @@ function parseContent(content: unknown, role: "user" | "assistant"): ParseResult
 
     if (part.type === "image_url") {
       if (role !== "user") return { error: "Images can only be attached to your own messages" };
-      const image = parseImagePart(part);
+      const image = await parseImagePart(part);
       if ("error" in image) return image;
       images.push(image);
       continue;
@@ -122,9 +128,9 @@ function parseContent(content: unknown, role: "user" | "assistant"): ParseResult
 
 const DATA_URL_PATTERN = /^data:([^;,]+);base64,(.+)$/;
 
-function parseImagePart(
+async function parseImagePart(
   part: Record<string, unknown>,
-): ParseResult<{ mimeType: SupportedImageMimeType; data: Buffer }> {
+): Promise<ParseResult<{ mimeType: SupportedImageMimeType; data: Buffer }>> {
   const imageUrl = part.image_url;
   if (!isRecord(imageUrl) || typeof imageUrl.url !== "string") return { error: INVALID_MESSAGES_ERROR };
 
@@ -138,11 +144,29 @@ function parseImagePart(
   }
 
   const detectedMimeType = detectImageMimeType(data);
+  if (detectedMimeType === "image/webp") return transcodeWebpToPng(data);
   if (!isSupportedImageMimeType(detectedMimeType)) {
     return { error: "Only JPEG or PNG images are supported" };
   }
 
   return { mimeType: detectedMimeType, data };
+}
+
+/**
+ * WebP is a valid client input (the demo corpus's own `pic2.png` is really a
+ * WebP), but QVAC's vision model only accepts JPEG/PNG attachments
+ * (`qvacRuntimeAdapter.ts`'s `EXTENSION_BY_MIME_TYPE`) - so WebP is
+ * transcoded to PNG here, at the edge, and never reaches the rest of the
+ * pipeline as `image/webp`.
+ */
+async function transcodeWebpToPng(
+  data: Buffer,
+): Promise<ParseResult<{ mimeType: SupportedImageMimeType; data: Buffer }>> {
+  try {
+    return { mimeType: "image/png", data: await sharp(data).png().toBuffer() };
+  } catch {
+    return { error: "Could not read this image" };
+  }
 }
 
 type DetectedImageMimeType = "image/jpeg" | "image/png" | "image/webp";
@@ -162,9 +186,8 @@ function isSupportedImageMimeType(
  * Detects the real image format by reading its magic-byte signature,
  * ignoring whatever MIME type the client declared - the demo corpus's own
  * `pic2.png` proved a declared/extension MIME type can't be trusted (it's
- * actually WebP). WebP is recognized here (so it's rejected the same way
- * as any other unsupported format, not with a generic parse failure) but
- * not accepted - see the design spec for why.
+ * actually WebP). WebP is recognized here so `parseImagePart` can transcode
+ * it to PNG (see `transcodeWebpToPng`) rather than rejecting it outright.
  */
 function detectImageMimeType(data: Buffer): DetectedImageMimeType | undefined {
   if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) {

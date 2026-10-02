@@ -47,6 +47,7 @@
     "@qvac/sdk": "0.18.2",
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "meridian-stock-tool": "^1.0.0"
+    "meridian-stock-tool": "^1.0.0",
+    "sharp": "^0.33.5"
   }
 }
