@@ -25,6 +25,7 @@ import {
   type ArchitectureDocument,
 } from "../../document/domain/document.model.js";
 import { DEFAULT_RAG_CONFIG } from "../../config/rag.config.js";
+import { RESOURCE_TIER } from "../../config/resourceTier.js";
 import type { RagRetrievalConfig } from "../../rag/domain/types.js";
 import { INSUFFICIENT_CONTEXT_MESSAGE } from "./ragGraph.const.js";
 import { LLM_MODELS_BY_TIER, WHISPER_MODEL_NAMES_BY_TIER, TTS_MODEL_NAMES_BY_TIER } from "../../config/models.config.js";
@@ -778,5 +779,32 @@ describe("AgentService.invoke citations", () => {
 
     expect(result.chunks.length).toBeGreaterThan(0); // retrieval DID find something...
     expect(result.citations).toEqual([]); // ...but the answer used none of it
+  });
+});
+
+describe("AgentService.invoke - context budget", () => {
+  // The window AgentService measures against: its default tier's ctxSize (QvacChatSession falls back to 4096).
+  const MAX = LLM_MODELS_BY_TIER[RESOURCE_TIER].ctxSize ?? 4096;
+
+  it("reports the conversation as exhausted once the model's cache passes 80% of its window", async () => {
+    const used = Math.ceil(MAX * 0.8);
+    const runtime = new FakeModelRuntime([{ text: "Warranty is 24 months.", toolCalls: [], stats: { cacheTokens: used } }]);
+    const { result } = await askOnce(await buildAgent(runtime, ALWAYS_EVIDENCE_CONFIG), "What's the warranty?");
+
+    expect(result.context).toEqual({ usedTokens: used, maxTokens: MAX, exhausted: true });
+  });
+
+  it("keeps it open below the threshold", async () => {
+    const runtime = new FakeModelRuntime([{ text: "Warranty is 24 months.", toolCalls: [], stats: { cacheTokens: 900 } }]);
+    const { result } = await askOnce(await buildAgent(runtime, ALWAYS_EVIDENCE_CONFIG), "What's the warranty?");
+
+    expect(result.context).toMatchObject({ usedTokens: 900, exhausted: false });
+  });
+
+  it("measures nothing when the runtime sends no stats", async () => {
+    const runtime = new FakeModelRuntime([{ text: "Warranty is 24 months.", toolCalls: [] }]);
+    const { result } = await askOnce(await buildAgent(runtime, ALWAYS_EVIDENCE_CONFIG), "What's the warranty?");
+
+    expect(result.context).toBeUndefined();
   });
 });

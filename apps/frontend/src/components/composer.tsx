@@ -8,6 +8,8 @@ import { AttachButton } from '@/components/attach-button'
 import { ImageThumbnailRow } from '@/components/image-thumbnail-row'
 import { ImageLightbox } from '@/components/image-lightbox'
 import { useMirrorRef } from '@/hooks/use-mirror-ref'
+import { cn } from '@/lib/utils'
+import { MAX_PROMPT_CHARS, promptLimitState } from '@/lib/prompt-limit'
 import {
   buildImageAttachments,
   revokeAttachments,
@@ -56,6 +58,7 @@ export function Composer({
   // Typing the next question while the answer streams is fine (it just
   // can't be sent yet); attaching is not - same rule as the mic.
   const attachBlocked = textDisabled || isStreaming
+  const limit = promptLimitState(text)
 
   // Revoke any still-pending (never sent) preview URLs if the composer goes
   // away - sent images are handed off to chat history and outlive this.
@@ -81,7 +84,7 @@ export function Composer({
   }
 
   function send() {
-    if ((!text.trim() && images.length === 0) || isStreaming || textDisabled) return
+    if ((!text.trim() && images.length === 0) || isStreaming || textDisabled || text.length > MAX_PROMPT_CHARS) return
     onSend(text, images)
     setText('') // empty it now: no need to wait for the server to reply
     setImages([]) // ownership moves to chat history - don't revoke, it still needs these
@@ -162,6 +165,7 @@ export function Composer({
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             disabled={textDisabled}
+            maxLength={MAX_PROMPT_CHARS}
             placeholder={placeholder}
             rows={1}
             className="no-scrollbar max-h-40 min-h-9 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
@@ -190,6 +194,17 @@ export function Composer({
           <MicButton phase={voicePhase} disabled={micDisabled} onClick={onMicClick} />
         </div>
       </div>
+      {limit.showCounter && (
+        <p
+          aria-live="polite"
+          className={cn(
+            'px-2 text-right text-xs tabular-nums',
+            limit.atLimit ? 'text-destructive' : 'text-muted-foreground',
+          )}
+        >
+          {limit.atLimit ? `Character limit reached (${MAX_PROMPT_CHARS})` : `${limit.remaining} characters left`}
+        </p>
+      )}
       <p className="px-2 text-center text-xs text-muted-foreground">Answers come from your local corpus — check the cited sources.</p>
       <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>

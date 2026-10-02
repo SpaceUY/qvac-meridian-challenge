@@ -1,6 +1,7 @@
 import * as z from "zod";
 import { MessagesValue, StateSchema } from "@langchain/langgraph";
 import type { RetrievedChunk } from "../../rag/domain/types.js";
+import type { ChatCompletionStats } from "../../models/domain/types.js";
 
 export const State = new StateSchema({
   messages: MessagesValue,
@@ -13,6 +14,8 @@ export const State = new StateSchema({
   seed: z.number().optional(),
   /** KV cache session key forwarded to the model call, from the `X-Meridian-Session` header - see `GenerationOptions` below. */
   sessionId: z.string().optional(),
+  /** Token counters of this turn's last model call (`readCompletionStats`) - every run of the llm node overwrites it, so after a tool loop it holds the final call's. Read by `AgentService` to measure the context budget. Absent when the runtime reported none. */
+  completionStats: z.custom<ChatCompletionStats>().optional(),
 });
 
 /**

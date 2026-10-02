@@ -14,6 +14,7 @@ import {
   toRoleChunk,
   toTextChunk,
   toCitationsChunk,
+  toContextChunk,
   toToolsChunk,
   toDoneChunk,
   toVoiceAudioChunk,
@@ -156,6 +157,10 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
       // Last, once the answer is final: whether to cite at all depends on
       // what the model said (see selectCitations).
       res.write(toCitationsChunk(envelope, result.citations));
+      // After citations, before the closing chunk: how full this
+      // conversation is now. The client stops taking new messages in it
+      // once `exhausted` - see contextBudget.ts.
+      if (result.context) res.write(toContextChunk(envelope, result.context));
     } catch (err) {
       console.error("[chat:completions]", err);
       if (!res.writableEnded && !res.destroyed) res.write(toTextChunk(envelope, COMPLETION_ERROR));
@@ -238,7 +243,7 @@ export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatu
           }),
         );
       });
-      res.write(toVoiceDoneChunk(envelope, { transcript: result.transcript, toolsUsed: result.toolsUsed, citations: result.citations }));
+      res.write(toVoiceDoneChunk(envelope, { transcript: result.transcript, toolsUsed: result.toolsUsed, citations: result.citations, context: result.context }));
     } catch (err) {
       if (err instanceof EmptyTranscriptError) {
         res.write(toVoiceErrorChunk(envelope, EMPTY_TRANSCRIPT_ERROR));

@@ -2,6 +2,7 @@ import type { Citation, RetrievedChunk } from "../../rag/domain/types.js";
 import type { AgentService, ConversationMessage } from "./agentService.js";
 import type { TranscriptionService } from "../../speech/service/transcription.service.js";
 import type { TtsService } from "../../tts/service/tts.service.js";
+import type { ContextUsage } from "./contextBudget.js";
 import { SentenceChunker } from "./sentenceChunker.js";
 import { DEFAULT_MIN_SENTENCE_CHUNK_CHARS } from "../../config/voice.config.js";
 
@@ -44,6 +45,8 @@ export interface VoiceStreamResult {
   chunks: RetrievedChunk[];
   toolsUsed: string[];
   citations: Citation[];
+  /** Same context usage AgentService measured for this turn. */
+  context?: ContextUsage;
 }
 
 /**
@@ -152,6 +155,7 @@ export class VoiceAgentService {
       chunks: result.chunks,
       toolsUsed: result.toolsUsed,
       citations: result.citations,
+      ...(result.context ? { context: result.context } : {}),
     };
   }
 

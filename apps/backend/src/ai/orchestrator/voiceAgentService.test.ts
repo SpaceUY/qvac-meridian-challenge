@@ -319,6 +319,21 @@ describe("VoiceAgentService.invoke", () => {
 });
 
 describe("VoiceAgentService.invokeStreaming", () => {
+  it("passes the turn's context usage through to the caller", async () => {
+    const { voiceAgentService } = await setupStreaming(
+      [{ text: "Done.", toolCalls: [], stats: { cacheTokens: 13200 } }],
+      "How full is this chat?",
+    );
+
+    const result = await voiceAgentService.invokeStreaming(
+      [],
+      Buffer.from([1]),
+      () => {},
+    );
+
+    expect(result.context).toMatchObject({ usedTokens: 13200, exhausted: true });
+  });
+
   it("streams one chunk per detected sentence, synthesizing audio for each, in the order sentences complete", async () => {
     const { voiceAgentService, ttsPort } = await setupStreaming(
       [

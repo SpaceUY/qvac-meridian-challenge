@@ -669,3 +669,13 @@ describe("QvacChatSession.isBusy", () => {
     expect(session.isBusy()).toBe(true);
   });
 });
+
+describe("QvacChatSession.contextWindowTokens", () => {
+  it("is the ctxSize the model is loaded with", () => {
+    expect(buildSession(new RecordingChatService(), { ctxSize: 16384 }).contextWindowTokens).toBe(16384);
+  });
+
+  it("falls back to the same default the load uses", () => {
+    expect(buildSession(new RecordingChatService()).contextWindowTokens).toBe(4096);
+  });
+});
