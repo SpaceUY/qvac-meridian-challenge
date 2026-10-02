@@ -14,7 +14,6 @@ Monorepo (npm workspaces) implementing the Meridian Components exercise: an Expr
 - `apps/backend` — Express API (`src/server.ts`), port 3001. Local QVAC model lifecycle, a LangGraph chat orchestrator with tool calling and RAG grounding, speech-to-text and text-to-speech, and the corpus ingest pipeline. See [apps/backend/README.md](apps/backend/README.md) for the full breakdown of each feature.
 - `apps/frontend` — Vite + React app, port 5173
 - `stock-tool` — workspace package with the deterministic Meridian inventory data used by the stock-lookup tool
-- `packages/qvac-langgraph` — workspace package: the `ChatQVAC` LangChain chat model adapter (a `BaseChatModel` over an injected `complete` function). Built automatically on install (`prepare` script); rebuild manually with `npm run build --workspace=packages/qvac-langgraph` after editing its source.
 - `corpus/` — the provided Meridian document corpus, ingested into a local vector store (see **Setup**, step 2)
 - `apps/backend/qvac.config.mjs` — model-serving config for the QVAC-backed OpenAI-compatible server (see [apps/backend/README.md § Config](apps/backend/README.md#config))
 - `qvac/` — tree-shaken `@qvac/sdk` bundle produced by `npm run build --workspace=apps/backend` (gitignored build output, not committed — see **Build** below)
@@ -39,7 +38,7 @@ Monorepo (npm workspaces) implementing the Meridian Components exercise: an Expr
 npm ci
 ```
 
-1. Installs all workspaces (`apps/backend`, `apps/frontend`, `stock-tool`, `packages/qvac-langgraph`) and builds `packages/qvac-langgraph` automatically via its `prepare` script. First install takes a few minutes because a couple of QVAC's dependencies (Bare/Hyperswarm) compile native addons — this is expected, not a hang.
+1. Installs all workspaces (`apps/backend`, `apps/frontend`, `stock-tool`). First install takes a few minutes because a couple of QVAC's dependencies (Bare/Hyperswarm) compile native addons — this is expected, not a hang.
 
 ```bash
 npm run ingest --workspace=apps/backend
