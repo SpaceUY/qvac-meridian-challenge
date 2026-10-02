@@ -104,6 +104,7 @@ describe("buildLlmNode guard (graph.ts)", () => {
         temperature: undefined,
         seed: undefined,
         sessionId: undefined,
+        requestId: undefined,
         completionStats: undefined,
       },
       {},
