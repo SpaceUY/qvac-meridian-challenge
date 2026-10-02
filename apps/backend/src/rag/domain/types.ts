@@ -56,3 +56,16 @@ export interface Citation {
   file: string;
   score: number;
 }
+
+/**
+ * A retrieved chunk behind a `Citation`: the passage the UI shows when a
+ * source is opened. NOT part of the evaluator's contract - it travels as a
+ * sibling of `citations` (like `tools`), never inside a citation.
+ * `chunkIndex` is absent only for a chunk that carries no such metadata.
+ */
+export interface CitedChunk {
+  file: string;
+  chunkIndex?: number;
+  score: number;
+  content: string;
+}

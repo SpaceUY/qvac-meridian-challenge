@@ -1,4 +1,4 @@
-import type { Citation, RetrievedChunk } from '../domain/types.js';
+import type { Citation, CitedChunk, RetrievedChunk } from '../domain/types.js';
 
 /** Enough to rank and to compare runs, without float noise like 0.8312345678. */
 const SCORE_DECIMALS = 4;
@@ -25,6 +25,32 @@ export function toCitations(chunks: RetrievedChunk[]): Citation[] {
   return [...bestScoreByFile]
     .map(([file, score]) => ({ file, score: roundScore(score) }))
     .sort((a, b) => b.score - a.score || comparePaths(a.file, b.file));
+}
+
+/**
+ * The passages behind `citations`: every retrieved chunk of a cited file,
+ * grouped in citation order, best chunk first within a file (ties by id, so
+ * the order is deterministic). Driven by `citations`, not by `chunks`, so
+ * whatever `selectCitations` decided not to cite - including everything,
+ * for a "not enough information" answer - ships no text either.
+ */
+export function toCitedChunks(chunks: RetrievedChunk[], citations: Citation[]): CitedChunk[] {
+  return citations.flatMap(({ file }) =>
+    chunks
+      .filter((chunk) => chunk.source === file)
+      .sort((a, b) => b.score - a.score || comparePaths(a.id, b.id))
+      .map((chunk) => toCitedChunk(file, chunk))
+  );
+}
+
+function toCitedChunk(file: string, chunk: RetrievedChunk): CitedChunk {
+  const chunkIndex = chunk.metadata?.chunkIndex;
+  return {
+    file,
+    ...(typeof chunkIndex === 'number' ? { chunkIndex } : {}),
+    score: roundScore(chunk.score),
+    content: chunk.content
+  };
 }
 
 function roundScore(score: number): number {

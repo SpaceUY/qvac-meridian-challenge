@@ -61,7 +61,7 @@ describe('readVoiceDeltas', () => {
     for await (const delta of readVoiceDeltas(sseBody([{ type: 'done', transcript: 'warranty?', citations }]))) {
       deltas.push(delta)
     }
-    expect(deltas).toEqual([{ type: 'done', transcript: 'warranty?', tools: [], citations }])
+    expect(deltas).toEqual([{ type: 'done', transcript: 'warranty?', tools: [], citations, citedChunks: [] }])
   })
 
   it('yields a done delta with the tools the agent used', async () => {
@@ -71,7 +71,20 @@ describe('readVoiceDeltas', () => {
     )) {
       deltas.push(delta)
     }
-    expect(deltas).toEqual([{ type: 'done', transcript: 'how many in stock?', tools: ['lookup_stock'], citations: [] }])
+    expect(deltas).toEqual([
+      { type: 'done', transcript: 'how many in stock?', tools: ['lookup_stock'], citations: [], citedChunks: [] },
+    ])
+  })
+
+  it('yields a done delta with the passages behind the citations, dropping malformed ones', async () => {
+    const good = { file: 'policies/warranty-terms.md', chunkIndex: 1, score: 0.77, content: 'Coverage lasts 24 months.' }
+    const deltas: VoiceDelta[] = []
+    for await (const delta of readVoiceDeltas(
+      sseBody([{ type: 'done', transcript: 'warranty?', citations: [], citedChunks: [good, { file: 'x.md', score: 0.1 }] }]),
+    )) {
+      deltas.push(delta)
+    }
+    expect(deltas).toEqual([{ type: 'done', transcript: 'warranty?', tools: [], citations: [], citedChunks: [good] }])
   })
 
   it('yields an error delta', async () => {
@@ -89,6 +102,6 @@ describe('readVoiceDeltas', () => {
     )) {
       deltas.push(delta)
     }
-    expect(deltas).toEqual([{ type: 'done', transcript: 'hi', tools: [], citations: [] }])
+    expect(deltas).toEqual([{ type: 'done', transcript: 'hi', tools: [], citations: [], citedChunks: [] }])
   })
 })

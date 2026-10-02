@@ -11,6 +11,14 @@ export type Citation = {
   score?: number
 }
 
+/** A retrieved passage behind a citation - what a source card shows when opened. Arrives beside `citations`, never inside one. `chunkIndex` is the zero-based position in its document; absent when the backend had none. */
+export type CitedChunk = {
+  file: string
+  chunkIndex?: number
+  score: number
+  content: string
+}
+
 /**
  * Where a message is in its life. A discriminated union: `type` is the tag
  * TypeScript reads to know which of the three shapes it is holding, and only
@@ -27,6 +35,8 @@ export type Message = {
   role: Role
   text: string
   citations: Citation[]
+  /** The passages behind `citations`, grouped per file by the backend. Empty for a user message, an ungrounded reply, or a server that doesn't send them - the source cards then simply aren't clickable. */
+  citedChunks: CitedChunk[]
   /** Names of tools (e.g. "lookup_stock") the agent used to produce this reply. Empty for a user message and for an assistant reply that used none. */
   tools: string[]
   status: MessageStatus

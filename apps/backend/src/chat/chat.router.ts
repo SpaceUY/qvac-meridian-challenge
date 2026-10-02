@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import type { AgentService } from "../ai/orchestrator/agentService.js";
 import { EmptyTranscriptError, type VoiceAgentService } from "../ai/orchestrator/voiceAgentService.js";
 import type { ReadinessService } from "../health/readinessService.js";
+import { toCitedChunks } from "../rag/service/citations.js";
 import {
   parseMessages,
   parseHistory,
@@ -14,6 +15,7 @@ import {
   toRoleChunk,
   toTextChunk,
   toCitationsChunk,
+  toCitedChunksChunk,
   toToolsChunk,
   toDoneChunk,
   toVoiceAudioChunk,
@@ -111,7 +113,8 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
       try {
         const options = { ...parseGenerationOptions(req.body), sessionId: req.header("X-Meridian-Session") };
         const result = await agent.invoke(messages, options);
-        res.json(toCompletionResponse(envelope, result.answer, result.citations, result.toolsUsed));
+        const citedChunks = toCitedChunks(result.chunks, result.citations);
+        res.json(toCompletionResponse(envelope, result.answer, result.citations, citedChunks, result.toolsUsed));
       } catch (err) {
         console.error("[chat:completions]", err);
         res.status(500).json({ error: COMPLETION_ERROR });
@@ -156,6 +159,9 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
       // Last, once the answer is final: whether to cite at all depends on
       // what the model said (see selectCitations).
       res.write(toCitationsChunk(envelope, result.citations));
+      // The passages behind those citations, derived from them so an
+      // uncited answer ships no document text.
+      res.write(toCitedChunksChunk(envelope, toCitedChunks(result.chunks, result.citations)));
     } catch (err) {
       console.error("[chat:completions]", err);
       if (!res.writableEnded && !res.destroyed) res.write(toTextChunk(envelope, COMPLETION_ERROR));
@@ -208,6 +214,7 @@ export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatu
           answer: result.answer,
           tools: result.toolsUsed,
           citations: result.citations,
+          citedChunks: toCitedChunks(result.chunks, result.citations),
           ...(result.audio ? { audioBase64: result.audio.toString("base64"), sampleRate: result.sampleRate } : {}),
         });
       } catch (err) {
@@ -238,7 +245,14 @@ export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatu
           }),
         );
       });
-      res.write(toVoiceDoneChunk(envelope, { transcript: result.transcript, toolsUsed: result.toolsUsed, citations: result.citations }));
+      res.write(
+        toVoiceDoneChunk(envelope, {
+          transcript: result.transcript,
+          toolsUsed: result.toolsUsed,
+          citations: result.citations,
+          citedChunks: toCitedChunks(result.chunks, result.citations),
+        }),
+      );
     } catch (err) {
       if (err instanceof EmptyTranscriptError) {
         res.write(toVoiceErrorChunk(envelope, EMPTY_TRANSCRIPT_ERROR));

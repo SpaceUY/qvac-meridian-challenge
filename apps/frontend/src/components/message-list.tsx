@@ -58,7 +58,7 @@ function MessageBubble({ message }: { message: Message }) {
       {message.audioChunks && message.audioChunks.length > 0 && <AudioPlayback chunks={message.audioChunks} autoPlay />}
       {/* Tools first (how the answer was made), then sources (what it rests on). Each renders nothing when its list is empty. */}
       <ToolBadges tools={message.tools} />
-      <CitationSources citations={message.citations} />
+      <CitationSources citations={message.citations} citedChunks={message.citedChunks} />
       <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </>
   )

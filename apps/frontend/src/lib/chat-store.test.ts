@@ -41,3 +41,17 @@ describe('toolsReceived', () => {
     expect(message?.tools).toEqual(['lookup_stock'])
   })
 })
+
+describe('citedChunksReceived', () => {
+  it('attaches the passages to the message with that id, and a new message starts with none', () => {
+    useChatStore.getState().turnStarted('user-2', 'assistant-2', 'What was Q2 revenue?')
+    const find = () => useChatStore.getState().history.find((m) => m.id === 'assistant-2')
+    expect(find()?.citedChunks).toEqual([])
+
+    const citedChunks = [{ file: 'reports/q2.md', chunkIndex: 3, score: 0.83, content: 'Q2 revenue was $18.4M.' }]
+    useChatStore.getState().citedChunksReceived('assistant-2', citedChunks)
+
+    expect(find()?.citedChunks).toEqual(citedChunks)
+    expect(useChatStore.getState().history.find((m) => m.id === 'user-2')?.citedChunks).toEqual([])
+  })
+})
