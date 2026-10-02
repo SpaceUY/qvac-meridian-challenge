@@ -144,6 +144,7 @@ export function useVoiceTurn() {
           useChatStore.getState().toolsReceived(assistantMessageId, delta.tools)
           useChatStore.getState().voiceTranscriptReceived(userMessageId, delta.transcript)
           useChatStore.getState().citationsReceived(assistantMessageId, delta.citations)
+          useChatStore.getState().citedChunksReceived(assistantMessageId, delta.citedChunks)
         } else {
           useChatStore.getState().responseFailed(assistantMessageId, delta.error)
           return

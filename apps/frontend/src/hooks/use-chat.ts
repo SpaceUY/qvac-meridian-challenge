@@ -93,6 +93,9 @@ async function runTurn({ history, sessionId, userMessageId, assistantMessageId, 
       if (delta.citations !== undefined) {
         useChatStore.getState().citationsReceived(assistantMessageId, delta.citations)
       }
+      if (delta.citedChunks !== undefined) {
+        useChatStore.getState().citedChunksReceived(assistantMessageId, delta.citedChunks)
+      }
     }
     buffer.flush()
     useChatStore.getState().responseFinished(assistantMessageId)

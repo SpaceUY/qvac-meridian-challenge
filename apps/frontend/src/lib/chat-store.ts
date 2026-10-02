@@ -4,7 +4,7 @@
 
 import { create } from 'zustand'
 import { deleteSessionCache } from '@/lib/chat-client'
-import type { Citation, History, Message, Role } from '@/lib/chat-types'
+import type { Citation, CitedChunk, History, Message, Role } from '@/lib/chat-types'
 import { revokeAttachments, type ImageAttachment } from '@/lib/image-attachments'
 
 type ChatStore = {
@@ -26,6 +26,7 @@ type ChatStore = {
   ) => void
   chunkReceived: (id: string, delta: string) => void
   citationsReceived: (id: string, citations: Citation[]) => void
+  citedChunksReceived: (id: string, citedChunks: CitedChunk[]) => void
   toolsReceived: (id: string, tools: string[]) => void
   responseFinished: (id: string) => void
   responseFailed: (id: string, reason: string) => void
@@ -63,6 +64,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   citationsReceived: (id, citations) =>
     set((state) => ({
       history: withMessage(state.history, id, (m) => ({ ...m, citations })),
+    })),
+
+  citedChunksReceived: (id, citedChunks) =>
+    set((state) => ({
+      history: withMessage(state.history, id, (m) => ({ ...m, citedChunks })),
     })),
 
   toolsReceived: (id, tools) =>
@@ -147,7 +153,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
 /** A newborn message, without citations yet. It cannot be born failed. */
 function createMessage(id: string, role: Role, text: string, status: 'done' | 'streaming'): Message {
-  return { id, role, text, citations: [], tools: [], status: { type: status } }
+  return { id, role, text, citations: [], citedChunks: [], tools: [], status: { type: status } }
 }
 
 /**

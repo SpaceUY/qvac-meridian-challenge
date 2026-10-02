@@ -4,10 +4,10 @@ import { Badge } from '@/components/ui/badge'
 import { formatLabel, formatUpdatedAt, groupDocuments } from '@/lib/document-groups'
 import type { CorpusDocument } from '@/lib/documents-client'
 
-type Props = { documents: CorpusDocument[]; query: string }
+type Props = { documents: CorpusDocument[]; query: string; onSelect: (doc: CorpusDocument) => void }
 
-/** The corpus modal's body: one section per document type, cards inside. Pure presentation - the grouping rules live in document-groups.ts. */
-export function DocumentGrid({ documents, query }: Props) {
+/** The corpus modal's body: one section per document type, cards inside. Pure presentation - the grouping rules live in document-groups.ts. A card is a button: picking one is the parent's call (`onSelect`). */
+export function DocumentGrid({ documents, query, onSelect }: Props) {
   if (documents.length === 0) return <EmptyMessage>The corpus is empty.</EmptyMessage>
 
   const groups = groupDocuments(documents, query)
@@ -22,7 +22,7 @@ export function DocumentGrid({ documents, query }: Props) {
           </h3>
           <ul className="grid gap-2 sm:grid-cols-2">
             {group.documents.map((doc) => (
-              <DocumentCard key={doc.id} doc={doc} />
+              <DocumentCard key={doc.id} doc={doc} onSelect={onSelect} />
             ))}
           </ul>
         </section>
@@ -31,26 +31,32 @@ export function DocumentGrid({ documents, query }: Props) {
   )
 }
 
-function DocumentCard({ doc }: { doc: CorpusDocument }) {
+function DocumentCard({ doc, onSelect }: { doc: CorpusDocument; onSelect: (doc: CorpusDocument) => void }) {
   return (
-    <li className="flex items-start gap-3 rounded-lg border bg-secondary/30 p-3">
-      <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium" title={doc.title}>{doc.title}</p>
-        <p className="truncate text-xs text-muted-foreground" title={doc.id}>{doc.id}</p>
-        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-          Updated {formatUpdatedAt(doc.updatedAt)}
-          {doc.tags.length > 0 ? ` · ${doc.tags.join(', ')}` : ''}
-        </p>
-      </div>
-      <div className="flex shrink-0 flex-col items-end gap-1">
-        <Badge variant="outline">{formatLabel(doc.format)}</Badge>
-        {doc.status === 'ARCHIVED' && (
-          <Badge variant="secondary" title="No longer the current version - kept for reference only">
-            Archived
-          </Badge>
-        )}
-      </div>
+    <li>
+      <button
+        type="button"
+        onClick={() => onSelect(doc)}
+        className="flex w-full items-start gap-3 rounded-lg border bg-secondary/30 p-3 text-left transition-colors hover:bg-secondary/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+      >
+        <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium" title={doc.title}>{doc.title}</p>
+          <p className="truncate text-xs text-muted-foreground" title={doc.id}>{doc.id}</p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            Updated {formatUpdatedAt(doc.updatedAt)}
+            {doc.tags.length > 0 ? ` · ${doc.tags.join(', ')}` : ''}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <Badge variant="outline">{formatLabel(doc.format)}</Badge>
+          {doc.status === 'ARCHIVED' && (
+            <Badge variant="secondary" title="No longer the current version - kept for reference only">
+              Archived
+            </Badge>
+          )}
+        </div>
+      </button>
     </li>
   )
 }

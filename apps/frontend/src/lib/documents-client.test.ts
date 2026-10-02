@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchDocuments } from '@/lib/documents-client'
+import { fetchDocumentContent, fetchDocuments } from '@/lib/documents-client'
 
 describe('fetchDocuments', () => {
   afterEach(() => {
@@ -50,5 +50,35 @@ describe('fetchDocuments', () => {
 
     expect(documents).toHaveLength(1)
     expect(documents[0].id).toBe('a.md')
+  })
+})
+
+describe('fetchDocumentContent', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('asks for the file by its encoded corpus path and returns the whole document', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ id: 'data/stock levels.json', format: 'JSON', content: '{"qty":12}' })))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const document = await fetchDocumentContent('data/stock levels.json')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/documents/content?file=data%2Fstock%20levels.json')
+    expect(document).toEqual({ id: 'data/stock levels.json', format: 'JSON', content: '{"qty":12}' })
+  })
+
+  it('throws when the server does not have the document', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'Document not found' }), { status: 404 })))
+
+    await expect(fetchDocumentContent('gone.md')).rejects.toThrow('404')
+  })
+
+  it('throws on a body without text content instead of showing an empty document', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'a.md', format: 'MARKDOWN' }))))
+
+    await expect(fetchDocumentContent('a.md')).rejects.toThrow()
   })
 })

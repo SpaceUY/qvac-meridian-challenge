@@ -276,6 +276,18 @@ describe("DELETE /sessions/:sessionId/cache", () => {
 
 const ANSWER = "Q2 2026 total revenue was $18.4M.";
 const CITATIONS = [{ file: "reports/q2-2026-sales-performance-report.md", score: 0.83 }];
+const CHUNKS = [
+  {
+    id: "reports/q2-2026-sales-performance-report.md#3",
+    content: "Q2 revenue was $18.4M.",
+    score: 0.83,
+    source: "reports/q2-2026-sales-performance-report.md",
+    metadata: { title: "Q2 2026 Sales Performance Report", documentType: "REPORTS", chunkIndex: 3 },
+  },
+];
+const CITED_CHUNKS = [
+  { file: "reports/q2-2026-sales-performance-report.md", chunkIndex: 3, score: 0.83, content: "Q2 revenue was $18.4M." },
+];
 const QUESTION = [{ role: "user" as const, content: "What was Q2 2026 revenue?" }];
 
 /** Orchestrator stand-in: streams the answer in two deltas, like the real one streams tokens. */
@@ -285,7 +297,7 @@ const fakeAgent: CompletionAgent = {
     const promise = (async () => {
       onToken?.("Q2 2026 total revenue ");
       onToken?.("was $18.4M.");
-      return { answer: ANSWER, chunks: [], toolsUsed: [], citations: CITATIONS };
+      return { answer: ANSWER, chunks: CHUNKS, toolsUsed: [], citations: CITATIONS };
     })();
     return Object.assign(promise, { requestId: "req-fake" });
   },
@@ -293,16 +305,21 @@ const fakeAgent: CompletionAgent = {
 };
 
 const fakeVoiceAgent: VoiceAgent = {
-  invoke: async () => ({ transcript: "What was Q2 revenue?", answer: ANSWER, chunks: [], toolsUsed: [], citations: CITATIONS }),
+  invoke: async () => ({ transcript: "What was Q2 revenue?", answer: ANSWER, chunks: CHUNKS, toolsUsed: [], citations: CITATIONS }),
   invokeStreaming: async (_history, _audio, onChunk) => {
     await onChunk({ text: ANSWER });
-    return { transcript: "What was Q2 revenue?", answer: ANSWER, chunks: [], toolsUsed: [], citations: CITATIONS };
+    return { transcript: "What was Q2 revenue?", answer: ANSWER, chunks: CHUNKS, toolsUsed: [], citations: CITATIONS };
   },
 };
 
 /** `citations` is our extension to the OpenAI shape, so the SDK's types don't declare it. */
 function citationsOf(value: object): unknown {
   return (value as { citations?: unknown }).citations;
+}
+
+/** Same for `citedChunks`, the additive field carrying the passages behind the citations. */
+function citedChunksOf(value: object): unknown {
+  return (value as { citedChunks?: unknown }).citedChunks;
 }
 
 // Shared by both describes below: one server, one stock OpenAI client, pointed at both routes.
@@ -361,6 +378,61 @@ describe("POST /v1/chat/completions - contract with the stock OpenAI SDK", () =>
   });
 });
 
+describe("POST /v1/chat/completions - cited chunks", () => {
+  it("stream omitted: the passages behind the citations ride on the message, next to them", async () => {
+    const completion = await client.chat.completions.create({ model: "meridian-assistant", messages: QUESTION });
+
+    expect(citedChunksOf(completion.choices[0].message)).toEqual(CITED_CHUNKS);
+  });
+
+  it("stream: true: the passages arrive in a delta, after the citations", async () => {
+    const stream = await client.chat.completions.create({ model: "meridian-assistant", messages: QUESTION, stream: true });
+
+    const order: string[] = [];
+    let citedChunks: unknown;
+    for await (const chunk of stream) {
+      if (citationsOf(chunk.choices[0].delta) !== undefined) order.push("citations");
+      const fromDelta = citedChunksOf(chunk.choices[0].delta);
+      if (fromDelta !== undefined) {
+        order.push("citedChunks");
+        citedChunks = fromDelta;
+      }
+    }
+
+    expect(citedChunks).toEqual(CITED_CHUNKS);
+    expect(order).toEqual(["citations", "citedChunks"]);
+  });
+
+  it("sends no passage when nothing is cited, even though chunks were retrieved", async () => {
+    // The 'not enough information' case: retrieval found chunks, the model
+    // said they don't cover the question, so selectCitations returned [].
+    const ungroundedAgent: CompletionAgent = {
+      ...fakeAgent,
+      invoke: () => Object.assign(Promise.resolve({ answer: "no info", chunks: CHUNKS, toolsUsed: [], citations: [] }), { requestId: "req-none" }),
+    };
+    const app = express();
+    app.use(express.json());
+    app.use("/v1/chat", createCompletionsRouter(ungroundedAgent));
+    const server = await new Promise<http.Server>((resolve) => {
+      const listening = app.listen(0, "127.0.0.1", () => resolve(listening));
+    });
+    try {
+      const { port } = server.address() as AddressInfo;
+      const res = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: QUESTION }),
+      });
+      const body = (await res.json()) as { choices: [{ message: { citations?: unknown; citedChunks?: unknown } }] };
+
+      expect(body.choices[0].message.citations).toEqual([]);
+      expect(body.choices[0].message.citedChunks).toEqual([]);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
+
 describe("POST /v1/chat/completions - tools", () => {
   it("carries which tools the agent used on the final message, when the fake agent reports one", async () => {
     const toolAgent: CompletionAgent = {
@@ -404,6 +476,17 @@ describe("POST /v1/chat/voice-completions", () => {
     // Node's fetch types `json()` as `Promise<unknown>`: narrow before reading a field, or `tsc` fails.
     const body = (await res.json()) as { citations?: unknown };
     expect(body.citations).toEqual(CITATIONS);
+  });
+
+  it("carries the passages behind the citations, derived from the retrieved chunks", async () => {
+    const res = await fetch(`${client.baseURL}/chat/voice-completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [], audioBase64: Buffer.from("fake-wav").toString("base64") }),
+    });
+
+    const body = (await res.json()) as { citedChunks?: unknown };
+    expect(body.citedChunks).toEqual(CITED_CHUNKS);
   });
 
   it("carries which tools the agent used, when the voice agent reports one", async () => {
@@ -468,7 +551,7 @@ describe("POST /v1/chat/voice-completions - stream: true", () => {
       invokeStreaming: async (_history, _audio, onChunk) => {
         await onChunk({ text: "Q2 2026 total revenue ", audio: Buffer.from("chunk1"), sampleRate: 24000 });
         await onChunk({ text: "was $18.4M." });
-        return { transcript: "What was Q2 revenue?", answer: ANSWER, chunks: [], toolsUsed: [], citations: CITATIONS };
+        return { transcript: "What was Q2 revenue?", answer: ANSWER, chunks: CHUNKS, toolsUsed: [], citations: CITATIONS };
       },
     });
 
@@ -497,6 +580,7 @@ describe("POST /v1/chat/voice-completions - stream: true", () => {
       transcript: "What was Q2 revenue?",
       tools: [],
       citations: CITATIONS,
+      citedChunks: CITED_CHUNKS,
     });
   });
 

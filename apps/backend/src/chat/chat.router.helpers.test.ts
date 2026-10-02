@@ -11,8 +11,10 @@ import {
   toRoleChunk,
   toTextChunk,
   toCitationsChunk,
+  toCitedChunksChunk,
   toToolsChunk,
   toDoneChunk,
+  toVoiceDoneChunk,
 } from "./chat.router.helpers.js";
 import { MAX_IMAGE_BYTES, MAX_IMAGES_PER_MESSAGE } from "./chat.router.const.js";
 
@@ -257,6 +259,9 @@ describe("parseAudioBase64", () => {
 
 const ENVELOPE = { id: "chatcmpl-test", created: 1790000000, model: "meridian-assistant" };
 const CITATIONS = [{ file: "reports/q2-2026-sales-performance-report.md", score: 0.83 }];
+const CITED_CHUNKS = [
+  { file: "reports/q2-2026-sales-performance-report.md", chunkIndex: 3, score: 0.83, content: "Q2 revenue was $18.4M." },
+];
 
 /** One SSE event ("data: {...}") back into its JSON payload. */
 function parseEvent(event: string) {
@@ -287,8 +292,8 @@ describe("wantsStream", () => {
 });
 
 describe("toCompletionResponse", () => {
-  it("builds a full chat.completion with citations and tools on the message", () => {
-    expect(toCompletionResponse(ENVELOPE, "Q2 revenue was $18.4M.", CITATIONS, ["lookup_stock"])).toEqual({
+  it("builds a full chat.completion with citations, their chunks and tools on the message", () => {
+    expect(toCompletionResponse(ENVELOPE, "Q2 revenue was $18.4M.", CITATIONS, CITED_CHUNKS, ["lookup_stock"])).toEqual({
       id: "chatcmpl-test",
       created: 1790000000,
       model: "meridian-assistant",
@@ -301,6 +306,7 @@ describe("toCompletionResponse", () => {
             content: "Q2 revenue was $18.4M.",
             refusal: null,
             citations: CITATIONS,
+            citedChunks: CITED_CHUNKS,
             tools: ["lookup_stock"],
           },
           logprobs: null,
@@ -311,6 +317,26 @@ describe("toCompletionResponse", () => {
   });
 });
 
+describe("toVoiceDoneChunk", () => {
+  it("carries the cited chunks next to the citations, then the SSE terminator", () => {
+    const [doneEvent, terminator] = toVoiceDoneChunk(ENVELOPE, {
+      transcript: "What was Q2 revenue?",
+      toolsUsed: [],
+      citations: CITATIONS,
+      citedChunks: CITED_CHUNKS,
+    }).split("\n\n");
+
+    expect(parseEvent(doneEvent)).toMatchObject({
+      type: "done",
+      transcript: "What was Q2 revenue?",
+      tools: [],
+      citations: CITATIONS,
+      citedChunks: CITED_CHUNKS,
+    });
+    expect(terminator).toBe("data: [DONE]");
+  });
+});
+
 describe("stream chunks", () => {
   it("wraps every delta in a chat.completion.chunk that shares the envelope", () => {
     for (const event of [
@@ -318,6 +344,7 @@ describe("stream chunks", () => {
       toTextChunk(ENVELOPE, "Hi"),
       toToolsChunk(ENVELOPE, ["lookup_stock"]),
       toCitationsChunk(ENVELOPE, CITATIONS),
+      toCitedChunksChunk(ENVELOPE, CITED_CHUNKS),
     ]) {
       expect(event.startsWith("data: ")).toBe(true);
       expect(event.endsWith("\n\n")).toBe(true);
@@ -334,6 +361,7 @@ describe("stream chunks", () => {
       tools: ["lookup_stock"],
     });
     expect(parseEvent(toCitationsChunk(ENVELOPE, CITATIONS)).choices[0].delta).toEqual({ citations: CITATIONS });
+    expect(parseEvent(toCitedChunksChunk(ENVELOPE, CITED_CHUNKS)).choices[0].delta).toEqual({ citedChunks: CITED_CHUNKS });
   });
 
   it("closes with an empty delta and finish_reason stop, then [DONE]", () => {

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ConversationMessage } from "../ai/orchestrator/agentService.js";
 import type { GenerationOptions } from "../ai/orchestrator/domain.js";
 import type { SupportedImageMimeType } from "../models/domain/types.js";
-import type { Citation } from "../rag/domain/types.js";
+import type { Citation, CitedChunk } from "../rag/domain/types.js";
 import {
   INVALID_MESSAGES_ERROR,
   MAX_IMAGE_BYTES,
@@ -241,11 +241,12 @@ export function wantsStream(body: unknown): boolean {
   return isRecord(body) && body.stream === true;
 }
 
-/** The `stream: false` response: a whole `chat.completion`. `citations` sits on the message - where the evaluator reads it. `tools` is a separate, additive field (not part of the evaluator's contract) naming which tools the agent used this turn. */
+/** The `stream: false` response: a whole `chat.completion`. `citations` sits on the message - where the evaluator reads it. `citedChunks` (the passages behind the citations) and `tools` (which tools the agent used this turn) are separate, additive fields, not part of the evaluator's contract. */
 export function toCompletionResponse(
   envelope: CompletionEnvelope,
   answer: string,
   citations: Citation[],
+  citedChunks: CitedChunk[],
   tools: string[],
 ) {
   return {
@@ -254,7 +255,7 @@ export function toCompletionResponse(
     choices: [
       {
         index: 0,
-        message: { role: "assistant", content: answer, refusal: null, citations, tools },
+        message: { role: "assistant", content: answer, refusal: null, citations, citedChunks, tools },
         logprobs: null,
         finish_reason: "stop",
       },
@@ -262,7 +263,13 @@ export function toCompletionResponse(
   };
 }
 
-type StreamDelta = { role?: "assistant"; content?: string; tools?: string[]; citations?: Citation[] };
+type StreamDelta = {
+  role?: "assistant";
+  content?: string;
+  tools?: string[];
+  citations?: Citation[];
+  citedChunks?: CitedChunk[];
+};
 
 /** One `chat.completion.chunk` as an SSE event. */
 function toChunkEvent(envelope: CompletionEnvelope, delta: StreamDelta, finishReason: "stop" | null = null): string {
@@ -293,6 +300,11 @@ export function toCitationsChunk(envelope: CompletionEnvelope, citations: Citati
   return toChunkEvent(envelope, { citations });
 }
 
+/** The passages behind the citations, right after them. Sent even when empty, so "none" is explicit. */
+export function toCitedChunksChunk(envelope: CompletionEnvelope, citedChunks: CitedChunk[]): string {
+  return toChunkEvent(envelope, { citedChunks });
+}
+
 /** The closing chunk (empty delta + finish_reason) followed by the SSE terminator. */
 export function toDoneChunk(envelope: CompletionEnvelope): string {
   return `${toChunkEvent(envelope, {}, "stop")}data: [DONE]\n\n`;
@@ -311,12 +323,12 @@ export function toVoiceAudioChunk(
   return toVoiceEvent(envelope, { type: "audio", ...chunk });
 }
 
-/** The closing event on a successful turn: full transcript + tools + citations, then the SSE terminator. */
+/** The closing event on a successful turn: full transcript + tools + citations + the passages behind them, then the SSE terminator. */
 export function toVoiceDoneChunk(
   envelope: CompletionEnvelope,
-  payload: { transcript: string; toolsUsed: string[]; citations: Citation[] },
+  payload: { transcript: string; toolsUsed: string[]; citations: Citation[]; citedChunks: CitedChunk[] },
 ): string {
-  return `${toVoiceEvent(envelope, { type: "done", transcript: payload.transcript, tools: payload.toolsUsed, citations: payload.citations })}data: [DONE]\n\n`;
+  return `${toVoiceEvent(envelope, { type: "done", transcript: payload.transcript, tools: payload.toolsUsed, citations: payload.citations, citedChunks: payload.citedChunks })}data: [DONE]\n\n`;
 }
 
 /** Sent instead of `toVoiceDoneChunk` when the turn fails after SSE headers are already committed (so a JSON 4xx/5xx is no longer possible) - includes the SSE terminator. */
