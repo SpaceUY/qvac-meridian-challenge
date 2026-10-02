@@ -36,7 +36,6 @@ For everything else, ground your answer only in the evidence actually available 
 
 ${GROUNDING_INSTRUCTIONS}`;
 
-
 /**
  * Tag that LangGraph's "messages" stream mode checks to skip a chat model
  * call's tokens (`handleChatModelStart` in @langchain/langgraph's
@@ -65,7 +64,19 @@ function guardMayReplaceReply(state: typeof State.State): boolean {
 async function generateReply(
   model: ReturnType<ChatQVAC["bindTools"]>,
   messages: BaseMessage[],
-  { hidden, temperature, seed, sessionId, requestId }: { hidden: boolean; temperature?: number; seed?: number; sessionId?: string; requestId?: string },
+  {
+    hidden,
+    temperature,
+    seed,
+    sessionId,
+    requestId,
+  }: {
+    hidden: boolean;
+    temperature?: number;
+    seed?: number;
+    sessionId?: string;
+    requestId?: string;
+  },
 ): Promise<AIMessageChunk> {
   const stream = await model.stream(messages, {
     ...(hidden ? { tags: [NO_STREAM_TAG] } : {}),
@@ -203,11 +214,15 @@ export function createGraph(
 
   return new StateGraph(State)
     .addNode("llm", llmCall, {
-      retryPolicy: { maxAttempts: 2, retryOn: (error) => !isCancellationError(error) },
+      retryPolicy: {
+        maxAttempts: 2,
+        retryOn: (error) => !isCancellationError(error),
+      },
     })
     .addNode("rag", ragNode)
     .addNode("toolNode", toolNode)
-    .addEdge(START, "rag")
+    .addEdge(START, "toolNode")
+    .addEdge("toolNode", "rag")
     .addEdge("rag", "llm")
     .addConditionalEdges("llm", shouldContinue, ["toolNode", END])
     .addEdge("toolNode", "llm")
