@@ -8,7 +8,8 @@ import {
   type ArchitectureDocument,
 } from "../domain/document.model.js";
 import type { DocumentRepository } from "../domain/document-repository.port.js";
-import { CORPUS_ROOT } from "../../config/rag.config.js";
+import { CORPUS_ROOT, TEXT_EXTENSIONS } from "../../config/rag.config.js";
+
 const FORMAT_BY_EXTENSION: Record<string, DocumentFormat> = {
   ".md": DocumentFormat.MARKDOWN,
   ".json": DocumentFormat.JSON,
@@ -26,23 +27,22 @@ const TYPE_BY_TOP_LEVEL_FOLDER: Record<string, DocumentType> = {
   policies: DocumentType.POLICIES,
 };
 
-export const TEXT_EXTENSIONS = new Set([
-  ".md",
-  ".txt",
-  ".csv",
-  ".json",
-  ".html",
-]);
-
+/**
+ * Skips hidden entries and `__MACOSX/`: the official `corpus.zip` ships macOS
+ * metadata files like `__MACOSX/emails/._007-sla-reminder.md` - binary, but
+ * with a `.md` extension, so an extension check alone would ingest (and later
+ * cite) them.
+ */
 export async function listFilesRecursively(dir: string): Promise<string[]> {
   const entries = await fs.readdir(dir, { withFileTypes: true });
   const files: string[] = [];
 
   for (const entry of entries) {
+    if (entry.name.startsWith(".") || entry.name === "__MACOSX") continue;
     const entryPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       files.push(...(await listFilesRecursively(entryPath)));
-    } else if (TEXT_EXTENSIONS.has(path.extname(entry.name))) {
+    } else if (TEXT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
       files.push(entryPath);
     }
   }
@@ -79,13 +79,7 @@ export class CorpusDocumentRepository implements DocumentRepository {
 
   async findAll(): Promise<ArchitectureDocument[]> {
     const filePaths = await listFilesRecursively(this.corpusDir);
-    const textFilePaths = filePaths.filter((filePath) =>
-      TEXT_EXTENSIONS.has(path.extname(filePath)),
-    );
-
-    return Promise.all(
-      textFilePaths.map((filePath) => this.toDocument(filePath)),
-    );
+    return Promise.all(filePaths.map((filePath) => this.toDocument(filePath)));
   }
 
   async findById(id: string): Promise<ArchitectureDocument | null> {
@@ -123,7 +117,7 @@ export class CorpusDocumentRepository implements DocumentRepository {
       title: toTitle(filePath),
       type: toDocumentType(id),
       format:
-        FORMAT_BY_EXTENSION[path.extname(filePath)] ?? DocumentFormat.TEXT,
+        FORMAT_BY_EXTENSION[path.extname(filePath).toLowerCase()] ?? DocumentFormat.TEXT,
       status: DocumentStatus.ACTIVE,
       tags: [],
       content,
