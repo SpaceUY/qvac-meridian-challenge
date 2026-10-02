@@ -18,14 +18,14 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { HumanMessage } from "@langchain/core/messages";
-import { ChatQVAC } from "qvac-langgraph";
+import { ChatQVAC } from "@space-uy/qvac-langgraph";
 import { QvacChatSession } from "./orchestrator/qvacChatSession.js";
 import { ModelManagementService } from "../models/service/models.service.js";
 import { QvacRuntimeAdapter } from "../models/infra/qvacRuntimeAdapter.js";
-import { CORPUS_DIR } from "../document/infra/corpusDocumentRepository.js";
+import { CORPUS_ROOT } from "../config/rag.config.js";
 import { LLM_MODELS_BY_TIER } from "../config/models.config.js";
 
-const CORPUS_PICTURES_DIR = path.join(CORPUS_DIR, "pictures");
+const CORPUS_PICTURES_DIR = path.join(CORPUS_ROOT, "pictures");
 
 async function askAboutImage(
   model: ChatQVAC,

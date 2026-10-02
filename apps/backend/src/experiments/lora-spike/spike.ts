@@ -20,7 +20,7 @@ import { ModelManagementService } from "../../models/service/models.service.js";
 import { ModelManagementError } from "../../models/domain/errors.js";
 import type { ModelSource } from "../../models/domain/types.js";
 import { LLM_MODELS_BY_TIER, QWEN3_600M_MODEL_SOURCE } from "../../config/models.config.js";
-import { CORPUS_DIR } from "../../document/infra/corpusDocumentRepository.js";
+import { CORPUS_ROOT } from "../../config/rag.config.js";
 
 const IS_CONTROL = process.argv.includes("--control");
 
@@ -84,10 +84,10 @@ async function timed<T>(step: string, fn: () => Promise<T>): Promise<T> {
 
 function findAdapterFile(dir: string): { path: string; sizeBytes: number } | undefined {
   if (!fs.existsSync(dir)) return undefined;
-  const entries = fs.readdirSync(dir, { withFileTypes: true, recursive: true } as fs.ReaddirOptions & { recursive: true });
-  for (const entry of entries as fs.Dirent[]) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true, recursive: true });
+  for (const entry of entries) {
     if (entry.isFile() && entry.name.endsWith(".gguf")) {
-      const full = path.join((entry as unknown as { parentPath?: string; path?: string }).parentPath ?? (entry as unknown as { path: string }).path ?? dir, entry.name);
+      const full = path.join(entry.parentPath, entry.name);
       return { path: full, sizeBytes: fs.statSync(full).size };
     }
   }
@@ -214,7 +214,7 @@ async function main(): Promise<void> {
         }),
       );
       try {
-        const picPath = path.join(CORPUS_DIR, "pictures", "pic1.jpeg");
+        const picPath = path.join(CORPUS_ROOT, "pictures", "pic1.jpeg");
         const imageData = fs.readFileSync(picPath);
         const visionResult = await timed("verify:vision-inference", () =>
           service.chatComplete(visionLoad.modelId, {
