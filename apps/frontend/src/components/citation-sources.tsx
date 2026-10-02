@@ -1,7 +1,7 @@
 import { ChevronRight, FileText } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Markdown } from '@/components/markdown'
-import { chunkLabel, citationTitle, formatChunk, formatScore } from '@/lib/citation-label'
+import { SourceDialogBody } from '@/components/source-dialog-body'
+import { citationTitle, formatScore } from '@/lib/citation-label'
 import type { Citation, CitedChunk } from '@/lib/chat-types'
 
 const CARD_CLASS = 'flex min-w-0 flex-col gap-1.5 rounded-lg border bg-card px-3.5 py-3'
@@ -62,40 +62,11 @@ function SourceCard({ citation, number, chunks }: { citation: Citation; number: 
             <DialogTitle>{citationTitle(citation.file)}</DialogTitle>
             <DialogDescription className="font-mono text-xs break-all">{citation.file}</DialogDescription>
           </DialogHeader>
-          <ul className="chat-scrollbar -mx-1 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1">
-            {chunks.map((chunk, index) => (
-              <li key={chunk.chunkIndex ?? index} className="rounded-lg border bg-card px-3.5 py-3">
-                <div className="mb-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                  <span className="font-medium">{chunkLabel(chunk)}</span>
-                  <span className="font-mono tabular-nums" title="Retrieval similarity (higher is closer)">
-                    {formatScore(chunk.score)}
-                  </span>
-                </div>
-                <ChunkBody chunk={chunk} />
-              </li>
-            ))}
-          </ul>
+          <SourceDialogBody file={citation.file} chunks={chunks} />
         </DialogContent>
       </Dialog>
     </li>
   )
-}
-
-/** One passage, shown the way its file's format calls for - see `formatChunk` for why html is never rendered. */
-function ChunkBody({ chunk }: { chunk: CitedChunk }) {
-  const { kind, text } = formatChunk(chunk.file, chunk.content)
-
-  if (kind === 'markdown') {
-    return (
-      <div className="text-sm leading-relaxed">
-        <Markdown text={text} />
-      </div>
-    )
-  }
-  if (kind === 'code') {
-    return <pre className="chat-scrollbar overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs leading-relaxed">{text}</pre>
-  }
-  return <p className="text-sm leading-relaxed whitespace-pre-wrap">{text}</p>
 }
 
 function SourceCardContent({ citation, number, openable = false }: { citation: Citation; number: number; openable?: boolean }) {

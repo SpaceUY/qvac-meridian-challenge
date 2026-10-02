@@ -3,7 +3,12 @@ import type { AddressInfo } from "node:net";
 import express from "express";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDocumentsRouter } from "./documents.router.js";
-import { LIST_DOCUMENTS_ERROR } from "./documents.router.const.js";
+import {
+  DOCUMENT_CONTENT_ERROR,
+  DOCUMENT_NOT_FOUND_ERROR,
+  INVALID_FILE_ERROR,
+  LIST_DOCUMENTS_ERROR,
+} from "./documents.router.const.js";
 import {
   DocumentFormat,
   DocumentStatus,
@@ -33,7 +38,7 @@ describe("GET /api/documents", () => {
 
   async function listen(findAll: () => Promise<ArchitectureDocument[]>): Promise<string> {
     const app = express();
-    app.use("/api/documents", createDocumentsRouter({ findAll }));
+    app.use("/api/documents", createDocumentsRouter({ findAll, findById: async () => null }));
     server = app.listen(0);
     await new Promise<void>((resolve) => server!.once("listening", resolve));
     const { port } = server.address() as AddressInfo;
@@ -65,5 +70,74 @@ describe("GET /api/documents", () => {
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: LIST_DOCUMENTS_ERROR });
+  });
+});
+
+describe("GET /api/documents/content", () => {
+  let server: http.Server | undefined;
+
+  afterEach(() => {
+    server?.close();
+    server = undefined;
+  });
+
+  async function listen(findById: (id: string) => Promise<ArchitectureDocument | null>): Promise<string> {
+    const app = express();
+    app.use("/api/documents", createDocumentsRouter({ findAll: async () => [], findById }));
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+    return `http://127.0.0.1:${port}/api/documents/content`;
+  }
+
+  const knowsWarranty = async (id: string) => (id === WARRANTY.id ? WARRANTY : null);
+
+  it("returns the whole document for a corpus path: id, format and content, nothing else", async () => {
+    const url = await listen(knowsWarranty);
+
+    const response = await fetch(`${url}?file=${encodeURIComponent("policies/warranty-terms.md")}`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      id: "policies/warranty-terms.md",
+      format: "MARKDOWN",
+      content: "# Warranty\n\nThe X4 carries a 24-month warranty.",
+    });
+  });
+
+  it("responds 404 for a file that is not in the corpus, a path-traversal attempt included", async () => {
+    const asked: string[] = [];
+    const url = await listen(async (id) => {
+      asked.push(id);
+      return knowsWarranty(id);
+    });
+
+    const response = await fetch(`${url}?file=${encodeURIComponent("../../etc/passwd")}`);
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: DOCUMENT_NOT_FOUND_ERROR });
+    // The path is only ever compared with the corpus listing, as an opaque id.
+    expect(asked).toEqual(["../../etc/passwd"]);
+  });
+
+  it("responds 400 when file is missing, empty or repeated", async () => {
+    const url = await listen(knowsWarranty);
+
+    for (const query of ["", "?file=", "?file=a.md&file=b.md"]) {
+      const response = await fetch(`${url}${query}`);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: INVALID_FILE_ERROR });
+    }
+  });
+
+  it("responds 500 with a generic error, without the internal reason, when the corpus can't be read", async () => {
+    const url = await listen(async () => { throw new Error("EACCES: /secret/path"); });
+
+    const response = await fetch(`${url}?file=policies/warranty-terms.md`);
+
+    expect(response.status).toBe(500);
+    const text = await response.text();
+    expect(JSON.parse(text)).toEqual({ error: DOCUMENT_CONTENT_ERROR });
+    expect(text).not.toContain("EACCES");
   });
 });

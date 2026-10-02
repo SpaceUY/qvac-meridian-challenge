@@ -43,3 +43,20 @@ function isCorpusDocument(v: unknown): v is CorpusDocument {
     typeof v.updatedAt === 'string'
   )
 }
+
+/** One whole document, from GET /api/documents/content - what the source dialog's "Full document" view shows. */
+export type DocumentContent = {
+  id: string
+  format: string
+  content: string
+}
+
+export async function fetchDocumentContent(file: string): Promise<DocumentContent> {
+  const res = await fetch(`/api/documents/content?file=${encodeURIComponent(file)}`)
+  if (!res.ok) throw new Error(`document request failed: ${res.status}`)
+  const body: unknown = await res.json()
+  if (!isObject(body) || typeof body.id !== 'string' || typeof body.format !== 'string' || typeof body.content !== 'string') {
+    throw new Error('document response was malformed')
+  }
+  return { id: body.id, format: body.format, content: body.content }
+}
