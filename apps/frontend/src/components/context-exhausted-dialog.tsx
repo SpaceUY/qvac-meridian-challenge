@@ -20,10 +20,7 @@ export function ContextExhaustedDialog() {
     <AlertDialog open={open} onOpenChange={(next) => !next && dismiss()}>
       <AlertDialogContent>
         <AlertDialogTitle>This conversation has reached its limit</AlertDialogTitle>
-        <AlertDialogDescription>
-          To keep its answers accurate, the assistant can only work with so much of a conversation at once, and this
-          one is now full. Everything above stays here for you to read. Start a new chat to keep asking questions.
-        </AlertDialogDescription>
+        <AlertDialogDescription>To keep answers accurate, please start a new chat</AlertDialogDescription>
         <AlertDialogFooter>
           <AlertDialogAction onClick={dismiss}>OK</AlertDialogAction>
         </AlertDialogFooter>
