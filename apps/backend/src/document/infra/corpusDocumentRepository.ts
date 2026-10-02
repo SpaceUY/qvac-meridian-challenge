@@ -1,10 +1,6 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import {
-  CORPUS_DIR,
-  TEXT_EXTENSIONS,
-  listFilesRecursively,
-} from "../../ai/context/fullCorpusContext.js";
+import { fileURLToPath } from "node:url";
 import {
   DocumentFormat,
   DocumentStatus,
@@ -12,7 +8,7 @@ import {
   type ArchitectureDocument,
 } from "../domain/document.model.js";
 import type { DocumentRepository } from "../domain/document-repository.port.js";
-
+import { CORPUS_ROOT } from "../../config/rag.config.js";
 const FORMAT_BY_EXTENSION: Record<string, DocumentFormat> = {
   ".md": DocumentFormat.MARKDOWN,
   ".json": DocumentFormat.JSON,
@@ -29,6 +25,30 @@ const TYPE_BY_TOP_LEVEL_FOLDER: Record<string, DocumentType> = {
   emails: DocumentType.EMAIL,
   policies: DocumentType.POLICIES,
 };
+
+export const TEXT_EXTENSIONS = new Set([
+  ".md",
+  ".txt",
+  ".csv",
+  ".json",
+  ".html",
+]);
+
+export async function listFilesRecursively(dir: string): Promise<string[]> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const files: string[] = [];
+
+  for (const entry of entries) {
+    const entryPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await listFilesRecursively(entryPath)));
+    } else if (TEXT_EXTENSIONS.has(path.extname(entry.name))) {
+      files.push(entryPath);
+    }
+  }
+
+  return files;
+}
 
 function toDocumentId(corpusDir: string, filePath: string): string {
   return path.relative(corpusDir, filePath).split(path.sep).join("/");
@@ -55,7 +75,7 @@ function toDocumentType(id: string): DocumentType {
  * separately maintained list.
  */
 export class CorpusDocumentRepository implements DocumentRepository {
-  constructor(private readonly corpusDir: string = CORPUS_DIR) {}
+  constructor(private readonly corpusDir: string = CORPUS_ROOT) {}
 
   async findAll(): Promise<ArchitectureDocument[]> {
     const filePaths = await listFilesRecursively(this.corpusDir);
@@ -102,7 +122,8 @@ export class CorpusDocumentRepository implements DocumentRepository {
       id,
       title: toTitle(filePath),
       type: toDocumentType(id),
-      format: FORMAT_BY_EXTENSION[path.extname(filePath)] ?? DocumentFormat.TEXT,
+      format:
+        FORMAT_BY_EXTENSION[path.extname(filePath)] ?? DocumentFormat.TEXT,
       status: DocumentStatus.ACTIVE,
       tags: [],
       content,
