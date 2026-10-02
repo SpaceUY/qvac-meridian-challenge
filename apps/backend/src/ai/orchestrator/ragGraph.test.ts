@@ -24,6 +24,7 @@ describe("routeOnEvidence", () => {
     temperature: undefined,
     seed: undefined,
     sessionId: undefined,
+    completionStats: undefined,
   };
 
   it("routes to insufficientContext when hasEvidence is false", () => {
@@ -79,6 +80,7 @@ describe("insufficientContextNode", () => {
         temperature: undefined,
         seed: undefined,
         sessionId: undefined,
+        completionStats: undefined,
         messages: [],
         chunks: [],
         hasEvidence: false,
@@ -114,6 +116,7 @@ describe("buildRetrieveNode", () => {
         temperature: undefined,
         seed: undefined,
         sessionId: undefined,
+        completionStats: undefined,
       },
       {},
     );
@@ -140,6 +143,7 @@ describe("buildRetrieveNode", () => {
         temperature: undefined,
         seed: undefined,
         sessionId: undefined,
+        completionStats: undefined,
       },
       {},
     );
@@ -175,6 +179,7 @@ describe("buildRetrieveNode", () => {
         temperature: undefined,
         seed: undefined,
         sessionId: undefined,
+        completionStats: undefined,
       },
       {},
     );
@@ -214,6 +219,7 @@ describe("buildRetrieveNode", () => {
         temperature: undefined,
         seed: undefined,
         sessionId: undefined,
+        completionStats: undefined,
       },
       {},
     );
@@ -249,6 +255,7 @@ describe("buildLlmNode", () => {
         temperature: undefined,
         seed: undefined,
         sessionId: undefined,
+        completionStats: undefined,
       },
       {},
     )) as {
