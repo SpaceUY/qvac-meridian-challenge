@@ -172,10 +172,6 @@ export const LLM_MODELS_BY_TIER: Record<ResourceTier, AgentModelConfig> = {
     },
     modelName: QWEN3_5_9B_MULTIMODAL_Q4_K_M.name,
     quantization: QWEN3_5_9B_MULTIMODAL_Q4_K_M.quantization,
-    // I.2: bounded continuous batching via concurrent completion() calls
-    // (see docs/i2-simultaneous-completions-results.md) - conservative
-    // starting point, raise after benchmarking real medium-tier hardware.
-    maxConcurrency: 2,
   },
   high: {
     modelSource: QWEN3_6_35B_A3B_MODEL_SOURCE,
@@ -186,8 +182,11 @@ export const LLM_MODELS_BY_TIER: Record<ResourceTier, AgentModelConfig> = {
     },
     modelName: QWEN3_6_35B_A3B_MULTIMODAL_Q4_K_M.name,
     quantization: QWEN3_6_35B_A3B_MULTIMODAL_Q4_K_M.quantization,
-    // Same starting point as medium, kept conservative until the heavier
-    // high-tier model's real RAM/KV-cache headroom is benchmarked.
+    // I.2: bounded continuous batching via concurrent completion() calls
+    // (see docs/i2-simultaneous-completions-results.md) - conservative
+    // starting point, raise after benchmarking real high-tier hardware.
+    // Only the high tier runs completions in parallel; low/medium stay at
+    // the sequential default (DEFAULT_MAX_CONCURRENCY = 1).
     maxConcurrency: 2,
   },
 };

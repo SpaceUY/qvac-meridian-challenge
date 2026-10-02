@@ -315,14 +315,14 @@ async function flushMicrotasks(): Promise<void> {
 
 const PERMISSIVE_RAG_CONFIG_FOR_CONCURRENCY = { topK: 5, minScore: -1, maxContextChunks: 4, dedupeExactContent: true };
 
-describe("AgentService concurrency (medium/high tiers)", () => {
+describe("AgentService concurrency (high tier)", () => {
   it("runs two concurrent invokes against a maxConcurrency=2 tier without one waiting on the other", async () => {
     const runtime = new ControllableModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
     const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore, PERMISSIVE_RAG_CONFIG_FOR_CONCURRENCY);
-    const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]), "medium");
+    const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]), "high");
 
     const pendingA = agentService.invoke([{ role: "user", message: "Question A" }]);
     runtime.settleLoad(await runtime.nextLoadRequestId());
@@ -386,7 +386,7 @@ describe("AgentService concurrency (medium/high tiers)", () => {
     const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore, PERMISSIVE_RAG_CONFIG_FOR_CONCURRENCY);
-    const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]), "medium");
+    const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]), "high");
 
     const pendingA = agentService.invoke([{ role: "user", message: "Question A" }]);
     runtime.settleLoad(await runtime.nextLoadRequestId());
@@ -407,7 +407,7 @@ describe("AgentService concurrency (medium/high tiers)", () => {
     const embeddingPort = new StubEmbeddingPort();
     const vectorStore = await buildFixtureVectorStore(embeddingPort);
     const ragService = new RagRetrievalService(embeddingPort, vectorStore, PERMISSIVE_RAG_CONFIG_FOR_CONCURRENCY);
-    const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]), "medium");
+    const agentService = new AgentService(modelService, ragService, new FakeDocumentRepository([]), "high");
 
     await Promise.all([
       agentService.invoke([{ role: "user", message: "Question A" }], { sessionId: "session-a" }),

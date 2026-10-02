@@ -2,7 +2,7 @@
 
 **Branch:** `feat/i2-simultaneous-completions`
 
-**Verdict: implemented for `medium`/`high` tiers via concurrent `completion()` calls admitted by `@qvac/sdk`'s own request registry (keyed to the loaded model's `parallel` config), not `batchCompletion()`. `low` tier is untouched. One important performance caveat below — read before merging.**
+**Verdict: implemented for the `high` tier via concurrent `completion()` calls admitted by `@qvac/sdk`'s own request registry (keyed to the loaded model's `parallel` config), not `batchCompletion()`. `low`/`medium` tiers stay sequential (`maxConcurrency: 1`) — see the performance finding below, which is why `medium` was reverted to sequential after initially shipping concurrency on it too.**
 
 ## Why `completion()` instead of `batchCompletion()`
 
@@ -17,7 +17,7 @@ Further inspection of the SDK's actual `completionStream` RPC handler (`server/b
   - **Delegated-model cancellation + concurrency, resolved explicitly**: this codebase already has a model-wide `cancelCompletions(modelId)` fallback for delegated models, because the SDK can't abort a delegated stream by request id alone. That fallback cancels *every* completion on the model — safe under the old single-flight assumption, but a correctness hazard under concurrency (cancelling one request could kill a concurrent sibling on the same delegated model). `cancelActive()` now only uses the model-wide fallback when the request being cancelled is the *only* active one on that model; otherwise it cancels by request-id only and accepts that the remote generation may keep running on the provider until it finishes. This is an inherent limitation of a delegate that only exposes a model-wide remote cancel, not something concurrency itself needed to introduce the risk of — it's made explicit and safe rather than silently glossed over.
   - `isBusy()` now counts queued completions too (a queued call already captured the `modelId` it'll use once admitted).
   - Coalesces concurrent delegation-recovery attempts into one reload.
-- **`models.config.ts`** — `AgentModelConfig.maxConcurrency`; `resolveEngineConfig()` merges `{ parallel: maxConcurrency }` into `engineConfig` when `> 1`. `low`: untouched. `medium`/`high`: `maxConcurrency: 2` each, independently configurable.
+- **`models.config.ts`** — `AgentModelConfig.maxConcurrency`; `resolveEngineConfig()` merges `{ parallel: maxConcurrency }` into `engineConfig` when `> 1`. `low`/`medium`: untouched (no `maxConcurrency` set, falls back to `DEFAULT_MAX_CONCURRENCY = 1`, i.e. sequential). `high`: `maxConcurrency: 2`.
 - **`agentService.ts`** — passes `maxConcurrency` into the session; `cancel(requestId)` forwards to `cancelActive(requestId)`.
 - **`domain.ts`/`graph.ts`/`qvac-langgraph`** — threads `requestId` through LangGraph state down to `ChatQVAC`, mirroring the existing `sessionId` pattern (one new optional field, same mechanism) — this is what lets `cancel()` target the one specific concurrent completion an `invoke()` call is making.
 
@@ -51,10 +51,10 @@ A controlled A/B (same prompt, same generation params, run completely alone vs. 
 
 `avgConcurrentSeq≈2` confirms the engine genuinely batched both sequences — this isn't a dispatch bug, it's that the test hardware didn't have spare compute/memory-bandwidth to batch "for free." The test machine had a real discrete GPU (AMD Radeon RX 6600), but the *solo* throughput (8.73 tok/s) is itself low for a 9B Q4_K_M model on that class of card, suggesting the GPU may not have been fully engaged even without concurrency (backend/driver/virtualization specific to that test environment) — this is not confirmed to generalize to every real `medium`/`high` deployment, but it is not confirmed *not* to, either. `resourceTier.ts`'s own tier thresholds are RAM+CPU only, with no GPU/VRAM detection (an existing, separately-documented non-goal) — so a non-trivial fraction of real `medium`-tier machines could plausibly be in the same CPU-bound regime this result represents.
 
-**This directly affects whether `maxConcurrency: 2` should ship as the default for `medium`/`high` today.** Recommendation: validate on real, representative target hardware (ideally including a confirmed-working GPU backend) before merging with concurrency enabled by default — or ship with `low`'s sequential behavior extended to `medium`/`high` (`maxConcurrency: 1`, i.e. the mechanism built but not yet turned on by default) until that validation exists. This is a deliberate decision left open here, not a silently-made one — see the PR description.
+**This directly affected whether `maxConcurrency: 2` should ship as the default for `medium`/`high`.** Decision taken: `medium` reverted to `low`'s sequential behavior (`maxConcurrency: 1`, i.e. the mechanism stays built but turned off by default on that tier) given this measured regression on the real `medium`-tier model; `high` keeps `maxConcurrency: 2` pending its own validation on representative hardware. Raise `medium` back to concurrent only after a controlled A/B on representative `medium`-tier hardware shows a net throughput gain, not a loss.
 
 ## Known limitations
 
 - DHT/P2P provider-serving path: untouched. `@qvac/sdk`'s provider surface exposes no hook for this from application code in this version.
-- `medium`/`high` concurrency limits (`2`) are unvalidated on representative hardware per the finding above — treat as provisional, not a benchmarked ceiling.
+- `high`'s concurrency limit (`2`) is unvalidated on representative hardware per the finding above — treat as provisional, not a benchmarked ceiling. `medium` is sequential (`1`) by default following that same finding, measured on the real `medium`-tier model.
 - The model-wide `cancelCompletions` fallback for delegated models, when a sibling completion is active on the same model, cannot be made fully request-specific with this SDK version's primitives — documented in `qvacChatSession.ts`, not hidden.
