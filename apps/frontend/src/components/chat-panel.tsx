@@ -6,11 +6,13 @@ import { ArrowDown } from 'lucide-react'
 import { MessageList } from '@/components/message-list'
 import { Composer } from '@/components/composer'
 import { Welcome } from '@/components/welcome'
+import { ContextExhaustedDialog } from '@/components/context-exhausted-dialog'
 import { Button } from '@/components/ui/button'
 import { useChat } from '@/hooks/use-chat'
 import { useVoiceTurn } from '@/hooks/use-voice-turn'
 import { useElementHeight } from '@/hooks/use-element-height'
 import { useStickToBottom } from '@/hooks/use-stick-to-bottom'
+import { useChatStore } from '@/lib/chat-store'
 import type { ModelStatus } from '@/lib/model-status-client'
 import type { ImageAttachment } from '@/lib/image-attachments'
 
@@ -31,15 +33,20 @@ export function ChatPanel({ modelStatus, modelCancelled, embeddingReady, serverU
   }
 
   const modelReady = modelStatus === 'ready'
+  // A full conversation takes no new messages of any kind (typed, attached or
+  // spoken). It stays readable; only New chat continues.
+  const contextExhausted = useChatStore((state) => state.contextExhausted)
   // Text and voice never compete for the same turn: each one disables the
   // other - except once voice is already recording, where the mic must
   // always be able to stop.
-  const micDisabled = !modelReady || (voicePhase.type !== 'recording' && isStreaming)
-  const textDisabled = !modelReady || voicePhase.type === 'recording' || voicePhase.type === 'processing'
+  const micDisabled = !modelReady || contextExhausted || (voicePhase.type !== 'recording' && isStreaming)
+  const textDisabled =
+    !modelReady || contextExhausted || voicePhase.type === 'recording' || voicePhase.type === 'processing'
   // Why the composer can't send right now, in the box itself. While the
   // model loads it stays neutral: the Welcome in the middle already says why.
-  const placeholder =
-    voicePhase.type === 'processing'
+  const placeholder = contextExhausted
+    ? 'This chat is full. Start a new chat to continue.'
+    : voicePhase.type === 'processing'
       ? 'Processing audio…'
       : isStreaming
         ? 'Waiting for the response…'
@@ -99,6 +106,7 @@ export function ChatPanel({ modelStatus, modelCancelled, embeddingReady, serverU
           />
         </div>
       </div>
+      <ContextExhaustedDialog />
     </div>
   )
 }

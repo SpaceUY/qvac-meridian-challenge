@@ -155,6 +155,8 @@ export interface ChatCompletionStats {
   tokensPerSecond?: number;
   promptTokens?: number;
   generatedTokens?: number;
+  /** Tokens held in this request's KV cache once the call finished - the number that grows turn after turn in one session (see ai/orchestrator/contextBudget.ts). The SDK already sends it; this type just stops hiding it. */
+  cacheTokens?: number;
 }
 
 export interface ChatCompletionRequest {

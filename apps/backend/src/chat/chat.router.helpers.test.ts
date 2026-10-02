@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import sharp from "sharp";
 import {
   parseMessages,
   parseHistory,
@@ -13,6 +14,8 @@ import {
   toCitationsChunk,
   toToolsChunk,
   toDoneChunk,
+  toContextChunk,
+  toVoiceDoneChunk,
 } from "./chat.router.helpers.js";
 import { MAX_IMAGE_BYTES, MAX_IMAGES_PER_MESSAGE } from "./chat.router.const.js";
 
@@ -29,8 +32,8 @@ function imagePart(mimeType: string, bytes: Buffer) {
 }
 
 describe("parseMessages", () => {
-  it("parses user/assistant entries and drops system", () => {
-    const result = parseMessages({
+  it("parses user/assistant entries and drops system", async () => {
+    const result = await parseMessages({
       messages: [
         { role: "system", content: "ignored" },
         { role: "user", content: "hi" },
@@ -43,19 +46,19 @@ describe("parseMessages", () => {
     ]);
   });
 
-  it("returns undefined for an empty messages array", () => {
-    expect(parseMessages({ messages: [] })).toBeUndefined();
+  it("returns undefined for an empty messages array", async () => {
+    expect(await parseMessages({ messages: [] })).toBeUndefined();
   });
 
-  it("returns undefined when messages is missing or malformed", () => {
-    expect(parseMessages({})).toBeUndefined();
-    expect(parseMessages({ messages: [{ role: "user" }] })).toBeUndefined();
+  it("returns undefined when messages is missing or malformed", async () => {
+    expect(await parseMessages({})).toBeUndefined();
+    expect(await parseMessages({ messages: [{ role: "user" }] })).toBeUndefined();
   });
 });
 
 describe("parseMessages — images", () => {
-  it("parses a text+image content array into message + images", () => {
-    const result = parseMessages({
+  it("parses a text+image content array into message + images", async () => {
+    const result = await parseMessages({
       messages: [
         {
           role: "user",
@@ -73,8 +76,8 @@ describe("parseMessages — images", () => {
     ]);
   });
 
-  it("accepts an image-only message (no text part) and a valid PNG", () => {
-    const result = parseMessages({
+  it("accepts an image-only message (no text part) and a valid PNG", async () => {
+    const result = await parseMessages({
       messages: [{ role: "user", content: [imagePart("image/png", PNG_BYTES)] }],
     });
 
@@ -83,42 +86,62 @@ describe("parseMessages — images", () => {
     ]);
   });
 
-  it("rejects an image whose real (magic-byte) format is WebP, regardless of the declared MIME type", () => {
-    const result = parseMessages({
-      messages: [{ role: "user", content: [imagePart("image/png", WEBP_BYTES)] }],
+  it("transcodes a real WebP image to PNG and accepts it, regardless of the declared MIME type", async () => {
+    const webpBytes = await sharp({
+      create: { width: 2, height: 2, channels: 3, background: { r: 10, g: 20, b: 30 } },
+    })
+      .webp()
+      .toBuffer();
+
+    const result = await parseMessages({
+      messages: [{ role: "user", content: [imagePart("image/png", webpBytes)] }],
     });
 
-    expect(result).toBeUndefined();
+    expect(result).toHaveLength(1);
+    const [image] = result![0].images!;
+    expect(image.mimeType).toBe("image/png");
+    expect(image.data.subarray(0, 8)).toEqual(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    );
+    await expect(sharp(image.data).metadata()).resolves.toMatchObject({ format: "png" });
   });
 
-  it("rejects bytes that don't match any recognized image signature", () => {
-    const result = parseMessages({
+  it("rejects bytes that don't match any recognized image signature", async () => {
+    const result = await parseMessages({
       messages: [{ role: "user", content: [imagePart("image/jpeg", Buffer.from([0x00, 0x01, 0x02]))] }],
     });
 
     expect(result).toBeUndefined();
   });
 
-  it("rejects image_url parts on a non-user role", () => {
-    const result = parseMessages({
+  it("rejects WebP bytes with a truncated/corrupt body that fails to transcode", async () => {
+    const result = await parseMessages({
+      messages: [{ role: "user", content: [imagePart("image/png", WEBP_BYTES)] }],
+    });
+
+    expect(result).toBeUndefined();
+  });
+
+  it("rejects image_url parts on a non-user role", async () => {
+    const result = await parseMessages({
       messages: [{ role: "assistant", content: [imagePart("image/jpeg", JPEG_BYTES)] }],
     });
 
     expect(result).toBeUndefined();
   });
 
-  it("rejects an image over MAX_IMAGE_BYTES", () => {
+  it("rejects an image over MAX_IMAGE_BYTES", async () => {
     const oversized = Buffer.concat([JPEG_BYTES, Buffer.alloc(MAX_IMAGE_BYTES)]);
-    const result = parseMessages({
+    const result = await parseMessages({
       messages: [{ role: "user", content: [imagePart("image/jpeg", oversized)] }],
     });
 
     expect(result).toBeUndefined();
   });
 
-  it("rejects more than MAX_IMAGES_PER_MESSAGE images", () => {
+  it("rejects more than MAX_IMAGES_PER_MESSAGE images", async () => {
     const parts = Array.from({ length: MAX_IMAGES_PER_MESSAGE + 1 }, () => imagePart("image/jpeg", JPEG_BYTES));
-    const result = parseMessages({ messages: [{ role: "user", content: parts }] });
+    const result = await parseMessages({ messages: [{ role: "user", content: parts }] });
 
     expect(result).toBeUndefined();
   });
@@ -141,31 +164,31 @@ describe("parseMessages — images", () => {
     expect(result).toBeUndefined();
   });
 
-  it("still accepts a plain string content (unchanged behavior)", () => {
-    const result = parseMessages({ messages: [{ role: "user", content: "hi" }] });
+  it("still accepts a plain string content (unchanged behavior)", async () => {
+    const result = await parseMessages({ messages: [{ role: "user", content: "hi" }] });
     expect(result).toEqual([{ role: "user", message: "hi" }]);
   });
 });
 
 describe("describeParseError", () => {
-  it("names WebP specifically as an unsupported format, regardless of the declared MIME type", () => {
-    const reason = describeParseError({
+  it("names a WebP body that fails to transcode as an unreadable image", async () => {
+    const reason = await describeParseError({
       messages: [{ role: "user", content: [imagePart("image/png", WEBP_BYTES)] }],
     });
-    expect(reason).toBe("Only JPEG or PNG images are supported");
+    expect(reason).toBe("Could not read this image");
   });
 
-  it("names the per-image size limit", () => {
+  it("names the per-image size limit", async () => {
     const oversized = Buffer.concat([JPEG_BYTES, Buffer.alloc(MAX_IMAGE_BYTES)]);
-    const reason = describeParseError({
+    const reason = await describeParseError({
       messages: [{ role: "user", content: [imagePart("image/jpeg", oversized)] }],
     });
     expect(reason).toBe(`Image is too large (max ${MAX_IMAGE_BYTES / (1024 * 1024)}MB)`);
   });
 
-  it("names the per-message image count limit", () => {
+  it("names the per-message image count limit", async () => {
     const parts = Array.from({ length: MAX_IMAGES_PER_MESSAGE + 1 }, () => imagePart("image/jpeg", JPEG_BYTES));
-    const reason = describeParseError({ messages: [{ role: "user", content: parts }] });
+    const reason = await describeParseError({ messages: [{ role: "user", content: parts }] });
     expect(reason).toBe(`You can attach up to ${MAX_IMAGES_PER_MESSAGE} images`);
   });
 
@@ -181,26 +204,26 @@ describe("describeParseError", () => {
     expect(reason).toBe("These images are too large together");
   });
 
-  it("names the role restriction on image_url parts", () => {
-    const reason = describeParseError({
+  it("names the role restriction on image_url parts", async () => {
+    const reason = await describeParseError({
       messages: [{ role: "assistant", content: [imagePart("image/jpeg", JPEG_BYTES)] }],
     });
     expect(reason).toBe("Images can only be attached to your own messages");
   });
 
-  it("falls back to the generic reason for a structurally malformed body", () => {
-    expect(describeParseError({})).toBe("invalid messages");
-    expect(describeParseError({ messages: [{ role: "user" }] })).toBe("invalid messages");
+  it("falls back to the generic reason for a structurally malformed body", async () => {
+    expect(await describeParseError({})).toBe("invalid messages");
+    expect(await describeParseError({ messages: [{ role: "user" }] })).toBe("invalid messages");
   });
 });
 
 describe("parseHistory", () => {
-  it("accepts an empty messages array (a voice turn with no prior history)", () => {
-    expect(parseHistory({ messages: [] })).toEqual([]);
+  it("accepts an empty messages array (a voice turn with no prior history)", async () => {
+    expect(await parseHistory({ messages: [] })).toEqual([]);
   });
 
-  it("parses user/assistant entries and drops system, same as parseMessages", () => {
-    const result = parseHistory({
+  it("parses user/assistant entries and drops system, same as parseMessages", async () => {
+    const result = await parseHistory({
       messages: [
         { role: "system", content: "ignored" },
         { role: "user", content: "hi" },
@@ -209,9 +232,9 @@ describe("parseHistory", () => {
     expect(result).toEqual([{ role: "user", message: "hi" }]);
   });
 
-  it("returns undefined when messages is missing or malformed", () => {
-    expect(parseHistory({})).toBeUndefined();
-    expect(parseHistory({ messages: [{ role: "user" }] })).toBeUndefined();
+  it("returns undefined when messages is missing or malformed", async () => {
+    expect(await parseHistory({})).toBeUndefined();
+    expect(await parseHistory({ messages: [{ role: "user" }] })).toBeUndefined();
   });
 });
 
@@ -340,5 +363,23 @@ describe("stream chunks", () => {
     const [finishEvent, doneEvent] = toDoneChunk(ENVELOPE).split("\n\n");
     expect(parseEvent(finishEvent).choices[0]).toMatchObject({ delta: {}, finish_reason: "stop" });
     expect(doneEvent).toBe("data: [DONE]");
+  });
+});
+
+describe("context usage", () => {
+  const CONTEXT = { usedTokens: 13200, maxTokens: 16384, exhausted: true };
+
+  it("travels as its own stream delta", () => {
+    expect(parseEvent(toContextChunk(ENVELOPE, CONTEXT)).choices[0].delta).toEqual({ context: CONTEXT });
+  });
+
+  it("rides on the voice done event when there is one", () => {
+    const [doneEvent] = toVoiceDoneChunk(ENVELOPE, { transcript: "hi", toolsUsed: [], citations: [], context: CONTEXT }).split("\n\n");
+    expect(JSON.parse(doneEvent.slice("data: ".length))).toMatchObject({ type: "done", context: CONTEXT });
+  });
+
+  it("is left out of the voice done event when nothing was measured", () => {
+    const [doneEvent] = toVoiceDoneChunk(ENVELOPE, { transcript: "hi", toolsUsed: [], citations: [] }).split("\n\n");
+    expect(JSON.parse(doneEvent.slice("data: ".length))).not.toHaveProperty("context");
   });
 });

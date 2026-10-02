@@ -6,7 +6,7 @@
 // job is: to request, and to translate what comes back into something the rest understands.
 //
 
-import type { Citation, Message } from '@/lib/chat-types'
+import type { Citation, ContextUsage, Message } from '@/lib/chat-types'
 import { CONFIG } from '@/lib/config'
 import { readSSEEvents } from '@/lib/parse-sse'
 import { readFileAsDataUrl } from '@/lib/image-attachments'
@@ -19,7 +19,7 @@ export type ContentPart =
 
 /** The "wire" format: how messages travel over the network (OpenAI style). `content` stays a plain string for text-only turns (unchanged wire shape); only a turn with images gets the content-parts array. */
 export type OpenAIMessage = { role: 'user' | 'assistant'; content: string | ContentPart[] }
-export type ChatDelta = { text?: string; tools?: string[]; citations?: Citation[] }
+export type ChatDelta = { text?: string; tools?: string[]; citations?: Citation[]; context?: ContextUsage }
 
 /**
  * Async because building an image turn's wire content means reading each
@@ -117,13 +117,15 @@ function parseChunk(json: string): ChatDelta | null {
   const text = typeof delta.content === 'string' && delta.content !== '' ? delta.content : undefined
   const tools = parseTools(delta.tools)
   const citations = parseCitations(delta.citations)
+  const context = parseContextUsage(delta.context)
 
-  if (text === undefined && tools.length === 0 && citations.length === 0) return null
+  if (text === undefined && tools.length === 0 && citations.length === 0 && context === undefined) return null
 
   return {
     text,
     tools: tools.length > 0 ? tools : undefined,
     citations: citations.length > 0 ? citations : undefined,
+    context,
   }
 }
 
@@ -147,4 +149,13 @@ export function parseCitations(value: unknown): Citation[] {
 
 function isCitation(v: unknown): v is Citation {
   return isObject(v) && typeof v.file === 'string' && (v.score === undefined || typeof v.score === 'number')
+}
+
+/** Keeps a well-formed usage, or nothing. Exported for voice-client.ts: the voice endpoint's done event carries the same object. */
+export function parseContextUsage(value: unknown): ContextUsage | undefined {
+  if (!isObject(value)) return undefined
+  const { usedTokens, maxTokens, exhausted } = value
+  return typeof usedTokens === 'number' && typeof maxTokens === 'number' && typeof exhausted === 'boolean'
+    ? { usedTokens, maxTokens, exhausted }
+    : undefined
 }

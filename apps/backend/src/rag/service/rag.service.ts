@@ -1,22 +1,25 @@
-import { DEFAULT_RAG_CONFIG } from '../../config/rag.config.js';
+import { DEFAULT_RAG_CONFIG, MAX_RETRIEVAL_QUERY_CHARS } from '../../config/rag.config.js';
 import type { EmbeddingPort, VectorStorePort } from '../domain/ports.js';
 import type { RagRetrievalConfig, RagRetrievalResult, RetrievedChunk } from '../domain/types.js';
 import { metadataRerank } from './metadataRerank.js';
+import { toRetrievalQuery } from './retrievalQuery.js';
 
 /**
  * Runtime RAG retrieval: embed -> search -> dedupe -> rerank -> cap. Knows
  * nothing about LangChain/LangGraph or how retrieved chunks get formatted
- * into a prompt - see `contextBuilder.ts` for that.
+ * into a prompt - see `contextBuilder.ts` for that. Only the first
+ * `maxQueryChars` characters of a query are embedded (`toRetrievalQuery`).
  */
 export class RagRetrievalService {
   constructor(
     private readonly embeddingPort: EmbeddingPort,
     private readonly vectorStore: VectorStorePort,
-    private readonly config: RagRetrievalConfig = DEFAULT_RAG_CONFIG
+    private readonly config: RagRetrievalConfig = DEFAULT_RAG_CONFIG,
+    private readonly maxQueryChars: number = MAX_RETRIEVAL_QUERY_CHARS
   ) {}
 
   async retrieve(query: string): Promise<RagRetrievalResult> {
-    const embedding = await this.embeddingPort.embed(query);
+    const embedding = await this.embeddingPort.embed(toRetrievalQuery(query, this.maxQueryChars));
     const results = await this.vectorStore.search(embedding, {
       topK: this.config.topK,
       minScore: this.config.minScore

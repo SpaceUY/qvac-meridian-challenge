@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { deleteSessionCache, EngineError, parseCitations, parseTools, readDeltas, type ChatDelta } from '@/lib/chat-client'
+import { deleteSessionCache, EngineError, parseCitations, parseContextUsage, parseTools, readDeltas, type ChatDelta } from '@/lib/chat-client'
 
 /** A body shaped like the backend's stream: strict chat.completion.chunk events, then [DONE]. */
 function sseBody(deltas: object[]): ReadableStream<Uint8Array> {
@@ -77,5 +77,25 @@ describe('deleteSessionCache', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"error":"nope"}', { status: 500 })))
 
     await expect(deleteSessionCache('session-1')).rejects.toBeInstanceOf(EngineError)
+  })
+})
+
+describe('context usage', () => {
+  const CONTEXT = { usedTokens: 13200, maxTokens: 16384, exhausted: true }
+
+  it('reads a context-only chunk from the stream', async () => {
+    const deltas: ChatDelta[] = []
+    for await (const delta of readDeltas(sseBody([{ context: CONTEXT }]))) deltas.push(delta)
+    expect(deltas).toEqual([{ text: undefined, tools: undefined, citations: undefined, context: CONTEXT }])
+  })
+
+  it('keeps a well-formed usage', () => {
+    expect(parseContextUsage(CONTEXT)).toEqual(CONTEXT)
+  })
+
+  it('returns undefined for anything malformed', () => {
+    expect(parseContextUsage(undefined)).toBeUndefined()
+    expect(parseContextUsage({ ...CONTEXT, usedTokens: '13200' })).toBeUndefined()
+    expect(parseContextUsage({ usedTokens: 13200, maxTokens: 16384 })).toBeUndefined()
   })
 })

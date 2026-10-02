@@ -528,3 +528,39 @@ describe("POST /v1/chat/voice-completions - stream: true", () => {
     expect(parseSseEvents(body)[0]).toMatchObject({ type: "error", error: EMPTY_TRANSCRIPT_ERROR });
   });
 });
+
+describe("POST /v1/chat/completions - context usage", () => {
+  async function streamBody(result: InvokeResult): Promise<string> {
+    const agent = new FakeAgentService();
+    agent.resolveWith = result;
+    const app = express();
+    app.use(express.json());
+    app.use("/v1/chat", createCompletionsRouter(agent as unknown as AgentService));
+    const server = app.listen(0);
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "user", content: "hello" }], stream: true }),
+      });
+      return await res.text();
+    } finally {
+      server.close();
+    }
+  }
+
+  it("sends the context usage after the citations and before [DONE]", async () => {
+    const context = { usedTokens: 13200, maxTokens: 16384, exhausted: true };
+    const body = await streamBody({ ...FAKE_INVOKE_RESULT, context });
+
+    const contextAt = body.indexOf(JSON.stringify({ context }));
+    expect(contextAt).toBeGreaterThan(body.indexOf('"citations"'));
+    expect(body.indexOf("[DONE]")).toBeGreaterThan(contextAt);
+  });
+
+  it("sends no context chunk when the agent measured nothing", async () => {
+    expect(await streamBody(FAKE_INVOKE_RESULT)).not.toContain('"context"');
+  });
+});

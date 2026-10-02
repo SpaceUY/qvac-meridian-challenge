@@ -29,6 +29,8 @@ import {
 } from "./providerHealthMonitor.js";
 import type { ProviderHealth } from "./providerHealth.js";
 import { reconcileProviderMode } from "./reconcileProviderMode.js";
+import { measureContextUsage, type ContextUsage } from "./contextBudget.js";
+import { CONTEXT_BUDGET_THRESHOLD } from "../../config/context.config.js";
 
 export type AgentStatus = "idle" | "loading" | "ready" | "error";
 
@@ -92,6 +94,8 @@ export interface InvokeResult {
   toolsUsed: string[];
   /** Source documents for `answer`, in the evaluator's `{ file, score }` shape. Empty when the answer wasn't grounded - see `selectCitations`. */
   citations: Citation[];
+  /** How full this conversation's context window is after this turn (`measureContextUsage`). Absent when the runtime reported no token stats. */
+  context?: ContextUsage;
 }
 
 /**
@@ -420,12 +424,19 @@ export class AgentService {
       ),
     ];
 
+    const context = measureContextUsage(
+      finalState?.completionStats,
+      this.chatSession.contextWindowTokens,
+      CONTEXT_BUDGET_THRESHOLD,
+    );
+
     return {
       answer,
       thinkingText: typeof thinkingText === "string" ? thinkingText : undefined,
       chunks,
       toolsUsed,
       citations: selectCitations(answer, chunks),
+      ...(context ? { context } : {}),
     };
   }
 }

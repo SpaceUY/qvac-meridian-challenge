@@ -32,7 +32,7 @@ describe("buildLlmNode guard (graph.ts)", () => {
         hasEvidence: false,
         hasVisualInput: true,
         temperature: undefined,
-        seed: undefined, sessionId: undefined, requestId: undefined,
+        seed: undefined, sessionId: undefined, requestId: undefined, completionStats: undefined,
       },
       {},
     )) as { messages: AIMessage[] };
@@ -56,7 +56,7 @@ describe("buildLlmNode guard (graph.ts)", () => {
         hasEvidence: true,
         hasVisualInput: true,
         temperature: undefined,
-        seed: undefined, sessionId: undefined, requestId: undefined,
+        seed: undefined, sessionId: undefined, requestId: undefined, completionStats: undefined,
       },
       {},
     )) as { messages: AIMessage[] };
@@ -77,11 +77,39 @@ describe("buildLlmNode guard (graph.ts)", () => {
         hasEvidence: false,
         hasVisualInput: false,
         temperature: undefined,
-        seed: undefined, sessionId: undefined, requestId: undefined,
+        seed: undefined, sessionId: undefined, requestId: undefined, completionStats: undefined,
       },
       {},
     )) as { messages: AIMessage[] };
 
     expect(update.messages[0].text).toBe(INSUFFICIENT_CONTEXT_MESSAGE);
+  });
+
+  it("records the model call's token counters, even when the guard replaces the reply", async () => {
+    const stats = { cacheTokens: 900, promptTokens: 700, generatedTokens: 20 };
+    const model = fakeModelWithResponse(
+      new AIMessageChunk({
+        content: "I'd guess.",
+        response_metadata: { stats },
+      }),
+    );
+    const node = buildLlmNode([], model);
+
+    const update = (await node(
+      {
+        messages: [new HumanMessage("anything")],
+        chunks: [],
+        hasEvidence: false,
+        hasVisualInput: false,
+        temperature: undefined,
+        seed: undefined,
+        sessionId: undefined,
+        completionStats: undefined,
+      },
+      {},
+    )) as { messages: AIMessage[]; completionStats?: unknown };
+
+    expect(update.messages[0].text).toBe(INSUFFICIENT_CONTEXT_MESSAGE);
+    expect(update.completionStats).toEqual(stats);
   });
 });

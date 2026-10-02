@@ -16,6 +16,7 @@ import { ChatQVAC } from "@space-uy/qvac-langgraph";
 import { buildGroundedContext } from "../../rag/service/contextBuilder.js";
 import { isCancellationError } from "../../models/domain/errors.js";
 import { State } from "./domain.js";
+import { readCompletionStats } from "./completionStats.js";
 import {
   GROUNDING_INSTRUCTIONS,
   INSUFFICIENT_CONTEXT_MESSAGE,
@@ -108,14 +109,21 @@ export function buildLlmNode(
       },
     );
 
+    // Measured before the guard below may discard the reply: the call
+    // filled the session's KV cache either way.
+    const completionStats = readCompletionStats(response);
+
     // Guard against hallucinated/refused answers: if this turn never called a
     // tool and retrieval found no supporting evidence, don't trust freeform
     // model text — fall back to the fixed insufficient-context message.
     if (guardMayReplace && !response.tool_calls?.length) {
-      return { messages: [new AIMessage(INSUFFICIENT_CONTEXT_MESSAGE)] };
+      return {
+        messages: [new AIMessage(INSUFFICIENT_CONTEXT_MESSAGE)],
+        completionStats,
+      };
     }
 
-    return { messages: [response] };
+    return { messages: [response], completionStats };
   };
 }
 

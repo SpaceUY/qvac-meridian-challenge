@@ -20,7 +20,7 @@ import {
 } from "./ragGraph.const.js";
 
 describe("routeOnEvidence", () => {
-  const BASE_STATE = { temperature: undefined, seed: undefined, sessionId: undefined, requestId: undefined };
+  const BASE_STATE = { temperature: undefined, seed: undefined, sessionId: undefined, requestId: undefined, completionStats: undefined };
 
   it("routes to insufficientContext when hasEvidence is false", () => {
     expect(
@@ -71,7 +71,7 @@ describe("routeOnEvidence", () => {
 describe("insufficientContextNode", () => {
   it("returns the fixed insufficient-context message without calling any model", async () => {
     const update = (await insufficientContextNode(
-      { temperature: undefined, seed: undefined, sessionId: undefined, requestId: undefined, messages: [], chunks: [], hasEvidence: false, hasVisualInput: false },
+      { temperature: undefined, seed: undefined, sessionId: undefined, requestId: undefined, completionStats: undefined, messages: [], chunks: [], hasEvidence: false, hasVisualInput: false },
       {},
     )) as {
       messages: AIMessage[];
@@ -100,7 +100,7 @@ describe("buildRetrieveNode", () => {
         hasEvidence: false,
         hasVisualInput: false,
         temperature: undefined,
-        seed: undefined, sessionId: undefined, requestId: undefined,
+        seed: undefined, sessionId: undefined, requestId: undefined, completionStats: undefined,
       },
       {},
     );
@@ -119,7 +119,7 @@ describe("buildRetrieveNode", () => {
 
     const node = buildRetrieveNode(ragService);
     const update = await node(
-      { messages: [], chunks: [], hasEvidence: false, hasVisualInput: false, temperature: undefined, seed: undefined, sessionId: undefined, requestId: undefined },
+      { messages: [], chunks: [], hasEvidence: false, hasVisualInput: false, temperature: undefined, seed: undefined, sessionId: undefined, requestId: undefined, completionStats: undefined },
       {},
     );
 
@@ -152,7 +152,7 @@ describe("buildRetrieveNode", () => {
         hasEvidence: false,
         hasVisualInput: false,
         temperature: undefined,
-        seed: undefined, sessionId: undefined, requestId: undefined,
+        seed: undefined, sessionId: undefined, requestId: undefined, completionStats: undefined,
       },
       {},
     );
@@ -190,7 +190,7 @@ describe("buildRetrieveNode", () => {
         hasEvidence: false,
         hasVisualInput: false,
         temperature: undefined,
-        seed: undefined, sessionId: undefined, requestId: undefined,
+        seed: undefined, sessionId: undefined, requestId: undefined, completionStats: undefined,
       },
       {},
     );
@@ -224,7 +224,7 @@ describe("buildLlmNode", () => {
         hasEvidence: true,
         hasVisualInput: false,
         temperature: undefined,
-        seed: undefined, sessionId: undefined, requestId: undefined,
+        seed: undefined, sessionId: undefined, requestId: undefined, completionStats: undefined,
       },
       {},
     )) as {

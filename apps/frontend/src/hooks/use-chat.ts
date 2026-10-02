@@ -44,7 +44,8 @@ export function useChat() {
       const text = rawText.trim()
       const store = useChatStore.getState()
       // activeTurn doubles as the guard: no new question while the previous one is still arriving.
-      if ((!text && images.length === 0) || store.activeTurn) return
+      // contextExhausted: this conversation is full - only New chat continues (the composer is disabled too).
+      if ((!text && images.length === 0) || store.activeTurn || store.contextExhausted) return
 
       const userMessageId = crypto.randomUUID()
       const assistantMessageId = crypto.randomUUID()
@@ -92,6 +93,9 @@ async function runTurn({ history, sessionId, userMessageId, assistantMessageId, 
       }
       if (delta.citations !== undefined) {
         useChatStore.getState().citationsReceived(assistantMessageId, delta.citations)
+      }
+      if (delta.context !== undefined) {
+        useChatStore.getState().contextUsageReceived(delta.context)
       }
     }
     buffer.flush()

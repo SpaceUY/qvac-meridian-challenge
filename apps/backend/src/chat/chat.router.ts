@@ -14,6 +14,7 @@ import {
   toRoleChunk,
   toTextChunk,
   toCitationsChunk,
+  toContextChunk,
   toToolsChunk,
   toDoneChunk,
   toVoiceAudioChunk,
@@ -94,9 +95,9 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
   const router = Router();
 
   router.post("/completions", async (req: Request, res: Response) => {
-    const messages = parseMessages(req.body);
+    const messages = await parseMessages(req.body);
     if (!messages) {
-      res.status(400).json({ error: describeParseError(req.body) });
+      res.status(400).json({ error: await describeParseError(req.body) });
       return;
     }
     if (agent.getStatus().status !== "ready") {
@@ -156,6 +157,10 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
       // Last, once the answer is final: whether to cite at all depends on
       // what the model said (see selectCitations).
       res.write(toCitationsChunk(envelope, result.citations));
+      // After citations, before the closing chunk: how full this
+      // conversation is now. The client stops taking new messages in it
+      // once `exhausted` - see contextBudget.ts.
+      if (result.context) res.write(toContextChunk(envelope, result.context));
     } catch (err) {
       console.error("[chat:completions]", err);
       if (!res.writableEnded && !res.destroyed) res.write(toTextChunk(envelope, COMPLETION_ERROR));
@@ -185,9 +190,9 @@ export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatu
   const router = Router();
 
   router.post("/voice-completions", async (req: Request, res: Response) => {
-    const history = parseHistory(req.body);
+    const history = await parseHistory(req.body);
     if (!history) {
-      res.status(400).json({ error: describeParseError(req.body) });
+      res.status(400).json({ error: await describeParseError(req.body) });
       return;
     }
     const audio = parseAudioBase64(req.body);
@@ -238,7 +243,7 @@ export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatu
           }),
         );
       });
-      res.write(toVoiceDoneChunk(envelope, { transcript: result.transcript, toolsUsed: result.toolsUsed, citations: result.citations }));
+      res.write(toVoiceDoneChunk(envelope, { transcript: result.transcript, toolsUsed: result.toolsUsed, citations: result.citations, context: result.context }));
     } catch (err) {
       if (err instanceof EmptyTranscriptError) {
         res.write(toVoiceErrorChunk(envelope, EMPTY_TRANSCRIPT_ERROR));

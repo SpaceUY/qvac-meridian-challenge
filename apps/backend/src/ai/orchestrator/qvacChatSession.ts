@@ -333,6 +333,11 @@ export class QvacChatSession {
     return this.delegationInfo;
   }
 
+  /** The context window, in tokens, the chat model is loaded with - the same `ctxSize` `startLoad()` passes to `loadModel`, so the context budget measures against what the model really has. */
+  get contextWindowTokens(): number {
+    return this.ctxSize;
+  }
+
   /**
    * Synchronous snapshot of the last `getDelegationInfo()` result. Exists
    * so a host's status endpoint - itself synchronous, if it's polled by a

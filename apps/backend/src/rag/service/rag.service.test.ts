@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DocumentType } from '../../document/domain/document.model.js';
 import type { EmbeddingPort, VectorStorePort } from '../domain/ports.js';
 import type { RetrievedChunk } from '../domain/types.js';
+import { MAX_RETRIEVAL_QUERY_CHARS } from '../../config/rag.config.js';
 import { RagRetrievalService } from './rag.service.js';
 
 class FakeEmbedding implements EmbeddingPort {
@@ -165,5 +166,37 @@ describe('RagRetrievalService', () => {
     const result = await service.retrieve('a query with no matches');
 
     expect(result).toEqual({ chunks: [], hasEvidence: false });
+  });
+});
+
+/** Records every text it is asked to embed. */
+class RecordingEmbedding extends FakeEmbedding {
+  readonly embedded: string[] = [];
+
+  async embed(text: string): Promise<number[]> {
+    this.embedded.push(text);
+    return [1];
+  }
+}
+
+const SIZING = { topK: 5, minScore: 0.5, maxContextChunks: 5, dedupeExactContent: true };
+
+describe('RagRetrievalService - query length', () => {
+  it('embeds at most maxQueryChars characters of the query', async () => {
+    const embedding = new RecordingEmbedding();
+    const service = new RagRetrievalService(embedding, new FakeVectorStore([]), SIZING, 10);
+
+    await service.retrieve('0123456789-tail that must not be embedded');
+
+    expect(embedding.embedded).toEqual(['0123456789']);
+  });
+
+  it('defaults to MAX_RETRIEVAL_QUERY_CHARS', async () => {
+    const embedding = new RecordingEmbedding();
+    const service = new RagRetrievalService(embedding, new FakeVectorStore([]), SIZING);
+
+    await service.retrieve('x'.repeat(MAX_RETRIEVAL_QUERY_CHARS + 500));
+
+    expect(embedding.embedded[0]).toHaveLength(MAX_RETRIEVAL_QUERY_CHARS);
   });
 });
