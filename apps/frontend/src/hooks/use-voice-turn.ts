@@ -3,9 +3,9 @@
 // Orchestrates a voice turn: record -> stop -> send -> stream into the chat
 // store. Sibling of use-chat.ts in shape (only state + refs + lifecycle -
 // the real logic lives in mic-recorder.ts and voice-client.ts) - and, once
-// the request is under way, IS effectively a text turn: 'processing' only
-// covers encoding the recording and starting the request, exactly as long
-// as it takes for the response headers to arrive. From there the answer
+// the recording is stopped, IS effectively a text turn: 'processing' only
+// covers turning the recording into a WAV. From there the message pair is
+// in history (thinking-dots right away) and the answer
 // streams into the same `history`/`isStreaming` machinery useChat uses, so
 // MessageList's thinking-dots/cursor and the Composer's Stop button work
 // for a voice turn with no changes there.
@@ -98,10 +98,10 @@ export function useVoiceTurn() {
     const userMessageId = crypto.randomUUID()
     const assistantMessageId = crypto.randomUUID()
     // Only true once a message pair actually exists in history - before
-    // that, a failure is a pre-flight problem (bad audio, model not ready)
-    // shown in the composer's own error banner, same as today. After that
-    // point, a failure belongs to the message itself (responseFailed),
-    // exactly like a text turn's.
+    // that, a failure (the WAV encoding) is shown in the composer's own
+    // error banner. After that point - request included, so "model not
+    // ready" too - a failure belongs to the message itself
+    // (responseFailed), exactly like a text turn's.
     let turnStarted = false
 
     try {
@@ -115,15 +115,16 @@ export function useVoiceTurn() {
         return
       }
 
-      const audioBase64 = await blobToBase64(blob)
-      const messages = await toOpenAIMessages(useChatStore.getState().history)
-      const body = await requestVoiceCompletion({ messages, audioBase64, signal: controller.signal })
+      // Read before voiceTurnStarted: the request must carry the conversation
+      // as it was, not the empty pair this turn is about to add.
+      const priorHistory = useChatStore.getState().history
 
-      if (useChatStore.getState().sessionId !== sessionId) {
-        if (mountedRef.current) setPhase({ type: 'idle' })
-        return
-      }
-
+      // The message pair goes in now, before any network call - same moment
+      // a text turn creates its own. Waiting for the response headers left
+      // the chat with no thinking-dots for the whole STT + generation wait:
+      // a proxy in between (Vite's, in dev) only forwards the headers
+      // together with the first SSE event, i.e. once the first sentence is
+      // already synthesized.
       turnStarted = true
       useChatStore.getState().voiceTurnStarted(userMessageId, assistantMessageId)
       useChatStore.getState().activeTurnStarted(controller)
@@ -131,6 +132,12 @@ export function useVoiceTurn() {
       // state (MessageList's own cursor/thinking-dots), same as a text
       // turn - 'processing' has done its job.
       if (mountedRef.current) setPhase({ type: 'idle' })
+
+      const audioBase64 = await blobToBase64(blob)
+      const messages = await toOpenAIMessages(priorHistory)
+      const body = await requestVoiceCompletion({ messages, audioBase64, signal: controller.signal })
+
+      if (useChatStore.getState().sessionId !== sessionId) return // New chat while the request was going out: this turn's messages are already gone
 
       for await (const delta of readVoiceDeltas(body)) {
         if (useChatStore.getState().sessionId !== sessionId) return // New chat mid-stream: this turn's messages are already gone
@@ -204,8 +211,9 @@ export function useVoiceTurn() {
 }
 
 /**
- * Only used for pre-flight failures (before `turnStarted`): bad audio/model
- * not ready. "No speech detected" is no longer one of these - once
+ * Failures of the request itself (bad audio, model not ready, network),
+ * shown under the assistant message. "No speech detected" is not one of
+ * these - once
  * streaming, headers are already committed by the time that's known, so it
  * arrives as a `type: 'error'` SSE delta instead (see stopAndSend's loop),
  * carrying its own human-readable reason straight from the backend.
