@@ -17,12 +17,23 @@ import type { ModelSource } from "../models/domain/types.js";
 import type { ResourceTier } from "./resourceTier.js";
 
 /** Builds a registry `ModelSource` from a `@qvac/sdk` catalog entry - dedupes the per-tier entries below. */
-function toRegistrySource(entry: { registryPath: string; registrySource: string }, modelType: string): ModelSource {
-  return { kind: "registry", registryPath: entry.registryPath, registrySource: entry.registrySource, modelType };
+function toRegistrySource(
+  entry: { registryPath: string; registrySource: string },
+  modelType: string,
+): ModelSource {
+  return {
+    kind: "registry",
+    registryPath: entry.registryPath,
+    registrySource: entry.registrySource,
+    modelType,
+  };
 }
 
 /** Applies `fn` to each tier of a per-tier catalog map, keeping the same tiers - lets WHISPER_MODELS_BY_TIER/WHISPER_MODEL_NAMES_BY_TIER (and their TTS counterparts) both derive from one tier->catalog-entry mapping instead of repeating it. */
-function mapTiers<T, R>(byTier: Record<ResourceTier, T>, fn: (entry: T) => R): Record<ResourceTier, R> {
+function mapTiers<T, R>(
+  byTier: Record<ResourceTier, T>,
+  fn: (entry: T) => R,
+): Record<ResourceTier, R> {
   return {
     low: fn(byTier.low),
     medium: fn(byTier.medium),
@@ -115,10 +126,13 @@ export const TURBOQUANT_KV_CACHE_ENGINE_CONFIG: Record<string, string> = {
 export function resolveEngineConfig(
   config: AgentModelConfig,
 ): Record<string, unknown> | undefined {
-  const kvCacheConfig = config.kvCacheQuantEnabled ? TURBOQUANT_KV_CACHE_ENGINE_CONFIG : undefined;
-  const parallelConfig = config.maxConcurrency && config.maxConcurrency > 1
-    ? { parallel: config.maxConcurrency }
+  const kvCacheConfig = config.kvCacheQuantEnabled
+    ? TURBOQUANT_KV_CACHE_ENGINE_CONFIG
     : undefined;
+  const parallelConfig =
+    config.maxConcurrency && config.maxConcurrency > 1
+      ? { parallel: config.maxConcurrency }
+      : undefined;
   if (!kvCacheConfig && !parallelConfig) return config.engineConfig;
   return { ...config.engineConfig, ...kvCacheConfig, ...parallelConfig };
 }
@@ -156,7 +170,7 @@ export const LLM_MODELS_BY_TIER: Record<ResourceTier, AgentModelConfig> = {
     // Default ctxSize (4096) is too small to fit the full corpus context alongside the system prompt and reply.
     ctxSize: 16384,
     engineConfig: {
-      projectionModelSrc: MMPROJ_QWEN3VL_2B_MULTIMODAL_Q4_K.src
+      projectionModelSrc: MMPROJ_QWEN3VL_2B_MULTIMODAL_Q4_K.src,
     },
     kvCacheEnabled: true,
     // kvCacheQuantEnabled: true,
@@ -168,7 +182,7 @@ export const LLM_MODELS_BY_TIER: Record<ResourceTier, AgentModelConfig> = {
     temperature: 0,
     ctxSize: 16384,
     engineConfig: {
-      projectionModelSrc: MMPROJ_QWEN3_5_9B_MULTIMODAL_F16.src
+      projectionModelSrc: MMPROJ_QWEN3_5_9B_MULTIMODAL_F16.src,
     },
     modelName: QWEN3_5_9B_MULTIMODAL_Q4_K_M.name,
     quantization: QWEN3_5_9B_MULTIMODAL_Q4_K_M.quantization,
@@ -178,7 +192,7 @@ export const LLM_MODELS_BY_TIER: Record<ResourceTier, AgentModelConfig> = {
     temperature: 0,
     ctxSize: 16384,
     engineConfig: {
-      projectionModelSrc: MMPROJ_QWEN3_6_35B_A3B_MULTIMODAL_F16.src
+      projectionModelSrc: MMPROJ_QWEN3_6_35B_A3B_MULTIMODAL_F16.src,
     },
     modelName: QWEN3_6_35B_A3B_MULTIMODAL_Q4_K_M.name,
     quantization: QWEN3_6_35B_A3B_MULTIMODAL_Q4_K_M.quantization,
@@ -293,18 +307,23 @@ export const SILERO_VAD_MODEL_SRC = VAD_SILERO_5_1_2.src;
 export const WHISPER_MODEL_TYPE = "whispercpp-transcription";
 
 /** Whisper catalog entry per resource tier - the single source of truth WHISPER_MODELS_BY_TIER and WHISPER_MODEL_NAMES_BY_TIER both derive from, sized for each tier's RAM/VRAM profile. */
-const WHISPER_CATALOG_BY_TIER: Record<ResourceTier, { registryPath: string; registrySource: string; name: string }> = {
+const WHISPER_CATALOG_BY_TIER: Record<
+  ResourceTier,
+  { registryPath: string; registrySource: string; name: string }
+> = {
   low: WHISPER_TINY_Q8_0,
   medium: WHISPER_SMALL_Q8_0,
   high: WHISPER_LARGE_V3_TURBO,
 };
 
-export const WHISPER_MODELS_BY_TIER: Record<ResourceTier, ModelSource> = mapTiers(WHISPER_CATALOG_BY_TIER, (entry) =>
-  toRegistrySource(entry, WHISPER_MODEL_TYPE),
-);
+export const WHISPER_MODELS_BY_TIER: Record<ResourceTier, ModelSource> =
+  mapTiers(WHISPER_CATALOG_BY_TIER, (entry) =>
+    toRegistrySource(entry, WHISPER_MODEL_TYPE),
+  );
 
 /** Display name of the Whisper model resolved per tier - kept separate so a display-only consumer (the engine panel) doesn't need to unpack a ModelSource to show a name. */
-export const WHISPER_MODEL_NAMES_BY_TIER: Record<ResourceTier, string> = mapTiers(WHISPER_CATALOG_BY_TIER, (entry) => entry.name);
+export const WHISPER_MODEL_NAMES_BY_TIER: Record<ResourceTier, string> =
+  mapTiers(WHISPER_CATALOG_BY_TIER, (entry) => entry.name);
 
 /**
  * `detect_language` enables EN/ES (and other) auto-detection. `vadModelSrc`
@@ -333,18 +352,25 @@ export const TTS_MODEL_TYPE = "tts-ggml";
  * Q8_0 for `high` is evaluated separately once its quality/latency
  * tradeoff is measured.
  */
-const TTS_CATALOG_BY_TIER: Record<ResourceTier, { registryPath: string; registrySource: string; name: string }> = {
+const TTS_CATALOG_BY_TIER: Record<
+  ResourceTier,
+  { registryPath: string; registrySource: string; name: string }
+> = {
   low: TTS_MULTILINGUAL_SUPERTONIC2_Q4_0,
   medium: TTS_MULTILINGUAL_SUPERTONIC3_Q4_0,
   high: TTS_MULTILINGUAL_SUPERTONIC3_Q4_0,
 };
 
-export const TTS_MODELS_BY_TIER: Record<ResourceTier, ModelSource> = mapTiers(TTS_CATALOG_BY_TIER, (entry) =>
-  toRegistrySource(entry, TTS_MODEL_TYPE),
+export const TTS_MODELS_BY_TIER: Record<ResourceTier, ModelSource> = mapTiers(
+  TTS_CATALOG_BY_TIER,
+  (entry) => toRegistrySource(entry, TTS_MODEL_TYPE),
 );
 
 /** Display name of the TTS model resolved per tier - kept separate for the same display-only reason as WHISPER_MODEL_NAMES_BY_TIER. */
-export const TTS_MODEL_NAMES_BY_TIER: Record<ResourceTier, string> = mapTiers(TTS_CATALOG_BY_TIER, (entry) => entry.name);
+export const TTS_MODEL_NAMES_BY_TIER: Record<ResourceTier, string> = mapTiers(
+  TTS_CATALOG_BY_TIER,
+  (entry) => entry.name,
+);
 
 /** textToSpeech() doesn't return this - same for all Supertonic versions per @qvac/tts-ggml. */
 export const SUPERTONIC_SAMPLE_RATE = 44100;

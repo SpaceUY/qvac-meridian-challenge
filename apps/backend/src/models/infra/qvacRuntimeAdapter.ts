@@ -42,6 +42,7 @@ import type {
 } from "../domain/types.js";
 import { DEFAULT_MODEL_TYPE } from "../../config/models.config.js";
 import { toSdkModelConfig } from "./loadModelConfig.js";
+import { MAX_REPLY_TOKENS, REPEAT_PENALTY } from "./qvacRuntimeAdapter.const.js";
 
 const EXTENSION_BY_MIME_TYPE: Record<SupportedImageMimeType, string> = {
   "image/jpeg": "jpg",
@@ -226,10 +227,12 @@ export class QvacRuntimeAdapter
       captureThinking: true,
       stream: Boolean(onToken),
       kvCache: request.kvCacheEnabled === false ? false : request.sessionId ?? true,
-      generationParams:
-        request.temperature !== undefined || request.seed !== undefined
-          ? { temp: request.temperature, seed: request.seed }
-          : undefined,
+      generationParams: {
+        ...(request.temperature !== undefined ? { temp: request.temperature } : {}),
+        ...(request.seed !== undefined ? { seed: request.seed } : {}),
+        repeat_penalty: REPEAT_PENALTY,
+        predict: MAX_REPLY_TOKENS,
+      },
     });
     const requestId = run.requestId;
 

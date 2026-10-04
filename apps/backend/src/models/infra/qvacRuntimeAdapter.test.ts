@@ -36,6 +36,7 @@ vi.mock("@qvac/sdk", async (importOriginal) => {
 
 const { QvacRuntimeAdapter } = await import("./qvacRuntimeAdapter.js");
 const { SDK_SERVER_ERROR_CODES } = await import("@qvac/sdk");
+const { REPEAT_PENALTY, MAX_REPLY_TOKENS } = await import("./qvacRuntimeAdapter.const.js");
 
 describe("QvacRuntimeAdapter.load", () => {
   it("translates a cancelled load's generic RPC error into OperationCancelledError, not a genuine failure", async () => {
@@ -163,7 +164,29 @@ describe("QvacRuntimeAdapter.chatComplete", () => {
 
     expect(completionMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        generationParams: { temp: 0.3, seed: 7 },
+        generationParams: {
+          temp: 0.3,
+          seed: 7,
+          repeat_penalty: REPEAT_PENALTY,
+          predict: MAX_REPLY_TOKENS,
+        },
+      }),
+    );
+  });
+
+  it("always guards against runaway repetition, even without a temperature or seed", () => {
+    completionMock.mockReturnValue({
+      requestId: "req-5b",
+      events: (async function* () {})(),
+      final: Promise.resolve({ contentText: "hi", toolCalls: [], thinkingText: "" }),
+    });
+
+    const adapter = new QvacRuntimeAdapter();
+    adapter.chatComplete("model-1", { history: [{ role: "user", content: "hi" }] });
+
+    expect(completionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generationParams: { repeat_penalty: REPEAT_PENALTY, predict: MAX_REPLY_TOKENS },
       }),
     );
   });
