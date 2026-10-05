@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { isCancellationError, ModelManagementError, OperationCancelledError } from "../../models/domain/errors.js";
 import { ModelManagementService } from "../../models/service/models.service.js";
 import type {
@@ -920,5 +920,45 @@ describe("AgentService.invoke - context budget", () => {
     const { result } = await askOnce(await buildAgent(runtime, ALWAYS_EVIDENCE_CONFIG), "What's the warranty?");
 
     expect(result.context).toBeUndefined();
+  });
+});
+
+/** FakeDocumentRepository whose findAll() - what list_documents runs - hangs until release(): a cancel can land while the tool runs, between two LLM calls. */
+class GatedDocumentRepository extends FakeDocumentRepository {
+  findAllCalls = 0;
+  private open?: () => void;
+
+  override async findAll(): Promise<ArchitectureDocument[]> {
+    this.findAllCalls += 1;
+    await new Promise<void>((resolve) => {
+      this.open = resolve;
+    });
+    return super.findAll();
+  }
+
+  release(): void {
+    this.open?.();
+  }
+}
+
+describe("AgentService.cancel between LLM calls", () => {
+  it("rejects the invoke and starts no further LLM call when cancelled while a tool runs", async () => {
+    const runtime = new FakeModelRuntime([
+      { text: "", toolCalls: [{ id: "call_1", name: "list_documents", arguments: {} }] },
+      { text: "The answer nobody asked for anymore.", toolCalls: [] },
+    ]);
+    const embeddingPort = new StubEmbeddingPort();
+    const ragService = new RagRetrievalService(embeddingPort, await buildFixtureVectorStore(embeddingPort));
+    const repository = new GatedDocumentRepository(FAKE_DOCUMENTS);
+    const agentService = new AgentService(new ModelManagementService(runtime, runtime), ragService, repository);
+
+    const pending = agentService.invoke([{ role: "user", message: "Which documents do you have?" }]);
+    await vi.waitFor(() => expect(repository.findAllCalls).toBe(1));
+    await agentService.cancel(pending.requestId);
+    repository.release();
+
+    const error = await pending.catch((err: unknown) => err);
+    expect(isCancellationError(error)).toBe(true);
+    expect(runtime.chatRequests).toHaveLength(1);
   });
 });

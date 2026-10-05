@@ -10,7 +10,7 @@ import { State, type GenerationOptions } from "./domain.js";
 import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
 import type { ModelManagementService } from "../../models/service/models.service.js";
 import type { SupportedImageMimeType } from "../../models/domain/types.js";
-import { isCancellationError } from "../../models/domain/errors.js";
+import { isCancellationError, ModelManagementError, OperationCancelledError } from "../../models/domain/errors.js";
 import type { LoadedModelDelegationInfo } from "../../models/domain/types.js";
 import {
   LLM_MODELS_BY_TIER,
@@ -116,6 +116,13 @@ export class AgentService {
   //private readonly corpusContext: Promise<string>;
   /** `requestId`s of `invoke()` calls still in flight - lets `cancel()` reject an unknown/already-settled `requestId` as a safe no-op. */
   private readonly pendingRequests = new Set<string>();
+  /**
+   * `requestId`s that `cancel()` reached while still pending. An invoke
+   * makes several LLM calls (tool call, then answer); a cancel that lands
+   * between them finds no call to stop, so this is what keeps the next one
+   * from starting. Cleared when the invoke settles.
+   */
+  private readonly cancelledRequests = new Set<string>();
   /** Only set when a delegate is configured, once `preload()` has succeeded; see `startHealthMonitor()`. */
   private healthMonitor?: ProviderHealthMonitor;
   /** Set once a proactive switch back to the provider has been attempted. Cleared when the provider's health calls for local again, and whenever a check observes the model running on the provider - so a provider that answers heartbeats but cannot serve the model gets one attempt per down->up transition instead of a reload every tick, while a model that later drifts off the provider still gets a fresh attempt. */
@@ -144,7 +151,15 @@ export class AgentService {
       maxConcurrency,
     });
     this.chatModel = new ChatQVAC({
-      complete: this.chatSession.complete,
+      complete: (request, onToken) => {
+        // A cancelled invoke never starts another LLM call (see cancelledRequests).
+        if (request.requestId && this.cancelledRequests.has(request.requestId)) {
+          return Promise.reject(
+            new ModelManagementError("cancel", "Operation cancelled", new OperationCancelledError(request.requestId)),
+          );
+        }
+        return this.chatSession.complete(request, onToken);
+      },
       temperature,
     });
     this.graph = createGraph(this.chatModel, ragService, documentRepository);
@@ -335,6 +350,7 @@ export class AgentService {
 
     const result = this.runInvoke(messages, options, requestId, onToken).finally(() => {
       this.pendingRequests.delete(requestId);
+      this.cancelledRequests.delete(requestId);
     });
     return Object.assign(result, { requestId });
   }
@@ -355,6 +371,7 @@ export class AgentService {
    */
   async cancel(requestId: string): Promise<void> {
     if (!this.pendingRequests.has(requestId)) return;
+    this.cancelledRequests.add(requestId);
     await this.chatSession.cancelActive(requestId);
   }
 
