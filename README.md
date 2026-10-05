@@ -225,19 +225,40 @@
 <p align="center">
   <img
     src="docs/assets/architecture.svg"
-    alt="Meridian Assistant architecture"
+    alt="Meridian Assistant real runtime architecture: Express, AgentService, LangGraph, ChatQVAC, QvacChatSession, voice, and P2P delegation"
     width="900"
   />
+</p>
+
+<p>
+  One <code>AgentService</code>, one compiled LangGraph graph, one QVAC model session —
+  text and voice both run through the exact same pipeline, not two parallel ones.
 </p>
 
 <table>
   <tr>
     <td><strong>Express routers</strong></td>
-    <td>Parse and validate HTTP requests</td>
+    <td>Parse, validate, stream SSE, cancel on client disconnect</td>
   </tr>
   <tr>
-    <td><strong>AgentService / LangGraph</strong></td>
-    <td>Retrieval, tools, inference, and citation orchestration</td>
+    <td><strong>AgentService</strong></td>
+    <td>Singleton orchestrator; shared by the text and voice routes</td>
+  </tr>
+  <tr>
+    <td><strong>LangGraph graph</strong></td>
+    <td>RAG once, then LLM ⇄ tools until no tool call remains</td>
+  </tr>
+  <tr>
+    <td><strong>ChatQVAC</strong></td>
+    <td>Our own <code>@space-uy/qvac-langgraph</code> adapter — makes QVAC look like any LangChain chat model</td>
+  </tr>
+  <tr>
+    <td><strong>QvacChatSession</strong></td>
+    <td>Model lifecycle, FIFO concurrency, delegation, mid-session recovery</td>
+  </tr>
+  <tr>
+    <td><strong>Voice wrapper</strong></td>
+    <td>Sentence-by-sentence TTS queue over the same AgentService output</td>
   </tr>
   <tr>
     <td><strong>ResilientEmbeddingService</strong></td>
@@ -248,8 +269,12 @@
     <td>Persisted local vector search</td>
   </tr>
   <tr>
-    <td><strong>ModelManagementService</strong></td>
+    <td><strong>ModelManagementService / QvacRuntimeAdapter</strong></td>
     <td>Discover → download → load → infer → unload → close</td>
+  </tr>
+  <tr>
+    <td><strong>Local model / Meridian peer</strong></td>
+    <td>Optional P2P delegated inference, automatic local fallback</td>
   </tr>
 </table>
 

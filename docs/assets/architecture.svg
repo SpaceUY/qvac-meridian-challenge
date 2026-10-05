@@ -1,0 +1,435 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 680" width="900" height="680" role="img" aria-labelledby="title desc">
+  <title id="title">Meridian Assistant — real runtime architecture</title>
+  <desc id="desc">
+    Architecture from Express through AgentService, LangGraph, ChatQVAC,
+    QvacChatSession, ModelManagementService, QvacRuntimeAdapter and QVAC SDK,
+    including RAG, voice, P2P delegation, concurrency, KV-cache and cancellation.
+  </desc>
+
+  <defs>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="1.8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#475569"/>
+    </marker>
+
+    <marker id="arrowAccent" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#18b480"/>
+    </marker>
+
+    <style>
+      text {
+        font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono",
+                     Menlo, Consolas, "Liberation Mono", monospace;
+      }
+
+      .label {
+        fill: #64748b;
+        font-size: 9px;
+        letter-spacing: 1.2px;
+      }
+
+      .body {
+        fill: #94a3b8;
+        font-size: 11px;
+      }
+
+      .small {
+        fill: #64748b;
+        font-size: 9.5px;
+      }
+
+      .title {
+        fill: #18b480;
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .box {
+        fill: none;
+        stroke: #334155;
+        stroke-width: 1.2;
+      }
+
+      .accentBox {
+        fill: none;
+        stroke: #18b480;
+        stroke-width: 1.35;
+      }
+
+      .line {
+        fill: none;
+        stroke: #475569;
+        stroke-width: 1.15;
+      }
+
+      .accentLine {
+        fill: none;
+        stroke: #18b480;
+        stroke-width: 1.35;
+      }
+
+      .dash {
+        stroke-dasharray: 5 5;
+      }
+    </style>
+  </defs>
+
+  <!-- Header -->
+  <text
+    x="450"
+    y="28"
+    text-anchor="middle"
+    fill="#94a3b8"
+    font-size="13"
+    letter-spacing="3"
+  >
+    REAL RUNTIME ARCHITECTURE
+  </text>
+
+  <text
+    x="450"
+    y="50"
+    text-anchor="middle"
+    fill="#64748b"
+    font-size="9.5"
+  >
+    one AgentService · one LangGraph · one QVAC session shared by text and voice
+  </text>
+
+  <!-- Clients -->
+  <rect x="88" y="78" width="170" height="54" rx="7" class="box"/>
+  <text x="173" y="99" text-anchor="middle" class="label">TEXT CLIENT</text>
+  <text x="173" y="119" text-anchor="middle" class="body">
+    /v1/chat/completions
+  </text>
+
+  <rect x="642" y="78" width="170" height="54" rx="7" class="box"/>
+  <text x="727" y="99" text-anchor="middle" class="label">VOICE CLIENT</text>
+  <text x="727" y="119" text-anchor="middle" class="body">
+    /v1/chat/voice-completions
+  </text>
+
+  <!-- Voice input -->
+  <rect x="650" y="153" width="154" height="48" rx="7" class="box"/>
+  <text x="727" y="173" text-anchor="middle" class="label">STT PRE-PROCESS</text>
+  <text x="727" y="191" text-anchor="middle" class="body">
+    Whisper · tier model
+  </text>
+
+  <!-- Express -->
+  <rect x="300" y="92" width="300" height="62" rx="8" class="accentBox"/>
+
+  <text
+    x="450"
+    y="116"
+    text-anchor="middle"
+    class="title"
+    filter="url(#glow)"
+  >
+    EXPRESS ROUTERS
+  </text>
+
+  <text x="450" y="138" text-anchor="middle" class="body">
+    parse · validate · SSE · disconnect cancellation
+  </text>
+
+  <!-- Client connections -->
+  <path d="M258 105 H300" class="line" marker-end="url(#arrow)"/>
+  <path d="M642 105 H600" class="line" marker-end="url(#arrow)"/>
+  <path d="M727 132 V153" class="line" marker-end="url(#arrow)"/>
+
+  <!-- AgentService -->
+  <rect x="300" y="184" width="300" height="68" rx="8" class="accentBox"/>
+
+  <text
+    x="450"
+    y="208"
+    text-anchor="middle"
+    class="title"
+    filter="url(#glow)"
+  >
+    AgentService
+  </text>
+
+  <text x="450" y="228" text-anchor="middle" class="body">
+    singleton · text + voice share this instance
+  </text>
+
+  <text x="450" y="244" text-anchor="middle" class="small">
+    requestId · temperature · seed · sessionId
+  </text>
+
+  <path
+    d="M450 154 V184"
+    class="accentLine"
+    marker-end="url(#arrowAccent)"
+  />
+
+  <path
+    d="M650 177 H620 Q600 177 600 197 H600"
+    class="line"
+    marker-end=""
+  />
+
+  <!-- LangGraph -->
+  <rect x="212" y="282" width="476" height="125" rx="9" class="accentBox"/>
+
+  <text
+    x="450"
+    y="305"
+    text-anchor="middle"
+    class="title"
+    filter="url(#glow)"
+  >
+    LANGGRAPH COMPILED GRAPH
+  </text>
+
+  <!-- START -->
+  <circle cx="262" cy="347" r="16" class="box"/>
+  <text x="262" y="351" text-anchor="middle" class="small">START</text>
+
+  <!-- RAG -->
+  <rect x="310" y="329" width="88" height="36" rx="6" class="box"/>
+  <text x="354" y="351" text-anchor="middle" class="body">RAG</text>
+
+  <!-- LLM -->
+  <rect x="440" y="329" width="92" height="36" rx="6" class="accentBox"/>
+  <text x="486" y="351" text-anchor="middle" class="body">LLM</text>
+
+  <!-- Tools -->
+  <rect x="574" y="329" width="82" height="36" rx="6" class="box"/>
+  <text x="615" y="351" text-anchor="middle" class="body">TOOLS</text>
+
+  <!-- Graph routing -->
+  <path d="M278 347 H310" class="line" marker-end="url(#arrow)"/>
+  <path d="M398 347 H440" class="line" marker-end="url(#arrow)"/>
+
+  <path
+    d="M532 340 H574"
+    class="accentLine"
+    marker-end="url(#arrowAccent)"
+  />
+
+  <path
+    d="M574 358 H532"
+    class="accentLine"
+    marker-end="url(#arrowAccent)"
+  />
+
+  <path
+    d="M486 365 V383 H532"
+    class="line"
+    marker-end="url(#arrow)"
+  />
+
+  <text x="540" y="387" class="small">END</text>
+
+  <text x="450" y="400" text-anchor="middle" class="small">
+    RAG once · LLM ⇄ tools · retry maxAttempts=2 · guarded no-evidence response
+  </text>
+
+  <path
+    d="M450 252 V282"
+    class="accentLine"
+    marker-end="url(#arrowAccent)"
+  />
+
+  <!-- RAG detail -->
+  <rect x="25" y="286" width="160" height="112" rx="8" class="box"/>
+
+  <text x="105" y="307" text-anchor="middle" class="label">RAG PATH</text>
+
+  <text x="105" y="329" text-anchor="middle" class="body">
+    embed(query)
+  </text>
+
+  <text x="105" y="348" text-anchor="middle" class="body">
+    LanceDB search
+  </text>
+
+  <text x="105" y="367" text-anchor="middle" class="body">
+    dedupe + rerank
+  </text>
+
+  <text x="105" y="386" text-anchor="middle" class="small">
+    → maxContextChunks
+  </text>
+
+  <path
+    d="M185 347 H212"
+    class="line"
+    marker-end="url(#arrow)"
+  />
+
+  <!-- Embeddings -->
+  <rect x="25" y="416" width="160" height="70" rx="8" class="box"/>
+
+  <text x="105" y="437" text-anchor="middle" class="label">
+    EMBEDDINGS
+  </text>
+
+  <text x="105" y="458" text-anchor="middle" class="body">
+    native C++ primary
+  </text>
+
+  <text x="105" y="476" text-anchor="middle" class="small">
+    QVAC SDK fallback · BGE-M3
+  </text>
+
+  <path
+    d="M105 416 V398"
+    class="line"
+    marker-end="url(#arrow)"
+  />
+
+  <!-- ChatQVAC -->
+  <rect x="250" y="430" width="400" height="60" rx="8" class="accentBox"/>
+
+  <text
+    x="450"
+    y="454"
+    text-anchor="middle"
+    class="title"
+    filter="url(#glow)"
+  >
+    ChatQVAC
+  </text>
+
+  <text x="450" y="475" text-anchor="middle" class="body">
+    LangChain chat-model adapter · bindTools · stream · invoke
+  </text>
+
+  <path
+    d="M450 405 V430"
+    class="accentLine"
+    marker-end="url(#arrowAccent)"
+  />
+
+  <!-- QvacChatSession -->
+  <rect x="260" y="520" width="380" height="80" rx="9" class="accentBox"/>
+
+  <text
+    x="450"
+    y="544"
+    text-anchor="middle"
+    class="title"
+    filter="url(#glow)"
+  >
+    QvacChatSession
+  </text>
+
+  <text x="450" y="565" text-anchor="middle" class="body">
+    model lifecycle · FIFO concurrency · delegation · recovery
+  </text>
+
+  <text x="450" y="584" text-anchor="middle" class="small">
+    KV-cache by sessionId · cancel by requestId · low/medium=1 · high=2
+  </text>
+
+  <path
+    d="M450 490 V520"
+    class="accentLine"
+    marker-end="url(#arrowAccent)"
+  />
+
+  <!-- Voice output -->
+  <rect x="682" y="430" width="190" height="130" rx="8" class="box"/>
+
+  <text x="777" y="452" text-anchor="middle" class="label">
+    VOICE WRAPPER
+  </text>
+
+  <text x="777" y="476" text-anchor="middle" class="body">
+    SentenceChunker
+  </text>
+
+  <text x="777" y="496" text-anchor="middle" class="body">
+    → ordered TTS queue
+  </text>
+
+  <text x="777" y="516" text-anchor="middle" class="body">
+    → Supertonic
+  </text>
+
+  <text x="777" y="540" text-anchor="middle" class="small">
+    same AgentService output
+  </text>
+
+  <path
+    d="M650 462 H682"
+    class="line"
+    marker-end="url(#arrow)"
+  />
+
+  <!-- Runtime chain -->
+  <rect x="90" y="628" width="185" height="34" rx="6" class="box"/>
+  <text x="182.5" y="649" text-anchor="middle" class="body">
+    ModelManagementService
+  </text>
+
+  <rect x="335" y="628" width="180" height="34" rx="6" class="box"/>
+  <text x="425" y="649" text-anchor="middle" class="body">
+    QvacRuntimeAdapter
+  </text>
+
+  <rect x="575" y="628" width="150" height="34" rx="6" class="accentBox"/>
+  <text x="650" y="649" text-anchor="middle" class="body">
+    @qvac/sdk
+  </text>
+
+  <path
+    d="M450 600 V613 H182.5 V628"
+    class="line"
+    marker-end="url(#arrow)"
+  />
+
+  <path
+    d="M275 645 H335"
+    class="line"
+    marker-end="url(#arrow)"
+  />
+
+  <path
+    d="M515 645 H575"
+    class="line"
+    marker-end="url(#arrow)"
+  />
+
+  <!-- Local / peer -->
+  <rect x="742" y="602" width="130" height="34" rx="6" class="accentBox"/>
+  <text x="807" y="623" text-anchor="middle" class="body">
+    LOCAL MODEL
+  </text>
+
+  <rect x="742" y="646" width="130" height="34" rx="6" class="box"/>
+  <text x="807" y="667" text-anchor="middle" class="body">
+    MERIDIAN PEER
+  </text>
+
+  <path
+    d="M725 645 H735 Q742 645 742 619"
+    class="accentLine"
+    marker-end="url(#arrowAccent)"
+  />
+
+  <path
+    d="M725 645 H742 V663"
+    class="line dash"
+    marker-end="url(#arrow)"
+  />
+
+  <text x="655" y="613" text-anchor="middle" class="small">
+    loadModel / completion
+  </text>
+
+  <text x="790" y="594" text-anchor="end" class="small">
+    optional delegated inference
+  </text>
+</svg>
