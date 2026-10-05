@@ -371,6 +371,27 @@ npm run dev:client</code></pre>
   <a href="apps/backend/README.md"><code>apps/backend/README.md</code></a>.
 </p>
 
+<p>
+  <strong>Or with Docker</strong> — a production-compiled image (no dev tooling in the final
+  container) running the P2P provider/server demo on a private network:
+</p>
+
+<pre><code>npm run models:fetch --workspace=apps/backend
+npm run ingest --workspace=apps/backend
+cp .env.example .env
+docker compose up --build</code></pre>
+
+<p>
+  <code>.qvac-cache/</code> and <code>.lancedb/</code> are host volumes, not baked into the
+  image, so both commands above have to run on the host first — the <code>server</code>
+  container refuses to start without an ingested vector store. Once up, the
+  <code>server</code> container exposes the same OpenAI-compatible API on <code>:3001</code>,
+  delegating chat inference to the <code>provider</code> container by public key, with
+  automatic local fallback if it's unreachable. <code>.env.example</code> ships demo peer
+  identities for local testing; generate fresh ones with
+  <code>npm run seed:generate --workspace=apps/backend</code>.
+</p>
+
 <hr>
 
 <h2>Judge this project in 60 seconds</h2>

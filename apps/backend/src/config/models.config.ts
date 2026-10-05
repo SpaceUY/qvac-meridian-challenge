@@ -119,7 +119,7 @@ export const LLM_MODELS_BY_TIER: Record<ResourceTier, AgentModelConfig> = {
     modelSource: QWEN3VL_2B_MODEL_SOURCE,
     temperature: 0,
     // Default ctxSize (4096) is too small to fit the full corpus context alongside the system prompt and reply.
-    ctxSize: 16384,
+    ctxSize: 8192,
     engineConfig: {
       projectionModelSrc: MMPROJ_QWEN3VL_2B_MULTIMODAL_Q4_K.src,
     },
@@ -131,7 +131,7 @@ export const LLM_MODELS_BY_TIER: Record<ResourceTier, AgentModelConfig> = {
   medium: {
     modelSource: QWEN3_5_9B_MODEL_SOURCE,
     temperature: 0,
-    ctxSize: 16384,
+    ctxSize: 8192,
     engineConfig: {
       projectionModelSrc: MMPROJ_QWEN3_5_9B_MULTIMODAL_F16.src,
     },
