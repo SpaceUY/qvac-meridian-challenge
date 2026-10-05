@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isCancellationError } from "../../models/domain/errors.js";
+import { isCancellationError } from "../domain/errors.js";
 import { ConcurrencyLimiter } from "./concurrencyLimiter.js";
 
 /** Enough microtask ticks for a suspended async function to run up to its next real wait. */

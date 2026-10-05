@@ -1,4 +1,4 @@
-import { OperationCancelledError } from "../../models/domain/errors.js";
+import { OperationCancelledError } from "../domain/errors.js";
 
 interface Waiter {
   resolve: (release: () => void) => void;
