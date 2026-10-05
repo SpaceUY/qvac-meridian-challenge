@@ -80,6 +80,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  console.error('\n✖ Ingest failed:', err);
+  console.error('\nIngest failed:', err);
   process.exit(1);
 });

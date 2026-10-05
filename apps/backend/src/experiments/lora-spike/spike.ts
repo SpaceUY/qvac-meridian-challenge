@@ -67,7 +67,7 @@ async function timed<T>(step: string, fn: () => Promise<T>): Promise<T> {
   } catch (err) {
     const ms = Date.now() - start;
     timings.push({ step: `${step} (FAILED)`, ms });
-    console.error(`✖ [${step}] failed after ${ms}ms`);
+    console.error(`[${step}] failed after ${ms}ms`);
     throw err;
   }
 }
@@ -166,7 +166,7 @@ async function main(): Promise<void> {
     adapterInfo = findAdapterFile(ADAPTER_OUTPUT_DIR);
     if (!adapterInfo) {
       warnings.push(`No .gguf file found under ${ADAPTER_OUTPUT_DIR} after finetune() reported status=${finetuneResultStatus}`);
-      console.warn(`⚠ ${warnings.at(-1)}`);
+      console.warn(warnings.at(-1));
     } else {
       console.log(`▸ Adapter artifact: ${adapterInfo.path} (${(adapterInfo.sizeBytes / 1024 / 1024).toFixed(2)}MB)`);
     }
@@ -188,7 +188,7 @@ async function main(): Promise<void> {
         console.log(`▸ [verify:text] modelId=${textLoad.modelId} answer: ${textResult.text}`);
       } catch (err) {
         warnings.push(`Text inference with adapter loaded threw: ${err instanceof Error ? err.message : String(err)}`);
-        console.error(`✖ ${warnings.at(-1)}`);
+        console.error(warnings.at(-1));
       } finally {
         await service.unloadModel(textLoad.modelId).catch(() => {});
       }
@@ -220,7 +220,7 @@ async function main(): Promise<void> {
         console.log(`▸ [verify:vision] modelId=${visionLoad.modelId} answer: ${visionResult.text}`);
       } catch (err) {
         warnings.push(`Vision inference with adapter loaded threw: ${err instanceof Error ? err.message : String(err)}`);
-        console.error(`✖ ${warnings.at(-1)}`);
+        console.error(warnings.at(-1));
       } finally {
         await service.unloadModel(visionLoad.modelId).catch(() => {});
       }
@@ -246,9 +246,9 @@ async function main(): Promise<void> {
 
 main().catch((err) => {
   if (err instanceof ModelManagementError) {
-    console.error(`\n✖ Spike failed at stage "${err.stage}":`, err.cause ?? err.message);
+    console.error(`\nSpike failed at stage "${err.stage}":`, err.cause ?? err.message);
   } else {
-    console.error("\n✖ Spike failed:", err);
+    console.error("\nSpike failed:", err);
   }
   console.log("\n========== STAGE 1 SPIKE SUMMARY (FAILED) ==========");
   console.log(JSON.stringify({ timingsMs: timings, warnings, failed: true }, null, 2));

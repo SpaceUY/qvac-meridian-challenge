@@ -36,7 +36,7 @@ The underlying mechanism — `completion()` calls genuinely admitted concurrentl
 - Cancellation: two concurrent long-form completions, one cancelled mid-flight — the SDK's log confirmed only the cancelled one was admitted alongside the survivor before the cancel, and the survivor's own request never began until the cancelled one's `state=cancelled` was confirmed. No sibling disruption, no hang.
 - A 3-request queue proof (limit 2): two admitted immediately, a third's SDK-level request never began until the first slot freed via cancellation — confirmed via the SDK's own `begin...running`/`end...cancelled` log sequence.
 
-## ⚠️ Performance finding — read before raising `medium`/`high` concurrency, maybe before merging as-is
+## Performance finding — read before raising `medium`/`high` concurrency, maybe before merging as-is
 
 A controlled A/B (same prompt, same generation params, run completely alone vs. two concurrently) against the real `medium`-tier model showed:
 

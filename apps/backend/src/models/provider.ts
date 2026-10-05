@@ -54,6 +54,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error('\n✖ Provider failed:', err);
+  console.error('\nProvider failed:', err);
   process.exit(1);
 });
