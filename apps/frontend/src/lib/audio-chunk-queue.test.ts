@@ -83,4 +83,31 @@ describe('AudioChunkQueue', () => {
       expect(queue.currentIndex).toBe(1)
     })
   })
+
+  describe('stop / resume', () => {
+    it('stops moving on by itself after stop(): neither a finished chunk nor a new one advances', () => {
+      const queue = new AudioChunkQueue()
+      queue.advance(2, true)
+      queue.stop()
+      expect(queue.ended(2)).toBeUndefined()
+      expect(queue.advance(3, true)).toBeUndefined()
+    })
+
+    it('moves on again after resume()', () => {
+      const queue = new AudioChunkQueue()
+      queue.advance(2, true)
+      queue.stop()
+      queue.resume()
+      expect(queue.ended(2)).toBe(1)
+    })
+
+    it('is no longer waiting for more once stopped', () => {
+      const queue = new AudioChunkQueue()
+      queue.advance(1, true)
+      queue.ended(1)
+      expect(queue.isWaitingForMore).toBe(true)
+      queue.stop()
+      expect(queue.isWaitingForMore).toBe(false)
+    })
+  })
 })
