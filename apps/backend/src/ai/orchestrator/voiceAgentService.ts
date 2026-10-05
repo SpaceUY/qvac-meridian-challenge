@@ -147,9 +147,7 @@ export class VoiceAgentService {
 
     const chunker = new SentenceChunker(this.minSentenceChunkChars);
     let streamedAnswer = "";
-    // Chains sentence synthesis+emission one at a time, decoupled from the
-    // token stream that discovers them - onToken below can't itself be
-    // async (AgentService.invoke's callback is fire-and-forget per token).
+    // Chains synthesis one sentence at a time, decoupled from the token stream since AgentService.invoke's onToken callback can't be async.
     let processingChain: Promise<void> = Promise.resolve();
     const enqueueSentence = (sentence: string) => {
       processingChain = processingChain.then(() => this.synthesizeAndEmit(sentence, onChunk, signal));

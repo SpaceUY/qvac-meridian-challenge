@@ -129,13 +129,7 @@ interface PendingChatCall {
   onToken?: (textDelta: string) => void;
 }
 
-/**
- * Like `RecordingChatService` but `chatComplete()` calls stay genuinely
- * pending until the test explicitly `settleFor()`s or cancels them - needed
- * to exercise real concurrency (two calls in flight at once), queueing, and
- * per-request cancellation, none of which `RecordingChatService`'s
- * synchronous outcome queue can represent.
- */
+/** Like `RecordingChatService` but `chatComplete()` calls stay pending until the test `settleFor()`s/cancels them - needed for real concurrency, queueing, and per-request cancellation. */
 class ControllableChatService implements QvacChatSessionService {
   private nextSdkRequestId = 0;
   private readonly pendingChat = new Map<string, PendingChatCall>();

@@ -1,6 +1,4 @@
-// The chat state, in Zustand. Replaces chat-reducer.ts: every "case" the
-// reducer used to have is now a function on the store, with the same
-// parameters that used to live inside the action object.
+// The chat state, in Zustand.
 
 import { create } from 'zustand'
 import { deleteSessionCache } from '@/lib/chat-client'
@@ -11,12 +9,7 @@ type ChatStore = {
   history: History
   /** Identifies the current conversation on every request (CONFIG.sessionHeader). conversationReset replaces it. */
   sessionId: string
-  /**
-   * The abort handle of the text turn in flight, if any. Not render state:
-   * no component selects it. It lives here - not in a ref inside useChat -
-   * so Stop (in the composer) and New chat (in the left sidebar) reach the
-   * same handle from different parts of the tree.
-   */
+  /** Abort handle of the text turn in flight, if any - lives here (not a ref in useChat) so Stop and New chat can both reach it. */
   activeTurn: AbortController | null
   /**
    * The assistant message whose audio is playing - or waiting for its next
@@ -101,20 +94,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       history: withMessage(state.history, id, (m) => ({ ...m, status: { type: 'error', reason } })),
     })),
 
-  /**
-   * Strips `images` off a message that the backend rejected with a 400 -
-   * that request will never succeed by retrying it as-is, and every future
-   * turn resends the *entire* history, so leaving the same bad image(s) in
-   * place would keep failing every turn after this one forever, whatever
-   * they contain (text, voice, another image). Called once, right after
-   * the 400 - see use-chat.ts's runTurn.
-   */
+  /** Strips `images` off a message the backend rejected with a 400 - every future turn resends the full history, so a bad image would keep failing forever otherwise. See use-chat.ts's runTurn. */
   imagesDropped: (id) =>
     set((state) => ({
       history: withMessage(state.history, id, (m) => ({ ...m, images: undefined })),
     })),
 
-  /** The transcript isn't known yet (it arrives in the voice endpoint's final SSE event) - the user message starts empty, which MessageList already renders as no bubble at all (same as an image-only turn), until voiceTranscriptReceived backfills it. */
+  /** The transcript isn't known yet (it arrives in the voice endpoint's final SSE event), so the user message starts empty until voiceTranscriptReceived backfills it. */
   voiceTurnStarted: (userMessageId, assistantMessageId) =>
     set((state) => ({
       history: [
@@ -139,11 +125,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   activeTurnStarted: (controller) => set({ activeTurn: controller }),
 
-  /**
-   * Only clears the handle if it is still this turn's. A turn cancelled by
-   * conversationReset settles a moment later - by then a new turn may
-   * already be in flight, and its handle must survive.
-   */
+  /** Only clears the handle if it's still this turn's - a newer turn's handle must survive a stale settle. */
   activeTurnSettled: (controller) =>
     set((state) => (state.activeTurn === controller ? { activeTurn: null } : {})),
 
@@ -166,14 +148,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   contextNoticeDismissed: () => set({ contextNoticeOpen: false }),
 
-  /**
-   * New chat. Aborts the turn in flight (the backend cancels generation on
-   * disconnect - req. [1.4]), frees the image previews, and starts over
-   * with a fresh sessionId, and asks the backend to free the old session's
-   * KV cache - fire-and-forget: a failure is only logged, it never blocks
-   * or undoes the new chat. Chunks still arriving for the old turn are
-   * harmless: withMessage on an id that no longer exists changes nothing.
-   */
+  /** New chat: aborts the in-flight turn (backend cancels generation on disconnect - req. [1.4]), frees image previews, and fire-and-forgets freeing the old session's KV cache. */
   conversationReset: () => {
     const { activeTurn, history, sessionId } = get()
     activeTurn?.abort()
@@ -197,11 +172,7 @@ function createMessage(id: string, role: Role, text: string, status: 'done' | 's
   return { id, role, text, citations: [], tools: [], status: { type: status } }
 }
 
-/**
- * Returns a new history with ONE single message replaced, without mutating
- * anything. Messages that do not change are returned as-is — the same object in
- * memory — so React knows there is no need to repaint them.
- */
+/** Replaces one message without mutating; untouched messages keep their reference so React skips repainting them. */
 function withMessage(history: History, id: string, change: (m: Message) => Message): History {
   return history.map((m) => (m.id === id ? change(m) : m))
 }

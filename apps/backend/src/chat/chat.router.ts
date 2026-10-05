@@ -46,8 +46,7 @@ export function createChatStatusRouter(
     res.json({ ...agentService.getStatus(), embeddingReady: readiness.check().embeddingReady });
   });
 
-  // Fire-and-forget: the caller polls /status for progress instead of
-  // waiting here — loading can take a while the first time (download).
+  // Fire-and-forget: the caller polls /status instead of waiting here.
   router.post("/preload", (_req: Request, res: Response) => {
     agentService.preload().catch((err: unknown) => {
       console.error("[chat:preload]", err);
@@ -55,9 +54,7 @@ export function createChatStatusRouter(
     res.status(202).json(agentService.getStatus());
   });
 
-  // Cancels the model load started by /preload, if one is in flight. Same
-  // safe-no-op convention as the rest of the cancel API: calling this when
-  // nothing is loading (or after it already finished) does nothing.
+  // Safe no-op if nothing is loading or the load already finished.
   router.post("/preload/cancel", async (_req: Request, res: Response) => {
     try {
       await agentService.cancelPreload();
@@ -68,8 +65,7 @@ export function createChatStatusRouter(
     }
   });
 
-  // The frontend's "New chat": the old conversation's KV cache is no longer
-  // reachable, so free it. Deleting a session that has no cache succeeds.
+  // "New chat": frees the old session's now-unreachable KV cache. No-op if it has none.
   router.delete("/sessions/:sessionId/cache", async (req: Request, res: Response) => {
     const sessionId = String(req.params.sessionId);
     if (!SESSION_ID_PATTERN.test(sessionId)) {
@@ -122,10 +118,7 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
     }
 
     res.writeHead(200, SSE_HEADERS);
-    // `writeHead()` alone doesn't put headers on the wire - Node buffers
-    // them until the first `write()`. Flush now so the client's connection
-    // is actually established (and abortable) before the first token,
-    // which may be seconds away.
+    // Node buffers headers until the first write() - flush now so the connection is abortable before the first token.
     res.flushHeaders();
     res.write(toRoleChunk(envelope));
     const options = { ...parseGenerationOptions(req.body), sessionId: req.header("X-Meridian-Session") };
@@ -133,14 +126,8 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
       res.write(toTextChunk(envelope, textDelta));
     });
 
-    // OpenAI's API has no dedicated cancel endpoint for chat completions -
-    // a client cancels a streaming request by closing the connection, and
-    // the server is expected to stop generating rather than keep running
-    // for a response nobody reads. `res`'s `close` event fires both on a
-    // normal completion and on the client hanging up early; `writableEnded`
-    // tells them apart (it's only true once this handler's own `res.end()`
-    // below has run), so a normal completion never calls cancel() on its
-    // own already-settled requestId.
+    // A client cancels streaming by closing the connection, not a dedicated endpoint.
+    // `writableEnded` (only true after this handler's own res.end()) tells a disconnect apart from a normal completion.
     const cancelOnDisconnect = () => {
       if (res.writableEnded) return;
       agent.cancel(pending.requestId).catch((err: unknown) => {
@@ -151,16 +138,10 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
 
     try {
       const result = await pending;
-      // Tools before citations: both are "final metadata", tools names WHY
-      // (what ran) while citations names WHAT (which sources), in the same
-      // order a person would want to read them.
       res.write(toToolsChunk(envelope, result.toolsUsed));
-      // Last, once the answer is final: whether to cite at all depends on
-      // what the model said (see selectCitations).
+      // Citations depend on what the model said (see selectCitations) - computed only once the answer is final.
       res.write(toCitationsChunk(envelope, result.citations));
-      // After citations, before the closing chunk: how full this
-      // conversation is now. The client stops taking new messages in it
-      // once `exhausted` - see contextBudget.ts.
+      // Context-budget state (see contextBudget.ts) - the client stops taking new messages once `exhausted`.
       if (result.context) res.write(toContextChunk(envelope, result.context));
     } catch (err) {
       console.error("[chat:completions]", err);
@@ -180,13 +161,7 @@ export function createCompletionsRouter(agent: CompletionAgent): Router {
 /** What the voice route needs - narrower than VoiceAgentService, so a test can pass a fake. */
 export type VoiceAgent = Pick<VoiceAgentService, "invoke" | "invokeStreaming">;
 
-/**
- * `POST /voice-completions`, mounted at `/v1/chat`. One full audio turn in.
- * JSON by default (one complete synthesized-audio buffer); SSE only for an
- * explicit `stream: true`, which synthesizes and emits audio sentence by
- * sentence as the answer streams in, same opt-in convention as
- * `/completions`.
- */
+/** `POST /voice-completions`, mounted at `/v1/chat`. JSON returns one complete audio buffer; `stream: true` emits audio sentence by sentence. */
 export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatus">, voiceAgent: VoiceAgent): Router {
   const router = Router();
 
@@ -238,10 +213,7 @@ export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatu
     res.writeHead(200, SSE_HEADERS);
     res.flushHeaders();
 
-    // Unlike the JSON path above, the empty-transcript/generation-failure
-    // cases below can't become a 400/500 - by the time either is known,
-    // headers are already committed to text/event-stream. They surface as
-    // an error event on the stream instead (still closed with [DONE]).
+    // Headers are already committed here, so failures below surface as a stream error event, not a 400/500.
     try {
       const result = await voiceAgent.invokeStreaming(
         history,

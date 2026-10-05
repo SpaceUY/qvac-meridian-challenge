@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// THE TRANSPORT LAYER
-//
-// This is the only part of the frontend that knows HTTP and knows the OpenAI format.
-// It does not know React exists. It does not know what a conversation turn is. Its
-// job is: to request, and to translate what comes back into something the rest understands.
-//
+// Transport layer: the only part of the frontend that knows HTTP/OpenAI wire format.
 
 import type { Citation, ContextUsage, Message } from '@/lib/chat-types'
 import { CONFIG } from '@/lib/config'
@@ -17,17 +11,11 @@ export type ContentPart =
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string } }
 
-/** The "wire" format: how messages travel over the network (OpenAI style). `content` stays a plain string for text-only turns (unchanged wire shape); only a turn with images gets the content-parts array. */
+/** OpenAI wire format. `content` stays a plain string for text-only turns; only a turn with images gets the content-parts array. */
 export type OpenAIMessage = { role: 'user' | 'assistant'; content: string | ContentPart[] }
 export type ChatDelta = { text?: string; tools?: string[]; citations?: Citation[]; context?: ContextUsage }
 
-/**
- * Async because building an image turn's wire content means reading each
- * attached File into a base64 data URL - deliberately deferred to exactly
- * this point (see image-attachments.ts) rather than done once and cached,
- * so a long conversation with several attached images never holds more
- * than one turn's worth of base64 in memory at a time.
- */
+/** Reads each attached File into base64 lazily, at send time, so a long conversation never holds more than one turn's worth of image data in memory. */
 export async function toOpenAIMessages(messages: Pick<Message, 'role' | 'text' | 'images'>[]): Promise<OpenAIMessage[]> {
   return Promise.all(
     messages.map(async (m): Promise<OpenAIMessage> => {
@@ -83,13 +71,13 @@ export async function requestCompletion({
   return res.body
 }
 
-/** Frees the backend's KV cache for a conversation that no longer exists (New chat). The backend treats a session with no cache as success. */
+/** Frees the backend's KV cache for a conversation that no longer exists (New chat); a session with no cache is still treated as success. */
 export async function deleteSessionCache(sessionId: string): Promise<void> {
   const res = await fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}/cache`, { method: 'DELETE' })
   if (!res.ok) throw new EngineError(await readErrorMessage(res), res.status)
 }
 
-/** The backend's own `{ error: "..." }` body (chat.router.ts's 400s carry a specific, human-readable reason - e.g. "Only JPEG or PNG images are supported") - falls back to the generic status-code message only if the body isn't that shape. Exported: voice-client.ts's requestVoiceCompletion hits the same backend error shape on its own 400s. */
+/** Prefers the backend's `{ error: "..." }` body (a human-readable 400 reason) over the generic status-code message. Exported: voice-client.ts reuses it for the same error shape. */
 export async function readErrorMessage(res: Response): Promise<string> {
   const body = safeJsonParse(await res.text())
   if (isObject(body) && typeof body.error === 'string' && body.error !== '') return body.error
@@ -137,12 +125,12 @@ function safeJsonParse(json: string): unknown {
   }
 }
 
-/** Keeps only string entries. Exported for voice-client.ts: the voice endpoint's `tools` field has the same shape. */
+/** Exported: voice-client.ts's `tools` field has the same shape. */
 export function parseTools(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : []
 }
 
-/** Keeps only well-formed citations. Exported for voice-client.ts: the voice endpoint carries the same array. */
+/** Exported: voice-client.ts carries the same array. */
 export function parseCitations(value: unknown): Citation[] {
   return Array.isArray(value) ? value.filter(isCitation) : []
 }
@@ -151,7 +139,7 @@ function isCitation(v: unknown): v is Citation {
   return isObject(v) && typeof v.file === 'string' && (v.score === undefined || typeof v.score === 'number')
 }
 
-/** Keeps a well-formed usage, or nothing. Exported for voice-client.ts: the voice endpoint's done event carries the same object. */
+/** Exported: voice-client.ts's done event carries the same object. */
 export function parseContextUsage(value: unknown): ContextUsage | undefined {
   if (!isObject(value)) return undefined
   const { usedTokens, maxTokens, exhausted } = value

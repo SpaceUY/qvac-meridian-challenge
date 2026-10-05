@@ -1,10 +1,4 @@
-/**
- * `bare-runtime` ships no type declarations. This repo already depends on it
- * transitively through `@qvac/sdk` (which uses the same `bare-runtime/spawn`
- * export to launch its own worker - see `node-rpc-client.js`); this shim
- * only types the handful of fields this spike's `nativeEmbedClient.ts`
- * actually passes/reads.
- */
+/** `bare-runtime` ships no type declarations; this repo already depends on it transitively via `@qvac/sdk` (same `bare-runtime/spawn` export). Types only the fields `nativeEmbedClient.ts` actually uses. */
 declare module "bare-runtime/spawn" {
   import type { ChildProcess, StdioOptions } from "node:child_process";
 

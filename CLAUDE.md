@@ -4,28 +4,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-This is an early-stage scaffold: an npm-workspaces monorepo with a bare Express backend stub and an unmodified Vite + React template frontend. There is no business logic, routing, state management, or styling system in place yet — treat existing patterns as placeholders, not conventions to imitate.
+This repo implements the Meridian Components challenge: an Express API with QVAC-backed local model
+management, retrieval-augmented chat grounded in the `corpus/` document set, local speech-to-text and
+text-to-speech, a deterministic stock-lookup tool (`stock-tool/`), P2P delegated inference, and a
+React + Vite frontend. See the root `README.md` for the full feature list and setup, and
+`apps/backend/README.md` for the backend's module-by-module breakdown.
 
 ## Commands
 
-Run from the repo root (npm workspaces, not pnpm — this repo does not follow the pnpm default in the global config).
+Run from the repo root (npm workspaces: `apps/*`, `stock-tool`).
 
+- `npm ci` — install all workspaces
+- `npm run ingest --workspace=apps/backend` — build the local vector store from `corpus/` (required before chat can answer from the corpus)
 - `npm run dev:client` — start the frontend dev server (Vite, `apps/frontend`)
 - `npm run dev:server` — start the backend dev server (`tsx watch`, `apps/backend`)
 - `npm run build:client` — type-check and build the frontend (`tsc -b && vite build`)
-- `npm run build:server` — no build script currently defined in `apps/backend/package.json`
-- `npm run lint --workspace=apps/frontend` — run Oxlint on the frontend (no lint script exists for the backend)
+- `npm run build --workspace=apps/backend` — tree-shaken `@qvac/sdk` bundle + size report
+- `npm test` — run the vitest suite (backend + frontend)
+- `npm run lint --workspace=apps/frontend` — run Oxlint on the frontend
 
-There is no test runner configured in either workspace or the root (`npm test` at the root is a placeholder that exits with an error).
+`qvac-eval.json` (repo root) declares the commands the grading harness uses to stand up and exercise
+the backend — see its `setup`/`start`/`shutdown` entries and the root README's "Judge this project in 60 seconds" section.
 
 ## Architecture
 
-Two independent workspaces under `apps/`, linked only by npm workspaces — no shared package/lib directory exists yet.
-
-- **`apps/backend`** — Express server (`src/server.ts`), run via `tsx`, ESM (`"type": "module"`). Uses the `cors` middleware and exposes a single `GET /api/ping` route on port 3001.
-- **`apps/frontend`** — Vite + React 19 + TypeScript (strict, per `tsconfig.app.json`), linted with Oxlint (`.oxlintrc.json`). Currently the default `create-vite` React template (`App.tsx`), not yet adapted to the project.
-
-## Notes
-
-- No `dependencies`/`devDependencies` in the root `package.json` — each workspace manages its own.
-
+- **`apps/backend`** — Express server (`src/server.ts`), ESM, run via `tsx`. Modules: `models/` (local
+  QVAC model lifecycle), `ai/orchestrator/` (LangGraph chat orchestrator: tool calling, RAG grounding,
+  voice), `rag/` (corpus ingestion + retrieval), `speech/` and `tts/` (voice I/O), `document/` (corpus
+  document listing), `health/` (readiness).
+- **`apps/frontend`** — Vite + React 19 + TypeScript (strict), linted with Oxlint. Chat UI with citation
+  hover cards, voice input/output, engine/model status panel, and document browser.
+- **`stock-tool`** — standalone npm workspace package with deterministic inventory data, imported
+  in-process by the backend's `lookup_stock` tool.

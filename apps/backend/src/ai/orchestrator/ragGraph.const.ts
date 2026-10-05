@@ -1,9 +1,4 @@
-/**
- * The fixed opening of every "not enough context" answer: the hardcoded
- * fallback below starts with it, and GROUNDING_INSTRUCTIONS asks the model
- * to say it. `selectCitations` detects refusals by this prefix, so the
- * three must stay in sync - `citationPolicy.test.ts` guards that.
- */
+/** Must stay in sync across GROUNDING_INSTRUCTIONS (asks the model to say it), the fallback below, and `selectCitations`' refusal detection — guarded by `citationPolicy.test.ts`. */
 export const INSUFFICIENT_CONTEXT_PREFIX =
   "The available documents do not contain enough information";
 

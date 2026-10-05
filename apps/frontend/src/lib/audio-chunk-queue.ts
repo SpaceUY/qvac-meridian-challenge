@@ -1,9 +1,4 @@
-// apps/frontend/src/lib/audio-chunk-queue.ts
-//
-// Decides which audio chunk index a player should load/play next, as
-// chunks arrive one at a time (a streamed voice turn) and as each one
-// finishes - the sibling of the backend's SentenceChunker: pure decision
-// logic, no DOM. AudioPlayback wires its answers to an <audio> element.
+// Decides which audio chunk index to play next as a streamed voice turn's chunks arrive - pure decision logic, no DOM (AudioPlayback wires the result to an <audio> element).
 
 /** Index the player should now load and play - `undefined` means nothing to do right now. */
 export type AudioChunkQueueAction = number | undefined

@@ -1,11 +1,4 @@
-/**
- * The text actually embedded for one retrieval search. The embedding
- * model's window is 2048 tokens; a user message can be far longer (a pasted
- * transcript), and embedding it whole fails the whole turn ("exceeds
- * effective context size (2048)"). The start of a message is what names its
- * question, so the tail is dropped. Never splits a UTF-16 surrogate pair
- * (an emoji) in half, which would hand the tokenizer a broken character.
- */
+/** Truncates to the embedding model's 2048-token window (keeping the head, where the question is) without splitting a UTF-16 surrogate pair. */
 export function toRetrievalQuery(text: string, maxChars: number): string {
   const trimmed = text.trim();
   if (trimmed.length <= maxChars) return trimmed;

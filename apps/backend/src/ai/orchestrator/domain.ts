@@ -7,31 +7,21 @@ export const State = new StateSchema({
   messages: MessagesValue,
   chunks: z.array(z.custom<RetrievedChunk>()).default(() => []),
   hasEvidence: z.boolean().default(false),
-  /** Whether the last human turn attached an image - NOT whether that image is relevant to the question, just that one is present. See ragGraph.const.ts's GROUNDING_INSTRUCTIONS for how the model is told to handle an irrelevant one. */
+  /** Whether the last turn attached an image, not whether it's relevant - see ragGraph.const.ts's GROUNDING_INSTRUCTIONS. */
   hasVisualInput: z.boolean().default(false),
-  /** Per-request override forwarded to the model call (Req 6.1.3) - see `GenerationOptions` below. Absent unless the caller supplied one. */
   temperature: z.number().optional(),
   seed: z.number().optional(),
-  /** KV cache session key forwarded to the model call, from the `X-Meridian-Session` header - see `GenerationOptions` below. */
+  /** KV cache session key, from the `X-Meridian-Session` header. */
   sessionId: z.string().optional(),
-  /** `AgentService.invoke()`'s own requestId, forwarded to the model call so a concurrent completion can be tracked/cancelled independently of any other in flight - see `QvacChatSession`. */
+  /** `AgentService.invoke()`'s requestId, so a concurrent completion can be tracked/cancelled independently - see `QvacChatSession`. */
   requestId: z.string().optional(),
-  /** Token counters of this turn's last model call (`readCompletionStats`) - every run of the llm node overwrites it, so after a tool loop it holds the final call's. Read by `AgentService` to measure the context budget. Absent when the runtime reported none. */
+  /** Last model call's token counters; overwritten each llm-node run, so a tool loop keeps the final call's. Absent if the runtime reported none. */
   completionStats: z.custom<ChatCompletionStats>().optional(),
 });
 
-/**
- * Per-request generation overrides an HTTP caller may supply (OpenAI's own
- * `temperature`/`seed` fields on `POST /v1/chat/completions`). Lives here,
- * not in `chat/chat.router.helpers.ts`, even though the HTTP layer is what
- * first populates it: `AgentService` (this directory) consumes it, and an
- * inner layer must not import a type from the outer `chat/` layer - see
- * this task's "Layering note". `chat.router.helpers.ts`'s
- * `parseGenerationOptions()` imports this type rather than declaring it.
- */
+/** Per-request generation overrides (OpenAI's `temperature`/`seed`). Lives here rather than `chat/chat.router.helpers.ts` since an inner layer can't import from the outer `chat/` layer. */
 export interface GenerationOptions {
   temperature?: number;
   seed?: number;
-  /** KV cache session key, forwarded from the `X-Meridian-Session` header. */
   sessionId?: string;
 }

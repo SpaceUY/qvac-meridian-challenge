@@ -4,12 +4,7 @@ import type { RagRetrievalConfig, RagRetrievalResult, RetrievedChunk } from '../
 import { metadataRerank } from './metadataRerank.js';
 import { toRetrievalQuery } from './retrievalQuery.js';
 
-/**
- * Runtime RAG retrieval: embed -> search -> dedupe -> rerank -> cap. Knows
- * nothing about LangChain/LangGraph or how retrieved chunks get formatted
- * into a prompt - see `contextBuilder.ts` for that. Only the first
- * `maxQueryChars` characters of a query are embedded (`toRetrievalQuery`).
- */
+/** Runtime RAG retrieval: embed -> search -> dedupe -> rerank -> cap. Prompt formatting lives in `contextBuilder.ts`, not here. */
 export class RagRetrievalService {
   constructor(
     private readonly embeddingPort: EmbeddingPort,

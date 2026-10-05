@@ -1,14 +1,9 @@
 /**
- * I.5 Stage 1 — LoRA compatibility spike. TEMPORARY, throwaway code (see
- * README.md in this directory). Proves the full lifecycle
- * (finetune() -> adapter file -> modelConfig.lora -> inference, both text
- * and vision) works against our real production low-tier model
- * (Qwen3-VL-2B, Q4_K GGUF) on @qvac/sdk 0.18.2. Quality of the trained
- * adapter does not matter here - only whether each step completes.
+ * I.5 Stage 1 LoRA compatibility spike (see README.md). Quality of the
+ * trained adapter doesn't matter - only whether each lifecycle step completes.
  *
- * Run from apps/backend (qvac.config.mjs resolves relative to cwd):
- *   npx tsx src/experiments/lora-spike/spike.ts
- *   npx tsx src/experiments/lora-spike/spike.ts --control   # Qwen3-0.6B control run
+ * Run from apps/backend:
+ *   npx tsx src/experiments/lora-spike/spike.ts [--control]   # --control: Qwen3-0.6B
  */
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -39,16 +34,11 @@ if (typeof PROJECTION_SRC !== "string") {
 }
 
 /**
- * finetune() rejects our production quantization outright:
- * "Finetuning is not supported for this quantization type (file_type=15).
- * Supported: F32, F16, Q4_0, Q8_0, TQ1_0, TQ2_0" - Q4_K_M (what
- * LLM_MODELS_BY_TIER.low actually serves) is not in that list. Q8_0 of the
- * exact same base model IS, and is published in the same HF repo
- * (Qwen/Qwen3-VL-2B-Instruct-GGUF) the production Q4_K_M entry resolves
- * from. So: train against the Q8_0 build, then verify the resulting
- * adapter loads and runs against the REAL production Q4_K_M model via
- * modelConfig.lora - that cross-quantization compatibility is the actual
- * question this spike now needs to answer.
+ * finetune() rejects our production quant (Q4_K_M) outright - only F32,
+ * F16, Q4_0, Q8_0, TQ1_0, TQ2_0 are supported. Q8_0 of the same base model
+ * is, so: train against Q8_0, then verify the adapter still loads and runs
+ * against the real production Q4_K_M model via modelConfig.lora - that
+ * cross-quantization compatibility is what this spike actually tests.
  */
 const QWEN3VL_2B_Q8_0_URL =
   "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/main/Qwen3VL-2B-Instruct-Q8_0.gguf";
@@ -77,7 +67,7 @@ async function timed<T>(step: string, fn: () => Promise<T>): Promise<T> {
   } catch (err) {
     const ms = Date.now() - start;
     timings.push({ step: `${step} (FAILED)`, ms });
-    console.error(`✖ [${step}] failed after ${ms}ms`);
+    console.error(`[${step}] failed after ${ms}ms`);
     throw err;
   }
 }
@@ -176,7 +166,7 @@ async function main(): Promise<void> {
     adapterInfo = findAdapterFile(ADAPTER_OUTPUT_DIR);
     if (!adapterInfo) {
       warnings.push(`No .gguf file found under ${ADAPTER_OUTPUT_DIR} after finetune() reported status=${finetuneResultStatus}`);
-      console.warn(`⚠ ${warnings.at(-1)}`);
+      console.warn(warnings.at(-1));
     } else {
       console.log(`▸ Adapter artifact: ${adapterInfo.path} (${(adapterInfo.sizeBytes / 1024 / 1024).toFixed(2)}MB)`);
     }
@@ -198,7 +188,7 @@ async function main(): Promise<void> {
         console.log(`▸ [verify:text] modelId=${textLoad.modelId} answer: ${textResult.text}`);
       } catch (err) {
         warnings.push(`Text inference with adapter loaded threw: ${err instanceof Error ? err.message : String(err)}`);
-        console.error(`✖ ${warnings.at(-1)}`);
+        console.error(warnings.at(-1));
       } finally {
         await service.unloadModel(textLoad.modelId).catch(() => {});
       }
@@ -230,7 +220,7 @@ async function main(): Promise<void> {
         console.log(`▸ [verify:vision] modelId=${visionLoad.modelId} answer: ${visionResult.text}`);
       } catch (err) {
         warnings.push(`Vision inference with adapter loaded threw: ${err instanceof Error ? err.message : String(err)}`);
-        console.error(`✖ ${warnings.at(-1)}`);
+        console.error(warnings.at(-1));
       } finally {
         await service.unloadModel(visionLoad.modelId).catch(() => {});
       }
@@ -256,9 +246,9 @@ async function main(): Promise<void> {
 
 main().catch((err) => {
   if (err instanceof ModelManagementError) {
-    console.error(`\n✖ Spike failed at stage "${err.stage}":`, err.cause ?? err.message);
+    console.error(`\nSpike failed at stage "${err.stage}":`, err.cause ?? err.message);
   } else {
-    console.error("\n✖ Spike failed:", err);
+    console.error("\nSpike failed:", err);
   }
   console.log("\n========== STAGE 1 SPIKE SUMMARY (FAILED) ==========");
   console.log(JSON.stringify({ timingsMs: timings, warnings, failed: true }, null, 2));

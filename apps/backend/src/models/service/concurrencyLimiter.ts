@@ -5,23 +5,10 @@ interface Waiter {
   reject: (err: unknown) => void;
 }
 
-/**
- * Default cap on queued (not-yet-admitted) callers, independent of the
- * concurrency `limit` itself - without this, slow/stuck clients could queue
- * an unbounded number of waiters (unbounded memory, arbitrarily long wait
- * times). 64 mirrors `@qvac/sdk`'s own request-registry admission policy
- * (`maxQueueDepthPerModel`), which bounds the exact same kind of queue for
- * the exact same `completion`/`parallel` concurrency mechanism server-side.
- */
+/** Cap on queued (not-yet-admitted) callers, so a stuck client can't queue unbounded waiters — mirrors `@qvac/sdk`'s own `maxQueueDepthPerModel` for the same `completion`/`parallel` mechanism. */
 const DEFAULT_MAX_QUEUE_DEPTH = 64;
 
-/**
- * Bounds how many callers can hold a slot at once; callers past the limit
- * queue FIFO until one releases. Backs per-tier continuous-batching
- * concurrency (see I.2's spike/results doc) - `limit: 1` reproduces today's
- * sequential behavior exactly, just through an explicit queue instead of a
- * scalar race.
- */
+/** Bounds concurrent callers per key, FIFO queue beyond that; `limit: 1` reproduces today's sequential behavior explicitly (see I.2's spike/results doc). */
 export class ConcurrencyLimiter {
   private active = 0;
   private readonly activeKeys = new Set<string>();
@@ -42,24 +29,8 @@ export class ConcurrencyLimiter {
   }
 
   /**
-   * Resolves with a `release()` function once a slot is free - immediately
-   * if under the limit, otherwise once an earlier holder (or an earlier
-   * queued caller, in FIFO order) releases. Rejects with an
-   * `OperationCancelledError` if `cancel(key)` fires first, without ever
-   * admitting the caller.
-   *
-   * Rejects immediately if `key` is already active or already queued -
-   * `activeKeys`/`waiters`/`queueOrder` are all keyed by `key`, so a second
-   * call reusing the same one would silently clobber the first's bookkeeping
-   * (an early, premature `release()` for the wrong holder, or a waiter left
-   * stranded forever) instead of failing loudly. Not expected in practice
-   * (every caller mints a fresh id per call), but cheap to guard against a
-   * permanent hang or a leaked slot.
-   *
-   * Also rejects immediately once `queuedCount` is already at
-   * `maxQueueDepth` - the queue is backpressure, not unbounded storage; a
-   * caller past the cap should see a clear rejection now instead of waiting
-   * indefinitely behind an ever-growing line.
+   * Resolves with `release()` once a slot is free (FIFO); rejects with `OperationCancelledError` if `cancel(key)` fires first.
+   * Also rejects immediately on a duplicate `key` (would silently clobber the first call's bookkeeping) or once the queue is already at `maxQueueDepth`.
    */
   acquire(key: string): Promise<() => void> {
     if (this.activeKeys.has(key)) {
@@ -84,11 +55,7 @@ export class ConcurrencyLimiter {
     });
   }
 
-  /**
-   * Cancels a still-queued `acquire(key)`, rejecting it without ever
-   * admitting it. No-op (returns `false`) when `key` is unknown or already
-   * admitted - only a queued caller can be cancelled this way.
-   */
+  /** Cancels a still-queued `acquire(key)`; no-op (`false`) if `key` is unknown or already admitted. */
   cancel(key: string): boolean {
     const waiter = this.waiters.get(key);
     if (!waiter) return false;

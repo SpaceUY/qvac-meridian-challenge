@@ -186,15 +186,12 @@ describe("AgentService delegate wiring", () => {
       providerPublicKey: "pk-abc",
     });
 
-    // The provider is now dead: the first chat completion fails, recovery
-    // reloads locally, and the retry succeeds - a fresh introspection
-    // query at that point reports local, not delegated.
+    // The provider is now dead: the first completion fails, recovery reloads locally, the retry succeeds, and a fresh introspection reports local.
     runtime.chatCompleteOutcomes = ["provider-unreachable"];
     runtime.delegatedLoadsLandLocal = true;
     await agentService.invoke([{ role: "user", message: "hi" }]);
 
-    // The engine panel (GET /api/chat/status) must reflect the recovery,
-    // not the stale "still delegated" snapshot cached at preload time.
+    // The engine panel (GET /api/chat/status) must reflect the recovery, not the stale "still delegated" snapshot.
     expect(agentService.getStatus().delegation).toEqual({ isDelegated: false });
   });
 

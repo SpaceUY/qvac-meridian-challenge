@@ -16,7 +16,7 @@ import type { AudioInput, StreamTranscriptSession } from '../domain/types.js';
 import { TranscriptionService } from './transcription.service.js';
 import { DEFAULT_WHISPER_ENGINE_CONFIG, WHISPER_MODELS_BY_TIER } from '../../config/models.config.js';
 
-/** Resolves every load() immediately with a fresh modelId - no cancellation support needed for these tests. */
+/** Resolves every load() immediately with a fresh modelId. */
 class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
   loadCalls: { source: ModelSource; options?: LoadModelOptions }[] = [];
   private nextRequestId = 0;

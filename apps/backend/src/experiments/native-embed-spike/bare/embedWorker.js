@@ -1,28 +1,7 @@
 /**
- * I.4 spike - runs INSIDE the Bare runtime (spawned by nativeEmbedClient.ts
- * via `bare-runtime/spawn`), never inside Node/tsx. This is what makes the
- * path "native": `@qvac/embed-llamacpp`'s `binding.js` does
- * `module.exports = require.addon()`, a Bare-only loader Node does not
- * implement, so the addon can only be required from here - not from a
- * regular Node script. ESM, not CJS: `apps/backend/package.json` sets
- * `"type": "module"`, so Bare's module loader (same resolution rules as
- * Node) parses every `.js` under this tree as ESM - matches the import
- * style `@qvac/sdk`'s own `llamacpp-embedding/plugin.js` uses for the same
- * package.
- *
- * No `@qvac/sdk` import anywhere in this file or its dependency chain.
- *
- * `normalizeVector`/`extractSingleVector` are imported from the production
- * native embedding module (`rag/infra/nativeEmbedding/bare/`) rather than
- * defined here - they used to be duplicated byte-for-byte between this file
- * and its production counterpart (`embedServer.js`).
- *
- * Protocol: `Bare.argv` mirrors Node's `process.argv`
- * ([bareExePath, scriptPath, ...userArgs]), so the two args we pass land at
- * index 2 and 3: `[requestPath, responsePath]`. Request JSON:
- * `{ modelPath: string, config: Record<string, string>, texts: string[] }`.
- * Response JSON: `{ loadTimeMs: number, calls: Array<{ elapsedMs, embedding, stats }> }`
- * on success, or `{ error: string, stack?: string }` (still exit code 1) on failure.
+ * I.4 spike - runs inside the Bare runtime (spawned by nativeEmbedClient.ts), never Node/tsx: `@qvac/embed-llamacpp`'s `binding.js` uses a Bare-only addon loader Node doesn't implement.
+ * `normalizeVector`/`extractSingleVector` are imported from the production module (`rag/infra/nativeEmbedding/bare/`) rather than duplicated here.
+ * Protocol: `Bare.argv` carries `[requestPath, responsePath]` at index 2/3. Request: `{modelPath, config, texts}`. Response: `{loadTimeMs, calls}` or `{error, stack}` (exit code 1) on failure.
  */
 import fs from "bare-fs";
 import GGMLBert from "@qvac/embed-llamacpp";

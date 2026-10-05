@@ -1,22 +1,12 @@
 import { startQVACProvider, stopQVACProvider } from "@qvac/sdk";
 
-/**
- * The second (and only other) file that imports `@qvac/sdk` for this
- * feature, alongside `qvacRuntimeAdapter.ts` - serving compute to peers is
- * a distinct concern from the model load/infer lifecycle that adapter
- * owns, so it gets its own narrow file instead of bloating
- * `ModelRuntimePort` for a capability only `models/provider.ts` calls.
- */
+/** The other file (besides `qvacRuntimeAdapter.ts`) that imports `@qvac/sdk` - serving compute to peers is a distinct concern from the load/infer lifecycle, kept out of `ModelRuntimePort`. */
 export interface ProviderFirewall {
   /** Only these public keys may delegate to this provider; every other consumer is rejected. */
   allowedConsumerPublicKeys: string[];
 }
 
-/**
- * Starts this process as a QVAC provider, reachable over the DHT by public
- * key. Throws instead of returning a `success: false` response, so callers
- * never have to null-check a "successful" result.
- */
+/** Starts this process as a QVAC provider. Throws instead of returning `success: false`, so callers never null-check a "successful" result. */
 export async function startProvider(firewall?: ProviderFirewall): Promise<{ publicKey: string }> {
   const response = await startQVACProvider(
     firewall

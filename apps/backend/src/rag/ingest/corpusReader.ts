@@ -5,39 +5,22 @@ import { CorpusDocumentRepository } from '../../document/infra/corpusDocumentRep
 
 /** One corpus file, with everything the ingest needs to decide what to do with it. */
 export interface CorpusDocument {
-  /**
-   * Path relative to the corpus root, forward-slashed - e.g.
-   * "reports/q1-2026-sales-summary.md". This exact string is what ends up
-   * in a citation and what the vector store deletes by, so it is derived
-   * once (by the document module, as the document id) and never re-derived
-   * downstream.
-   */
+  /** Path relative to the corpus root, forward-slashed (e.g. "reports/q1-2026-sales-summary.md") - this exact string is the citation path and the vector store's delete key. */
   source: string;
   content: string;
   /** SHA-256 hex of `content`. The only signal the ingest uses to decide whether a document changed. */
   contentHash: string;
-  /** Filename without its extension. */
   title: string;
   /** Derived by the document module from the top-level corpus folder; a file at the root or in an unknown folder is `DATA`. */
   documentType: DocumentType;
 }
 
-/**
- * SHA-256 of a string, hex-encoded. Content-based rather than filesystem-
- * based on purpose: `mtime` is rewritten by `unzip`, `git clone` and plain
- * copying, so a corpus that is byte-identical on the evaluator's machine
- * would look entirely new and be re-embedded from scratch - exactly what
- * the acceptance criteria forbid.
- */
+/** SHA-256 hex digest. Content-based, not `mtime`-based: `mtime` gets rewritten by unzip/git clone, which would make an identical corpus look entirely new and force a full re-embed. */
 export function sha256(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
-/**
- * Reads and hashes every text document under `corpusRoot`. Walking, filtering
- * and reading are the document module's job; this only adds the ingest's own
- * metadata. `title` stays the raw filename (not the repository's humanised one).
- */
+/** Reads and hashes every text document under `corpusRoot`; `title` stays the raw filename, not the document module's humanised one. */
 export async function readCorpus(corpusRoot: string): Promise<CorpusDocument[]> {
   const documents = await new CorpusDocumentRepository(corpusRoot).findAll();
 

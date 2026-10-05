@@ -15,12 +15,7 @@ import {
 } from "./chat.router.js";
 import { EMPTY_TRANSCRIPT_ERROR } from "./chat.router.const.js";
 
-/**
- * Stands in for `AgentService` for router-level tests: `invoke()` never
- * settles on its own - only `cancel()` rejects it - so a test can hold a
- * request open long enough to abort it client-side and observe the
- * server's reaction, without a real model/graph.
- */
+/** Stands in for `AgentService`: `invoke()` never settles on its own - only `cancel()` rejects it - so a test can hold a request open to abort it and observe the server's reaction, without a real model/graph. */
 const FAKE_INVOKE_RESULT: InvokeResult = { answer: "ok", chunks: [], toolsUsed: [], citations: [] };
 
 class FakeAgentService {
@@ -518,10 +513,7 @@ describe("POST /v1/chat/voice-completions - stream: true", () => {
       }),
     });
 
-    // Headers are already committed to text/event-stream by the time the
-    // empty-transcript case is known, so this can't become a 400 - the
-    // error surfaces as a stream event instead (same as any other
-    // generation error).
+    // Headers are already committed to text/event-stream by the time the empty-transcript case is known, so it surfaces as a stream event, not a 400.
     expect(res.status).toBe(200);
     const body = await res.text();
     expect(body).toContain("data: [DONE]");

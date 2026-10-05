@@ -14,38 +14,20 @@ import {
   PUBLIC_CHAT_MODEL,
 } from "./chat.router.const.js";
 
-/**
- * Parses the OpenAI-shaped `messages` array, dropping any `system` role — the
- * API never forwards those (spec §4). Returns `ConversationMessage[]`
- * (`{role, message, images?}`) — `AgentService.invoke()`'s own shape — so this
- * file is the one place that knows the wire format (`content`) differs from it.
- */
+/** Parses the OpenAI-shaped `messages` array into `ConversationMessage[]`, dropping any `system` role (spec §4). */
 export async function parseMessages(body: unknown): Promise<ConversationMessage[] | undefined> {
   const result = await parseMessageEntries(body);
   if ("error" in result) return undefined;
   return result.messages.length > 0 ? result.messages : undefined;
 }
 
-/**
- * Same parsing as parseMessages, but for a voice turn: `messages` here is
- * the turn's prior history and MAY be empty (the new turn arrives as audio,
- * appended separately by VoiceAgentService after transcription) - only a
- * missing/malformed `messages` field is rejected, not an empty array.
- */
+/** Same parsing as parseMessages, but an empty `messages` array is valid - the new turn arrives as audio, appended later by VoiceAgentService. */
 export async function parseHistory(body: unknown): Promise<ConversationMessage[] | undefined> {
   const result = await parseMessageEntries(body);
   return "error" in result ? undefined : result.messages;
 }
 
-/**
- * The specific reason `parseMessages()`/`parseHistory()` returned `undefined`
- * for this same `body` - e.g. "Only JPEG or PNG images are supported" instead
- * of a generic "invalid messages". Kept as a separate function (re-parsing
- * the body, only ever called on the failure path from chat.router.ts) rather
- * than changing what parseMessages/parseHistory themselves return, so every
- * existing caller and test keeps working against the same `ConversationMessage[]
- * | undefined` shape - only the router's error branch needs the reason.
- */
+/** The specific reason parseMessages()/parseHistory() returned undefined - re-parses the body so their own return shape stays unchanged for other callers. */
 export async function describeParseError(body: unknown): Promise<string> {
   const result = await parseMessageEntries(body);
   return "error" in result ? result.error : INVALID_MESSAGES_ERROR;
@@ -80,12 +62,7 @@ interface ParsedContent {
   images: { mimeType: SupportedImageMimeType; data: Buffer }[];
 }
 
-/**
- * `content` is either a plain string (unchanged behavior) or an OpenAI
- * Vision-style array of parts. Only `role: "user"` may carry an
- * `image_url` part — an assistant/tool turn with an attached image has no
- * defined meaning for this pipeline (see the design spec).
- */
+/** `content` is a plain string or an OpenAI Vision-style array of parts; only `role: "user"` may carry an `image_url` part. */
 async function parseContent(
   content: unknown,
   role: "user" | "assistant",
@@ -153,13 +130,7 @@ async function parseImagePart(
   return { mimeType: detectedMimeType, data };
 }
 
-/**
- * WebP is a valid client input (the demo corpus's own `pic2.png` is really a
- * WebP), but QVAC's vision model only accepts JPEG/PNG attachments
- * (`qvacRuntimeAdapter.ts`'s `EXTENSION_BY_MIME_TYPE`) - so WebP is
- * transcoded to PNG here, at the edge, and never reaches the rest of the
- * pipeline as `image/webp`.
- */
+/** WebP is valid client input (corpus's own `pic2.png` is really WebP) but QVAC's vision model only accepts JPEG/PNG, so it's transcoded to PNG here. */
 async function transcodeWebpToPng(
   data: Buffer,
 ): Promise<ParseResult<{ mimeType: SupportedImageMimeType; data: Buffer }>> {
@@ -183,13 +154,7 @@ function isSupportedImageMimeType(
   return mimeType !== undefined && SUPPORTED_IMAGE_MIME_TYPES.has(mimeType);
 }
 
-/**
- * Detects the real image format by reading its magic-byte signature,
- * ignoring whatever MIME type the client declared - the demo corpus's own
- * `pic2.png` proved a declared/extension MIME type can't be trusted (it's
- * actually WebP). WebP is recognized here so `parseImagePart` can transcode
- * it to PNG (see `transcodeWebpToPng`) rather than rejecting it outright.
- */
+/** Detects the real image format from its magic bytes - a declared MIME type can't be trusted (corpus's `pic2.png` is `.png`-named WebP). */
 function detectImageMimeType(data: Buffer): DetectedImageMimeType | undefined {
   if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) {
     return "image/jpeg";
@@ -217,7 +182,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-/** Extracts `temperature`/`seed` off the OpenAI-shaped request body, honoring only well-formed values in OpenAI's own accepted range (Req 6.1.3 — deterministic reruns via a stock OpenAI client). Silently drops an out-of-range/malformed value rather than erroring the whole request - matches this file's existing `parseMessages()` philosophy of validating narrowly rather than rejecting a request over an unrelated field. */
+/** Extracts `temperature`/`seed` for deterministic reruns (req 6.1.3); an out-of-range/malformed value is silently dropped, not an error. */
 export function parseGenerationOptions(body: unknown): GenerationOptions {
   if (!isRecord(body)) return {};
   const options: GenerationOptions = {};
@@ -251,7 +216,7 @@ export interface CompletionEnvelope {
   model: string;
 }
 
-/** Echoes the requested `model` (validating the alias is Ticket 4's job), or the public alias if absent. */
+/** Echoes the requested `model`, or the public alias if absent. */
 export function createEnvelope(body: unknown, now: Date = new Date()): CompletionEnvelope {
   const requested = isRecord(body) && typeof body.model === "string" && body.model !== "" ? body.model : undefined;
   return {
@@ -266,7 +231,7 @@ export function wantsStream(body: unknown): boolean {
   return isRecord(body) && body.stream === true;
 }
 
-/** The `stream: false` response: a whole `chat.completion`. `citations` sits on the message - where the evaluator reads it. `tools` is a separate, additive field (not part of the evaluator's contract) naming which tools the agent used this turn. */
+/** The `stream: false` response. `citations` sits on the message, where the evaluator reads it; `tools` is additive, outside that contract. */
 export function toCompletionResponse(
   envelope: CompletionEnvelope,
   answer: string,
@@ -308,17 +273,17 @@ export function toTextChunk(envelope: CompletionEnvelope, text: string): string 
   return toChunkEvent(envelope, { content: text });
 }
 
-/** One extra content chunk naming which tools the agent used this turn, sent once the answer is final (right before the citations chunk) - empty array when none were used, so "none" is explicit, same convention as toCitationsChunk. */
+/** Which tools the agent used this turn, sent once the answer is final - empty array when none, so "none" is explicit. */
 export function toToolsChunk(envelope: CompletionEnvelope, tools: string[]): string {
   return toChunkEvent(envelope, { tools });
 }
 
-/** The last content chunk, sent once the answer is final (what to cite depends on it). Sent even when empty, so "none" is explicit. */
+/** The last content chunk; sent even when empty, so "none" is explicit. */
 export function toCitationsChunk(envelope: CompletionEnvelope, citations: Citation[]): string {
   return toChunkEvent(envelope, { citations });
 }
 
-/** How full this conversation's context window is, sent once the answer is final (after citations, before the closing chunk). Only written when the agent measured it - see `InvokeResult.context`. */
+/** Context-window usage, sent once the answer is final; only written when the agent measured it. */
 export function toContextChunk(envelope: CompletionEnvelope, context: ContextUsage): string {
   return toChunkEvent(envelope, { context });
 }

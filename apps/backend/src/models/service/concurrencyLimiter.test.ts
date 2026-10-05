@@ -88,8 +88,7 @@ describe("ConcurrencyLimiter.acquire", () => {
     await flushMicrotasks();
 
     await expect(limiter.acquire("b")).rejects.toThrow(/already queued/i);
-    // The first "b" caller must still be resolvable once a slot frees - it
-    // must not have been silently overwritten/orphaned by the rejected call.
+    // The first "b" caller must still be resolvable - not silently overwritten/orphaned by the rejected call.
     expect(limiter.queuedCount).toBe(1);
     void firstQueued;
   });

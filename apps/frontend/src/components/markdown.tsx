@@ -1,11 +1,5 @@
-// Turns the model's raw Markdown text into React elements — bold, lists,
-// code, links — instead of one flat string. `remark-gfm` adds the GitHub
-// flavor on top of base Markdown: tables, strikethrough, checklists.
-//
-// react-markdown never touches the DOM with raw HTML: it walks the parsed
-// Markdown and renders each node as a real React element, picked from the
-// `components` map below. That's what keeps this safe against whatever text
-// the model happens to produce — there is no `dangerouslySetInnerHTML` here.
+// react-markdown renders parsed nodes as real React elements (no dangerouslySetInnerHTML),
+// so this stays safe against whatever text the model produces.
 
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -25,17 +19,14 @@ const COMPONENTS: Components = {
   pre: ({ children }) => (
     <pre className="mb-2 overflow-x-auto rounded-md bg-muted p-2 text-xs last:mb-0">{children}</pre>
   ),
-  // Tables: the parser emits bare <table> tags, which the browser draws with
-  // no padding or borders. The wrapper div scrolls sideways when a table is
-  // wider than the chat column instead of breaking the layout.
+  // Wrapper scrolls sideways instead of breaking layout when a table is wider than the column.
   table: ({ children }) => (
     <div className="mb-3 overflow-x-auto rounded-lg border border-border last:mb-0">
       <table className="w-full border-collapse text-sm tabular-nums">{children}</table>
     </div>
   ),
   thead: ({ children }) => <thead className="bg-muted">{children}</thead>,
-  // Every row gets a bottom line; the last body row drops it because the
-  // wrapper's own border already closes the table.
+  // Last body row drops its border - the wrapper's own border already closes the table.
   tbody: ({ children }) => <tbody className="[&>tr:last-child]:border-0">{children}</tbody>,
   tr: ({ children }) => <tr className="border-b border-border">{children}</tr>,
   // `style` carries the `:---:` / `---:` alignment the model may write.

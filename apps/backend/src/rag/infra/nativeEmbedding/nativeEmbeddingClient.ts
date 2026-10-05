@@ -1,14 +1,7 @@
 /**
- * Node-side client for the persistent native embedding worker
- * (`bare/embedServer.js`). Spawns `bare.exe` once, keeps it alive for the
- * life of this client, and exchanges newline-delimited JSON requests over a
- * named pipe - the same IPC shape `@qvac/sdk` itself uses internally
- * (`node-rpc-client.js`: `net.createServer()` on the Node side, a Bare
- * client dialing in), just without its RPC/plugin/schema layer.
- *
- * Model path/default config are `NativeEmbeddingProvider`'s job
- * (`embeddingGemmaModel.ts`) - this file only knows how to talk to whatever
- * `modelPath`/`config` it's given.
+ * Node-side client for the persistent native embedding worker (`bare/embedServer.js`). Spawns
+ * `bare.exe` once and exchanges newline-delimited JSON over a named pipe - same IPC shape
+ * `@qvac/sdk` uses internally, without its RPC/plugin/schema layer.
  */
 import * as fs from "node:fs";
 import * as net from "node:net";
@@ -57,14 +50,7 @@ function unlinkSocketBestEffort(pipePath: string): void {
   }
 }
 
-/**
- * `start()` and `shutdown()` below each have several possible completion
- * paths (success, a worker-reported error, an unexpected exit, a timeout)
- * that must all resolve their surrounding promise exactly once and always
- * clear the pending timer - this is that "settle exactly once" guard,
- * factored out so the two copies of it can't drift apart. `onTimeout` fires
- * only if nothing else calls `settle()` first.
- */
+/** Shared "settle exactly once" guard for `start()`/`shutdown()`, each of which has several completion paths that must resolve their promise exactly once. */
 function settleOnceWithTimeout(timeoutMs: number, onTimeout: () => void): { settle: (fn: () => void) => void } {
   let settled = false;
   const timer = setTimeout(() => {
@@ -83,19 +69,7 @@ function settleOnceWithTimeout(timeoutMs: number, onTimeout: () => void): { sett
   };
 }
 
-/**
- * Manages one persistent `bare.exe` worker process running `embedServer.js`.
- * `start()` spawns the worker and resolves once the model has loaded;
- * `embedMany()` sends one request per call, matched to its response by id;
- * `shutdown()` asks the worker to unload and exit gracefully, force-killing
- * it if it doesn't within `shutdownTimeoutMs`.
- *
- * Once `crashed` is true (the worker exited unexpectedly, or the pipe
- * errored), every pending and future `embedMany()` call rejects with
- * `NativeWorkerError` - this class never restarts itself. Restart/fallback
- * policy belongs to the caller (`NativeEmbeddingProvider` /
- * `ResilientEmbeddingService`), not here.
- */
+/** Manages one persistent `bare.exe` worker. Once crashed, every call rejects with `NativeWorkerError` - this class never restarts itself; that policy belongs to the caller. */
 export class NativeEmbeddingClient {
   private server: net.Server | null = null;
   private socket: net.Socket | null = null;
@@ -138,14 +112,8 @@ export class NativeEmbeddingClient {
             stdio: ["ignore", "inherit", "inherit"]
           });
           this.child = child;
-          // Safety net independent of any explicit shutdown()/unload() call:
-          // Windows does not kill child processes automatically when the
-          // parent exits, so without this a crashed shutdown path (an
-          // uncaught exception, a forced process.exit(), Ctrl+C racing the
-          // graceful-shutdown code) would leak a live bare.exe. Mirrors
-          // `@qvac/sdk`'s own `node-rpc-client.js` `process.once('exit',
-          // closeSyncForExit)`. `kill()` is synchronous enough to call from
-          // an 'exit' handler; no need to await anything here.
+          // Windows doesn't kill child processes when the parent exits - without this, a crashed
+          // shutdown path would leak a live bare.exe (mirrors @qvac/sdk's own exit-handler kill).
           process.once("exit", () => {
             try {
               if (!child.killed) child.kill();

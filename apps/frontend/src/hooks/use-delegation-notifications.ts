@@ -9,7 +9,7 @@ const SEVERITY_NOTIFIERS: Record<NotificationSeverity, (message: string) => void
   error: notifyError,
 }
 
-/** Watches the polled delegation snapshot and fires the matching toast whenever it transitions (connect, recovery starting, recovery resolving) - never on every poll, only on an actual change. Call once, at the top of the app, with the latest snapshot from `useModelStatus()`. */
+/** Fires a toast only when the delegation state actually transitions, not on every poll. Call once, with the latest `useModelStatus()` snapshot. */
 export function useDelegationNotifications(snapshot: DelegationSnapshot): void {
   const previousRef = useRef<DelegationSnapshot | undefined>(undefined)
 

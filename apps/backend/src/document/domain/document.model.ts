@@ -7,7 +7,7 @@ export type DocumentStatus =
   (typeof DocumentStatus)[keyof typeof DocumentStatus];
 
 export const DocumentType = {
-  POLICIES: "POLICIES", // should be injected in system prompts
+  POLICIES: "POLICIES",
   DATA: "DATA",
   REPORTS: "REPORTS",
   TRANSCRIPT: "TRANSCRIPT",

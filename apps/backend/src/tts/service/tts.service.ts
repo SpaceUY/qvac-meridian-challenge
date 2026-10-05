@@ -13,14 +13,7 @@ interface SynthesisSlot {
   audio?: Buffer;
 }
 
-/**
- * Reuses ModelManagementService for the Supertonic load lifecycle. Keeps
- * one global synthesis slot per process, not per session - textToSpeech()
- * has no per-call requestId to key a queue on. Concurrent callers share
- * this slot: a second synthesize() while one is pending throws
- * SynthesisInProgressError, and getAudio() returns the last completed
- * synthesis, not "yours".
- */
+/** One global synthesis slot per process, not per session - textToSpeech() has no per-call requestId to key a queue on. */
 export class TtsService {
   private modelIdPromise?: Promise<string>;
   private slot: SynthesisSlot = { state: 'idle' };
@@ -47,7 +40,7 @@ export class TtsService {
     return this.modelIdPromise;
   }
 
-  /** Awaits the model load (failures surface here); the synthesis itself runs in the background. */
+  /** Awaits the model load only; the synthesis itself runs in the background. */
   async synthesize(text: string): Promise<void> {
     if (this.slot.state === 'pending') {
       throw new SynthesisInProgressError();

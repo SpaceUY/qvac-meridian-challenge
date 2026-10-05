@@ -1,12 +1,5 @@
 /**
- * Follow-up diagnostic (not part of the original I.4 spike deliverable):
- * is the ~600ms/call `@qvac/sdk` `embed()` overhead seen in `benchmark.ts` a
- * FIXED per-RPC-call cost (unavoidable for any single-item call, e.g. a RAG
- * query embedding) or something specific to calling `embed()` once per text
- * (fixable by batching, like `QvacEmbeddingService.embedBatch()` already
- * does at ingest time via `adapter.embedMany()` -> one `embed({modelId,
- * text: texts})` call for the whole array)?
- *
+ * Follow-up diagnostic: is benchmark.ts's ~600ms/call `@qvac/sdk` `embed()` overhead a fixed per-RPC-call cost, or fixable by batching (like `QvacEmbeddingService.embedBatch()` already does at ingest)?
  * Run with: npx tsx src/experiments/native-embed-spike/diagnoseSdkOverhead.ts
  */
 import { close as closeSdk, embed, loadModel, unloadModel } from "@qvac/sdk";
@@ -41,9 +34,7 @@ async function main(): Promise<void> {
   }
   const separateTotalMs = Date.now() - separateStart;
 
-  // B) ONE embed() call with all 10 texts batched into a single array -
-  // exactly the shape `QvacEmbeddingService.embedBatch()` already sends at
-  // ingest time.
+  // B) ONE embed() call with all 10 texts batched - the shape QvacEmbeddingService.embedBatch() sends at ingest time.
   const batchedStart = Date.now();
   const batchedResult = await embed({ modelId, text: TEXTS });
   const batchedTotalMs = Date.now() - batchedStart;

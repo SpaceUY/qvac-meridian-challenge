@@ -49,7 +49,6 @@
   · React
 </p>
 
-
 <h2>The problem</h2>
 
 <p align="center">
@@ -99,6 +98,33 @@
 
 <p>
   No outbound call to a cloud model provider exists in the production dependency path.
+</p>
+
+<h2>Our contribution back to QVAC</h2>
+
+<p align="center">
+  <img
+    src="docs/assets/qvac-langgraph.svg"
+    alt="@space-uy/qvac-langgraph — a LangGraph ↔ QVAC adapter published on npm"
+    width="900"
+  />
+</p>
+
+<p>
+  This product's entire orchestrator — tool calling, RAG grounding, streaming, voice —
+  runs on <code>ChatQVAC</code>, a LangGraph-compatible chat model we built and
+  <strong>published as <code>@space-uy/qvac-langgraph</code> on npm</strong>. It wasn't
+  asked for by the exercise: nothing in the brief requires LangGraph specifically, and we
+  could have wired QVAC's completion API directly into our own graph code and stopped there.
+</p>
+
+<p>
+  Instead we packaged the adapter layer itself — the part that makes
+  <code>loadModel()</code>/<code>completion()</code> look like any other LangChain chat
+  model — as a standalone, versioned dependency (currently <code>1.2.0</code>, resolved
+  from the public npm registry, not vendored). Any team building a LangGraph-based agent
+  on top of QVAC can install it and skip writing this bridge themselves. It's the one
+  piece of this submission that's useful outside this submission.
 </p>
 
 <h2>Why this is different</h2>
@@ -199,19 +225,40 @@
 <p align="center">
   <img
     src="docs/assets/architecture.svg"
-    alt="Meridian Assistant architecture"
+    alt="Meridian Assistant real runtime architecture: Express, AgentService, LangGraph, ChatQVAC, QvacChatSession, voice, and P2P delegation"
     width="900"
   />
+</p>
+
+<p>
+  One <code>AgentService</code>, one compiled LangGraph graph, one QVAC model session —
+  text and voice both run through the exact same pipeline, not two parallel ones.
 </p>
 
 <table>
   <tr>
     <td><strong>Express routers</strong></td>
-    <td>Parse and validate HTTP requests</td>
+    <td>Parse, validate, stream SSE, cancel on client disconnect</td>
   </tr>
   <tr>
-    <td><strong>AgentService / LangGraph</strong></td>
-    <td>Retrieval, tools, inference, and citation orchestration</td>
+    <td><strong>AgentService</strong></td>
+    <td>Singleton orchestrator; shared by the text and voice routes</td>
+  </tr>
+  <tr>
+    <td><strong>LangGraph graph</strong></td>
+    <td>RAG once, then LLM ⇄ tools until no tool call remains</td>
+  </tr>
+  <tr>
+    <td><strong>ChatQVAC</strong></td>
+    <td>Our own <code>@space-uy/qvac-langgraph</code> adapter — makes QVAC look like any LangChain chat model</td>
+  </tr>
+  <tr>
+    <td><strong>QvacChatSession</strong></td>
+    <td>Model lifecycle, FIFO concurrency, delegation, mid-session recovery</td>
+  </tr>
+  <tr>
+    <td><strong>Voice wrapper</strong></td>
+    <td>Sentence-by-sentence TTS queue over the same AgentService output</td>
   </tr>
   <tr>
     <td><strong>ResilientEmbeddingService</strong></td>
@@ -222,8 +269,12 @@
     <td>Persisted local vector search</td>
   </tr>
   <tr>
-    <td><strong>ModelManagementService</strong></td>
+    <td><strong>ModelManagementService / QvacRuntimeAdapter</strong></td>
     <td>Discover → download → load → infer → unload → close</td>
+  </tr>
+  <tr>
+    <td><strong>Local model / Meridian peer</strong></td>
+    <td>Optional P2P delegated inference, automatic local fallback</td>
   </tr>
 </table>
 
@@ -252,33 +303,6 @@
     width="900"
   />
 </p>
-
-<table>
-  <tr>
-    <th align="left">Finding</th>
-    <th align="left">Decision</th>
-  </tr>
-  <tr>
-    <td>Native embeddings improved performance, but less than the first benchmark suggested</td>
-    <td>Fixed the benchmark and shipped only the measured gain</td>
-  </tr>
-  <tr>
-    <td>Continuous batching regressed on medium hardware</td>
-    <td>Medium stays sequential</td>
-  </tr>
-  <tr>
-    <td>Default retrieval settings were insufficient</td>
-    <td>Benchmarked model, chunk size, and threshold</td>
-  </tr>
-  <tr>
-    <td>P2P peers may disappear mid-session</td>
-    <td>Heartbeat monitoring + automatic local fallback</td>
-  </tr>
-  <tr>
-    <td>Two-image requests crash the current upstream worker</td>
-    <td>Production currently caps messages at one image</td>
-  </tr>
-</table>
 
 <h2>Hardware-aware inference</h2>
 
@@ -348,6 +372,27 @@ npm run dev:client</code></pre>
   <a href="apps/backend/README.md"><code>apps/backend/README.md</code></a>.
 </p>
 
+<p>
+  <strong>Or with Docker</strong> — a production-compiled image (no dev tooling in the final
+  container) running the P2P provider/server demo on a private network:
+</p>
+
+<pre><code>npm run models:fetch --workspace=apps/backend
+npm run ingest --workspace=apps/backend
+cp .env.example .env
+docker compose up --build</code></pre>
+
+<p>
+  <code>.qvac-cache/</code> and <code>.lancedb/</code> are host volumes, not baked into the
+  image, so both commands above have to run on the host first — the <code>server</code>
+  container refuses to start without an ingested vector store. Once up, the
+  <code>server</code> container exposes the same OpenAI-compatible API on <code>:3001</code>,
+  delegating chat inference to the <code>provider</code> container by public key, with
+  automatic local fallback if it's unreachable. <code>.env.example</code> ships demo peer
+  identities for local testing; generate fresh ones with
+  <code>npm run seed:generate --workspace=apps/backend</code>.
+</p>
+
 <h2>Judge this project in 60 seconds</h2>
 
 <p align="center">
@@ -379,7 +424,154 @@ npm run dev:client</code></pre>
 
 <br>
 
-<!-- keep your existing requirements table here -->
+<p>
+  ✅ Implemented &nbsp;·&nbsp;
+  🧪 Tested / demonstrated &nbsp;·&nbsp;
+  ⚠️ Partial or documented limitation
+</p>
+
+<table>
+  <tr>
+    <th>Requirement</th>
+    <th>Status</th>
+    <th>Evidence</th>
+  </tr>
+
+  <tr>
+    <td>[1.2] Model weights excluded from installer</td>
+    <td align="center">✅</td>
+    <td><code>docs/bundle-size-report.md</code></td>
+  </tr>
+
+  <tr>
+    <td>[1.4] Cancel response in progress</td>
+    <td align="center">✅ 🧪</td>
+    <td><code>chat.router.ts</code> · frontend stop control</td>
+  </tr>
+
+  <tr>
+    <td>[2.1] No invented stock data</td>
+    <td align="center">✅ 🧪</td>
+    <td><code>stock-tool</code></td>
+  </tr>
+
+  <tr>
+    <td>[2.2 / 2.3] Persisted local vector store</td>
+    <td align="center">✅</td>
+    <td>LanceDB + direct <code>embed()</code>/<code>ragChunk()</code></td>
+  </tr>
+
+  <tr>
+    <td>[2.4] Conversation UI</td>
+    <td align="center">✅</td>
+    <td><code>message-list.tsx</code></td>
+  </tr>
+
+  <tr>
+    <td>[3.1] Structured tool-call loop</td>
+    <td align="center">✅ 🧪</td>
+    <td>Zod + LangGraph tool events</td>
+  </tr>
+
+  <tr>
+    <td>[3.1.1] Corpus inventory tool</td>
+    <td align="center">✅</td>
+    <td><code>listDocumentsTool.ts</code></td>
+  </tr>
+
+  <tr>
+    <td>[3.1.2] Stock-tool dataset</td>
+    <td align="center">✅</td>
+    <td><code>stock-tool/</code></td>
+  </tr>
+
+  <tr>
+    <td>[5.1 / 5.1.1] Runtime visible in UI</td>
+    <td align="center">✅</td>
+    <td><code>engine-panel.tsx</code></td>
+  </tr>
+
+  <tr>
+    <td>[5.2] Hardware-aware model selection</td>
+    <td align="center">✅ 🧪</td>
+    <td><code>resourceTier.ts</code> · <code>models.config.ts</code></td>
+  </tr>
+
+  <tr>
+    <td>[6.1.2] Citations surfaced</td>
+    <td align="center">✅</td>
+    <td><code>citation-sources.tsx</code></td>
+  </tr>
+
+  <tr>
+    <td>[6.1.3] Deterministic reruns</td>
+    <td align="center">✅ 🧪</td>
+    <td>temperature / seed + deterministic citation sort</td>
+  </tr>
+
+  <tr>
+    <td>[6.1.4] Offline server start</td>
+    <td align="center">✅</td>
+    <td><code>models:fetch</code></td>
+  </tr>
+
+  <tr>
+    <td>[6.2.1] Plugin-scoped SDK</td>
+    <td align="center">✅</td>
+    <td><code>qvac.config.mjs</code></td>
+  </tr>
+
+  <tr>
+    <td>[6.2.2] Bundle report</td>
+    <td align="center">✅ 🧪</td>
+    <td><code>docs/bundle-size-report.md</code></td>
+  </tr>
+
+  <tr>
+    <td>[6.3] Session KV-cache reuse</td>
+    <td align="center">✅</td>
+    <td><code>X-Meridian-Session</code></td>
+  </tr>
+</table>
+
+<h4>Extra mile</h4>
+
+<table>
+  <tr>
+    <th>Improvement</th>
+    <th>Status</th>
+  </tr>
+
+  <tr>
+    <td>LangGraph ↔ QVAC integration</td>
+    <td>✅ 🧪 Published as <code>@space-uy/qvac-langgraph</code> on npm — see <a href="#our-contribution-back-to-qvac">above</a></td>
+  </tr>
+
+  <tr>
+    <td>Continuous batching</td>
+    <td>⚠️ High tier only after measured regression on medium</td>
+  </tr>
+
+  <tr>
+    <td>Native C++ embedding path</td>
+    <td>✅ 🧪 Primary path with automatic SDK fallback</td>
+  </tr>
+
+  <tr>
+    <td>LoRA fine-tuning</td>
+    <td>⚠️ Attempted and documented as blocked upstream</td>
+  </tr>
+
+  <tr>
+    <td>P2P resilience</td>
+    <td>✅ 🧪 Heartbeat, fallback and recovery</td>
+  </tr>
+
+  <tr>
+    <td>TurboQuant KV cache</td>
+    <td>⚠️ Implemented but disabled pending validation</td>
+  </tr>
+</table>
 
 </details>
 
@@ -394,7 +586,50 @@ npm run dev:client</code></pre>
 
 <br>
 
-<!-- keep the detailed limitation table here -->
+<table>
+  <tr>
+    <td valign="top"><strong>Benchmark correctness</strong></td>
+    <td>
+      The original native-embedding benchmark reported an unrealistic ~36× improvement.
+      A blocking PowerShell RSS sampler was distorting the measurement.
+      The benchmark was fixed before the result was used to justify the architecture.
+    </td>
+  </tr>
+
+  <tr>
+    <td valign="top"><strong>Continuous batching</strong></td>
+    <td>
+      QVAC's <code>batchCompletion()</code> schema did not preserve the required KV-cache behavior.
+      Concurrent <code>completion()</code> calls were used instead.
+      Medium-tier testing showed a regression, so that tier remains sequential.
+    </td>
+  </tr>
+
+  <tr>
+    <td valign="top"><strong>Vision</strong></td>
+    <td>
+      Two images in one message reproducibly crash the current upstream QVAC / llama.cpp worker.
+      Production therefore limits messages to one image.
+    </td>
+  </tr>
+
+  <tr>
+    <td valign="top"><strong>LoRA</strong></td>
+    <td>
+      Fine-tuning was attempted against the production model and a supported control model.
+      The production architecture is rejected and the control path crashes before producing an adapter.
+      No successful adapter is claimed.
+    </td>
+  </tr>
+
+  <tr>
+    <td valign="top"><strong>P2P recovery</strong></td>
+    <td>
+      Heartbeats and reconciliation were added around the SDK so a disappearing provider
+      causes automatic local recovery rather than a stalled session.
+    </td>
+  </tr>
+</table>
 
 </details>
 

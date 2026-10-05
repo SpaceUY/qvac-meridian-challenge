@@ -8,14 +8,7 @@ export interface ContextUsage {
   exhausted: boolean;
 }
 
-/**
- * Pure: no model, no I/O. `cacheTokens` first - it is what the session's
- * KV cache holds after the call, the number that grows turn after turn and
- * that a prefill overflow is measured against. Falls back to
- * prompt + generated when a runtime reports no cache counter. Undefined
- * when there is nothing to measure, so callers send no signal rather than
- * a made-up one.
- */
+/** Prefers `cacheTokens` (the KV-cache size a prefill overflow is measured against); falls back to prompt+generated when absent. Undefined when there's nothing to measure. */
 export function measureContextUsage(
   stats: ChatCompletionStats | undefined,
   maxTokens: number,

@@ -1,5 +1,4 @@
-// Keeps the view glued to the bottom of a scrolling box while new content
-// arrives — unless the user scrolled up, in which case it gets out of the way.
+// Keeps the view pinned to the bottom while new content arrives, unless the user scrolled up.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -13,14 +12,10 @@ function distanceFromBottom(element: HTMLElement): number {
 export function useStickToBottom<S extends HTMLElement, C extends HTMLElement>() {
   const scrollRef = useRef<S>(null)
   const contentRef = useRef<C>(null)
-  // Two copies of the same truth, on purpose: the ref is what the listeners
-  // read (always current, never triggers a render), the state is what React
-  // reads to show or hide the button.
+  // Ref for listeners (always current, no render); state for React to show/hide the button.
   const isPinnedRef = useRef(true)
   const [isPinned, setIsPinned] = useState(true)
-  // Set while scrollToBottom's smooth-scroll animation is in flight, so the
-  // scroll listener below can tell "the user scrolled" apart from "the
-  // animation we started is still moving toward the bottom".
+  // Lets the scroll listener tell a real user scroll apart from our own in-flight smooth-scroll.
   const isAutoScrollingRef = useRef(false)
 
   const setPinned = useCallback((value: boolean) => {
@@ -28,8 +23,6 @@ export function useStickToBottom<S extends HTMLElement, C extends HTMLElement>()
     setIsPinned(value)
   }, [])
 
-  // 1. What the user wants. Every scroll — wheel, trackpad, keyboard, and our
-  //    own programmatic one — ends up here asking the same question.
   useEffect(() => {
     const element = scrollRef.current
     if (!element) return
@@ -37,8 +30,8 @@ export function useStickToBottom<S extends HTMLElement, C extends HTMLElement>()
     const handleScroll = () => {
       const atBottom = distanceFromBottom(element) <= PIN_THRESHOLD_PX
       if (isAutoScrollingRef.current) {
-        if (atBottom) isAutoScrollingRef.current = false // the animation arrived
-        return // ignore intermediate events while it's still animating
+        if (atBottom) isAutoScrollingRef.current = false
+        return
       }
       setPinned(atBottom)
     }
@@ -46,15 +39,14 @@ export function useStickToBottom<S extends HTMLElement, C extends HTMLElement>()
     return () => element.removeEventListener('scroll', handleScroll)
   }, [setPinned])
 
-  // 2. When the content grew. A new token does NOT fire a scroll event:
-  //    scrollTop did not move, the floor did. Only a ResizeObserver sees it.
+  // A new token doesn't fire a scroll event (scrollTop didn't move, the floor did) - only ResizeObserver sees it.
   useEffect(() => {
     const element = scrollRef.current
     const content = contentRef.current
     if (!element || !content) return
 
     const observer = new ResizeObserver(() => {
-      // Instant, not smooth: a smooth scroll per token would fight the next one.
+      // Instant, not smooth - a smooth scroll per token would fight the next one.
       if (isPinnedRef.current) element.scrollTop = element.scrollHeight
     })
     observer.observe(content)
@@ -64,8 +56,7 @@ export function useStickToBottom<S extends HTMLElement, C extends HTMLElement>()
   const scrollToBottom = useCallback(() => {
     const element = scrollRef.current
     if (!element) return
-    // Pin first: if the content is still growing, the observer takes over from
-    // here and keeps following, instead of landing short.
+    // Pin first so the observer keeps following if content is still growing.
     setPinned(true)
     isAutoScrollingRef.current = true
     element.scrollTo({ top: element.scrollHeight, behavior: 'smooth' })

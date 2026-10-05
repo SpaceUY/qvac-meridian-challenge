@@ -1,14 +1,6 @@
-// apps/frontend/src/hooks/use-voice-turn.ts
-//
-// Orchestrates a voice turn: record -> stop -> send -> stream into the chat
-// store. Sibling of use-chat.ts in shape (only state + refs + lifecycle -
-// the real logic lives in mic-recorder.ts and voice-client.ts) - and, once
-// the recording is stopped, IS effectively a text turn: 'processing' only
-// covers turning the recording into a WAV. From there the message pair is
-// in history (thinking-dots right away) and the answer
-// streams into the same `history`/`isStreaming` machinery useChat uses, so
-// MessageList's thinking-dots/cursor and the Composer's Stop button work
-// for a voice turn with no changes there.
+// Orchestrates a voice turn: record -> stop -> send -> stream into the chat store.
+// Once recording stops, it's effectively a text turn - the answer streams into the
+// same history/isStreaming machinery useChat uses.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { EngineError, toOpenAIMessages } from '@/lib/chat-client'
@@ -26,13 +18,10 @@ export function useVoiceTurn() {
   const [phase, setPhase] = useState<VoicePhase>({ type: 'idle' })
   const recorderRef = useRef<MicRecorder | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-  // Double-click guard: two quick clicks while 'idle' could fire two
-  // start() calls before the first setPhase('recording') re-renders.
+  // Guards against two start() calls before the first setPhase('recording') re-renders.
   const startingRef = useRef(false)
   const mountedRef = useRef(true)
-  // Indirection so the recording bar can register/unregister its level
-  // handler without start() needing to know it exists yet - start() is
-  // called while still 'idle', before the recording bar has ever mounted.
+  // Indirection so the recording bar can register its level handler before it's mounted.
   const levelListenerRef = useRef<((level: number) => void) | null>(null)
   const setLevelListener = useCallback((fn: ((level: number) => void) | null) => {
     levelListenerRef.current = fn
@@ -42,10 +31,7 @@ export function useVoiceTurn() {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
-      // If getUserMedia is still waiting on the user's permission prompt
-      // (can take seconds), this cancels it anyway - start() checks
-      // mountedRef once it resolves and won't transition to 'recording'
-      // if the component is already gone.
+      // Cancels even mid-getUserMedia-permission-prompt; start() re-checks mountedRef once it resolves.
       void recorderRef.current?.cancel()
       abortRef.current?.abort()
     }
@@ -59,10 +45,7 @@ export function useVoiceTurn() {
     useChatStore.getState().speechStopped()
 
     const recorder = new MicRecorder()
-    // Visible to the unmount cleanup from here already, even though
-    // getUserMedia hasn't resolved yet - if the user navigates away while
-    // the browser's permission prompt is still open, the effect above can
-    // still cancel this instance.
+    // Set before getUserMedia resolves so the unmount cleanup above can still cancel it.
     recorderRef.current = recorder
 
     try {
@@ -70,7 +53,7 @@ export function useVoiceTurn() {
     } catch {
       startingRef.current = false
       if (recorderRef.current === recorder) recorderRef.current = null
-      await recorder.cancel() // in case getUserMedia granted the stream but the AudioContext/Worklet failed afterward
+      await recorder.cancel()
       if (mountedRef.current) setPhase({ type: 'error', message: 'Could not access the microphone.' })
       return
     }
@@ -78,8 +61,6 @@ export function useVoiceTurn() {
     startingRef.current = false
 
     if (!mountedRef.current) {
-      // Unmounted while we were waiting on the permission prompt - don't
-      // transition to 'recording', shut down what just got turned on.
       await recorder.cancel()
       return
     }
@@ -91,8 +72,7 @@ export function useVoiceTurn() {
     const recorder = recorderRef.current
     if (!recorder) return
     recorderRef.current = null
-    // Stamped now: if New chat happens while this is in flight, the answer
-    // belongs to a conversation that no longer exists.
+    // Stamped now so a mid-flight New chat is detected as "stale" below.
     const sessionId = useChatStore.getState().sessionId
     setPhase({ type: 'processing' })
 
@@ -100,50 +80,36 @@ export function useVoiceTurn() {
     abortRef.current = controller
     const userMessageId = crypto.randomUUID()
     const assistantMessageId = crypto.randomUUID()
-    // Only true once a message pair actually exists in history - before
-    // that, a failure (the WAV encoding) is shown in the composer's own
-    // error banner. After that point - request included, so "model not
-    // ready" too - a failure belongs to the message itself
-    // (responseFailed), exactly like a text turn's.
+    // Before this is true, a failure shows in the composer's error banner; after, it's responseFailed like a text turn.
     let turnStarted = false
 
     try {
-      // stop() inside the same try: if resampling or WAV encoding throws
-      // (not just the network request), it still has to fall through to
-      // the catch and leave 'processing' - otherwise the phase gets stuck
-      // there forever.
+      // stop() is inside this try too: if WAV encoding throws, it must still fall through to
+      // the catch instead of leaving the phase stuck on 'processing' forever.
       const blob = await recorder.stop()
       if (!blob) {
         if (mountedRef.current) setPhase({ type: 'idle' })
         return
       }
 
-      // Read before voiceTurnStarted: the request must carry the conversation
-      // as it was, not the empty pair this turn is about to add.
+      // Read before voiceTurnStarted: must carry history as it was, not the pair about to be added.
       const priorHistory = useChatStore.getState().history
 
-      // The message pair goes in now, before any network call - same moment
-      // a text turn creates its own. Waiting for the response headers left
-      // the chat with no thinking-dots for the whole STT + generation wait:
-      // a proxy in between (Vite's, in dev) only forwards the headers
-      // together with the first SSE event, i.e. once the first sentence is
-      // already synthesized.
+      // Message pair goes in before the network call, not after headers arrive: the dev proxy only
+      // forwards headers together with the first SSE event, which would delay the thinking-dots.
       turnStarted = true
       useChatStore.getState().voiceTurnStarted(userMessageId, assistantMessageId)
       useChatStore.getState().activeTurnStarted(controller)
-      // From here the turn shows through the shared history/isStreaming
-      // state (MessageList's own cursor/thinking-dots), same as a text
-      // turn - 'processing' has done its job.
       if (mountedRef.current) setPhase({ type: 'idle' })
 
       const audioBase64 = await blobToBase64(blob)
       const messages = await toOpenAIMessages(priorHistory)
       const body = await requestVoiceCompletion({ messages, audioBase64, signal: controller.signal })
 
-      if (useChatStore.getState().sessionId !== sessionId) return // New chat while the request was going out: this turn's messages are already gone
+      if (useChatStore.getState().sessionId !== sessionId) return // New chat: this turn's messages are already gone
 
       for await (const delta of readVoiceDeltas(body)) {
-        if (useChatStore.getState().sessionId !== sessionId) return // New chat mid-stream: this turn's messages are already gone
+        if (useChatStore.getState().sessionId !== sessionId) return
 
         if (delta.type === 'audio') {
           useChatStore.getState().chunkReceived(assistantMessageId, delta.text)
@@ -163,8 +129,7 @@ export function useVoiceTurn() {
       useChatStore.getState().responseFinished(assistantMessageId)
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
-        // Aborted on purpose (unmount, New chat, or the composer's Stop
-        // button) - not an error, same as a cancelled text turn.
+        // Aborted on purpose (unmount, New chat, Stop button) - not an error.
         if (turnStarted) useChatStore.getState().responseFinished(assistantMessageId)
         if (mountedRef.current) setPhase({ type: 'idle' })
         return
@@ -199,9 +164,7 @@ export function useVoiceTurn() {
     if (mountedRef.current) setPhase({ type: 'idle' })
   }, [])
 
-  // New chat replaces sessionId: whatever voice turn is in progress belongs
-  // to a conversation that no longer exists. subscribe() returns its own
-  // unsubscribe - exactly the cleanup this effect needs.
+  // A sessionId change (New chat) cancels whatever voice turn is in progress.
   useEffect(
     () =>
       useChatStore.subscribe((state, previous) => {
@@ -213,14 +176,7 @@ export function useVoiceTurn() {
   return { phase, start, send: stopAndSend, discard, setLevelListener }
 }
 
-/**
- * Failures of the request itself (bad audio, model not ready, network),
- * shown under the assistant message. "No speech detected" is not one of
- * these - once
- * streaming, headers are already committed by the time that's known, so it
- * arrives as a `type: 'error'` SSE delta instead (see stopAndSend's loop),
- * carrying its own human-readable reason straight from the backend.
- */
+/** Failures of the request itself. "No speech detected" arrives later as a 'error' SSE delta instead (see stopAndSend's loop), since headers are already committed by the time it's known. */
 function voiceErrorMessage(err: unknown): string {
   if (err instanceof EngineError && err.status === 503) return 'The model is not ready yet.'
   if (err instanceof EngineError) return err.message

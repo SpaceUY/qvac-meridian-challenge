@@ -77,9 +77,7 @@ class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
     const response =
       this.responses[Math.min(this.callCount, this.responses.length - 1)];
     this.callCount += 1;
-    // Mirrors the real adapter's streaming contract: deltas sum to the full
-    // text. One delta per word, so a test can tell "streamed token by token"
-    // apart from "arrived in one piece".
+    // Mirrors the real adapter's streaming contract: deltas sum to the full text, one per word (so "token by token" is distinguishable from "arrived in one piece").
     for (const delta of response.text.match(/\S+\s*/g) ?? []) onToken?.(delta);
     return Object.assign(Promise.resolve(response), {
       requestId: `req-chat-${this.chatRequests.length}`,
@@ -103,13 +101,7 @@ interface PendingLoadCall {
   reject: (err: unknown) => void;
 }
 
-/**
- * Like `FakeModelRuntime` above, but `load`/`chatComplete` calls stay
- * pending until the test explicitly `settle()`s or `cancel()`s them by
- * requestId - needed to exercise `AgentService.cancel()`/`cancelPreload()`,
- * which cancel whatever call is currently in flight on the underlying
- * `ChatQVAC` model.
- */
+/** Like `FakeModelRuntime`, but `load`/`chatComplete` stay pending until the test `settle()`s/`cancel()`s them by requestId - needed to exercise `AgentService.cancel()`/`cancelPreload()`. */
 class ControllableModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
   private nextRequestId = 0;
   private readonly pendingChat = new Map<string, PendingChatCall>();
@@ -218,15 +210,7 @@ class ControllableModelRuntime implements ModelProvisioningPort, ModelRuntimePor
   }
 }
 
-/**
- * Mimics a delegated load stuck in a connection phase that never registers
- * with the runtime's own cancellation registry: `cancel()` resolves
- * successfully but never actually interrupts the in-flight `load()` call.
- * Exercises the path `QvacChatSession.cancelLoad()`'s abandon signal
- * exists for - unlike `ControllableModelRuntime` above, whose `cancel()`
- * genuinely rejects the pending load itself, this one proves the session's
- * own abandon signal actually rejects the load.
- */
+/** Mimics a delegated load whose `cancel()` resolves but never actually interrupts the in-flight `load()` - exercises `QvacChatSession.cancelLoad()`'s own abandon signal, unlike `ControllableModelRuntime`'s genuine cancel. */
 class HangingLoadModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
   async searchRegistry() {
     return [];
@@ -337,10 +321,7 @@ describe("AgentService concurrency (high tier)", () => {
     runtime.settle(chatRequestIdA, { text: "answer A", toolCalls: [] });
     runtime.settle(chatRequestIdB, { text: "answer B", toolCalls: [] });
 
-    // ControllableModelRuntime never streams tokens, so the graph's streamed
-    // reply is empty regardless of settle()'s text - what matters here is
-    // that both resolve independently, proving neither blocked on the other
-    // (chatRequestIdB above was obtained without ever settling A).
+    // What matters: both resolve independently, proving neither blocked on the other (chatRequestIdB was obtained without ever settling A).
     await expect(pendingA).resolves.toEqual(expect.objectContaining({ answer: expect.any(String) }));
     await expect(pendingB).resolves.toEqual(expect.objectContaining({ answer: expect.any(String) }));
   });
@@ -532,8 +513,7 @@ describe("AgentService.invoke", () => {
         new FakeDocumentRepository([]),
       );
 
-      // Specific on purpose: the terse "What's the warranty policy?" scores
-      // ~0.52 with the real model, just under DEFAULT_RAG_CONFIG's minScore.
+      // Specific on purpose: the terse "What's the warranty policy?" scores ~0.52 with the real model, just under DEFAULT_RAG_CONFIG's minScore.
       await agentService.invoke([
         { role: "user", message: "What is the standard hardware warranty period?" },
       ]);
@@ -543,9 +523,7 @@ describe("AgentService.invoke", () => {
         history.some(
           (message) =>
             message.role === "system" &&
-            // CORPUS_CHUNK_FIXTURES' actual wording (not "Standard warranty
-            // covers 24 months." - that's FAKE_DOCUMENTS' text, used by the
-            // list_documents test below, a different fixture entirely).
+            // CORPUS_CHUNK_FIXTURES' actual wording - not FAKE_DOCUMENTS' text (that's a different fixture, used by the list_documents test below).
             message.content.includes("Standard hardware warranty"),
         ),
       ).toBe(true);
@@ -716,10 +694,7 @@ describe("AgentService.invoke", () => {
     expect(followUpChatRequestId).not.toBe(chatRequestId);
     runtime.settle(followUpChatRequestId, { text: "hi again", toolCalls: [] });
 
-    // Not asserting on the exact answer text: the grounding fallback in
-    // graph.ts's buildLlmNode may substitute a fixed message when this
-    // fixture setup finds no RAG evidence, independent of cancellation.
-    // What matters here is that the model is still usable at all.
+    // Not asserting the exact answer text: the grounding fallback may substitute a fixed message when this fixture finds no RAG evidence. What matters is the model is still usable at all.
     await expect(followUp).resolves.toEqual(
       expect.objectContaining({ answer: expect.any(String) }),
     );

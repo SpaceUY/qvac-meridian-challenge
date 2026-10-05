@@ -8,7 +8,7 @@ import { DocumentGrid, DocumentGridSkeleton } from '@/components/document-grid'
 import { useDocuments } from '@/hooks/use-documents'
 import type { CorpusDocument } from '@/lib/documents-client'
 
-/** Left sidebar: the "Corpus · N docs" card, opening the full inventory in a modal. Req. [3.1.1]. The count only shows once it is real - never a placeholder number. */
+/** Req. [3.1.1]. Count only shows once real - never a placeholder number. */
 export function CorpusDialog() {
   const documents = useDocuments()
   const [query, setQuery] = useState('')

@@ -27,8 +27,7 @@ const USER_BUBBLE = 'rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-[15
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === 'user'
   const parsed = parseThinking(message.text)
-  // Waiting for the very first token, OR still inside an unclosed <think>
-  // block: either way, there is nothing worth showing yet but the dots.
+  // No first token yet, or still inside an unclosed <think> block - nothing to show but the dots.
   const isThinking = message.status.type === 'streaming' && (message.text === '' || parsed.isThinking)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
 
@@ -63,7 +62,7 @@ function MessageBubble({ message }: { message: Message }) {
           autoPlay
         />
       )}
-      {/* Tools first (how the answer was made), then sources (what it rests on). Each renders nothing when its list is empty. */}
+      {/* Tools (how), then sources (what it rests on) - each renders nothing when empty. */}
       <ToolBadges tools={message.tools} />
       <CitationSources citations={message.citations} />
       <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />

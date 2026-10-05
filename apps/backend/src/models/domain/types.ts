@@ -1,9 +1,4 @@
-/**
- * SDK-agnostic domain types for local model management. Nothing here may
- * import `@qvac/sdk` — that boundary is what keeps the runtime swappable
- * (see `domain/ports.ts`) and is enforced by convention: only
- * `infra/qvacRuntimeAdapter.ts` is allowed to import the SDK.
- */
+/** SDK-agnostic domain types - nothing here may import `@qvac/sdk` (only `infra/qvacRuntimeAdapter.ts` may). */
 
 /** A model discovered via the QVAC distributed registry (modelRegistryList/Search). */
 export interface RegistryModelSummary {
@@ -23,17 +18,7 @@ export interface RegistrySearchQuery {
   quantization?: string;
 }
 
-/**
- * Where to load model weights from. `registry` resolves a previously
- * discovered catalog entry; `url` loads directly from an HTTPS location
- * (including HuggingFace file URLs) without going through the registry;
- * `rawSrc` passes an already-formed catalog src string straight through
- * unwrapped (e.g. a VLM's projection model, exported by `@qvac/sdk` as a
- * `.src` string rather than a `registryPath`/`registrySource` pair — see
- * `config/models.config.ts`'s `MMPROJ_QWEN3VL_2B_MULTIMODAL_Q4_K.src`).
- * Adding a new source kind later (e.g. a local filesystem path) only
- * touches this union and the adapter's `load()` — nothing else.
- */
+/** Where to load weights from: `registry` (catalog lookup), `url` (direct HTTPS/HF), or `rawSrc` (an already-formed catalog src string passed through, e.g. a VLM's `projectionModelSrc`). */
 export type ModelSource =
   | {
       kind: "registry";
@@ -73,14 +58,7 @@ export type ModelRequestState =
   | "failed"
   | "cancelled";
 
-/**
- * Observability for a load/inference/chat completion started via
- * `loadModel()`/`infer()`/`chatComplete()`. Those return as soon as a
- * `requestId` exists, without waiting for the operation to settle -
- * `ModelManagementService.getRequestStatus()` (and `GET /requests/:requestId`)
- * is how a caller later learns whether it succeeded, failed, or was
- * cancelled.
- */
+/** Lets a caller poll the eventual outcome of a `load`/`infer`/`chatComplete` call that returned before settling (see `getRequestStatus()`). */
 export interface ModelRequestStatus {
   requestId: string;
   kind: "load" | "inference" | "chat";
@@ -91,7 +69,7 @@ export interface ModelRequestStatus {
   text?: string;
 }
 
-/** Where to route a model load instead of running it locally, and how to fall back if that fails. Mirrors `@qvac/sdk`'s `loadModel({ delegate })` shape exactly (see `qvacRuntimeAdapter.ts`'s `load()`), kept independent of the SDK's own type since `domain/` never imports `@qvac/sdk`. */
+/** Mirrors `@qvac/sdk`'s `loadModel({ delegate })` shape, kept independent since `domain/` never imports the SDK. */
 export interface DelegateOptions {
   providerPublicKey: string;
   timeout?: number;
@@ -102,7 +80,7 @@ export interface DelegateOptions {
 /** Extra load-time engine config. Kept separate from `ModelSource` because it configures the runtime, not where weights come from. */
 export interface LoadModelOptions {
   ctxSize?: number;
-  /** Enables tool-call parsing for this model; some engines require opting in at load time regardless of whether a given request carries tools. */
+  /** Enables tool-call parsing; some engines require this at load time regardless of per-request tools. */
   tools?: boolean;
   /** Opaque per-engine load config (e.g. whisper's `language`/`detect_language`), merged as-is into the SDK's `modelConfig`. */
   engineConfig?: Record<string, unknown>;
@@ -110,7 +88,7 @@ export interface LoadModelOptions {
   delegate?: DelegateOptions;
 }
 
-/** Closed set of image formats the multimodal pipeline accepts today - see the design spec for why WebP is deliberately excluded even though the API boundary can detect it. */
+/** Closed set of image formats accepted today - WebP is deliberately excluded even though the boundary can detect it. */
 export type SupportedImageMimeType = "image/jpeg" | "image/png";
 
 export interface ChatImageAttachment {
@@ -155,7 +133,7 @@ export interface ChatCompletionStats {
   tokensPerSecond?: number;
   promptTokens?: number;
   generatedTokens?: number;
-  /** Tokens held in this request's KV cache once the call finished - the number that grows turn after turn in one session (see ai/orchestrator/contextBudget.ts). The SDK already sends it; this type just stops hiding it. */
+  /** KV-cache tokens held after this call - grows turn after turn in a session (see contextBudget.ts). */
   cacheTokens?: number;
 }
 
@@ -166,7 +144,7 @@ export interface ChatCompletionRequest {
   seed?: number;
   /** Per-request KV cache session key, forwarded from the `X-Meridian-Session` header. */
   sessionId?: string;
-  /** Whether the SDK's KV cache is used for this request, sourced from the loaded model's `AgentModelConfig.kvCacheEnabled` (`config/models.config.ts`). `undefined` means enabled, same as `true`. */
+  /** Sourced from `AgentModelConfig.kvCacheEnabled`; `undefined` means enabled, same as `true`. */
   kvCacheEnabled?: boolean;
   /** Caller-assigned id for this specific generation call - lets `QvacChatSession` track/cancel it independently of any other concurrently in flight. */
   requestId?: string;

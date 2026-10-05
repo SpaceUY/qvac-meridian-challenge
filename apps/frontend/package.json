@@ -2,6 +2,7 @@
   "name": "frontend",
   "private": true,
   "version": "0.0.0",
+  "description": "React + Vite chat UI for the QVAC Meridian backend: citations, voice input/output, and corpus browsing.",
   "type": "module",
   "scripts": {
     "dev": "vite",

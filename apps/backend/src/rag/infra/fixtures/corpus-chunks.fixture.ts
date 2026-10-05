@@ -12,13 +12,7 @@ export interface FixtureChunk {
   metadata: { documentType: DocumentType; title: string };
 }
 
-/**
- * Short excerpts inspired by real files under `corpus/` - not verbatim
- * reproductions. Exists to exercise retrieval (ranking, thresholding,
- * dedupe), not to mirror whole documents. The last two entries are
- * deliberately off-topic relative to SLA/support queries, to validate
- * that ranking and `minScore` correctly push them below relevant chunks.
- */
+/** Short excerpts inspired by `corpus/`, not verbatim - exercises retrieval ranking/dedupe. Last two entries are deliberately off-topic to verify minScore filters them out. */
 export const CORPUS_CHUNK_FIXTURES: FixtureChunk[] = [
   {
     id: 'chunk-sla-p1',
@@ -66,7 +60,7 @@ export const CORPUS_CHUNK_FIXTURES: FixtureChunk[] = [
 
 const fixtureDbDirs: string[] = [];
 
-/** Registered once, on first use. Covers scripts (demos); under vitest the worker may not run it, so `vitest.globalSetup.ts` removes `FIXTURE_DB_ROOT` instead. */
+/** Registered once; under vitest `vitest.globalSetup.ts` cleans FIXTURE_DB_ROOT instead, since a worker may not reach process exit. */
 function removeFixtureDbDirsOnExit(): void {
   if (fixtureDbDirs.length > 0) return;
   process.once('exit', () => {
@@ -74,11 +68,7 @@ function removeFixtureDbDirsOnExit(): void {
   });
 }
 
-/**
- * Embeds every fixture chunk and writes it into a fresh LanceDB table in a
- * temp directory, returning the same `LanceDbVectorStore` the server queries.
- * The directory is removed when the process exits (or with `FIXTURE_DB_ROOT`, see `vitest.globalSetup.ts`).
- */
+/** Embeds every fixture chunk into a fresh LanceDB table in a temp dir (auto-removed on exit), returning the same `LanceDbVectorStore` the server queries. */
 export async function buildFixtureVectorStore(embeddingPort: EmbeddingPort): Promise<LanceDbVectorStore> {
   removeFixtureDbDirsOnExit();
   const dbDir = fs.mkdtempSync(path.join(process.env.FIXTURE_DB_ROOT ?? os.tmpdir(), 'fixture-chunks-'));

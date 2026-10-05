@@ -2,7 +2,7 @@ import { Router } from "express";
 import type { ReadinessService } from "../readinessService.js";
 import { MODEL_NOT_READY_ERROR, PUBLIC_CHAT_MODEL } from "../../chat/chat.router.const.js";
 
-/** `GET /health` - the readiness probe `qvac-eval.json` used to point at before Task 4 of this plan switched `readyPath` to `/models`. Kept for local dev/manual polling. */
+/** `GET /health` - readiness probe kept for local dev/manual polling; the grading harness itself polls `/v1/models` below. */
 export function createHealthRouter(readiness: ReadinessService): Router {
   const router = Router();
   router.get("/health", (_req, res) => {
@@ -16,14 +16,7 @@ export function createHealthRouter(readiness: ReadinessService): Router {
   return router;
 }
 
-/**
- * `GET /v1/models` - the OpenAI-compatible model listing. This is the
- * endpoint `qvac-eval.json`'s `readyPath` polls (`baseUrl` + `/models`),
- * so it must not return 200 before the model is actually usable - a
- * grader that gets 200 here and immediately fires questions at a model
- * that isn't loaded yet would get errors it can't distinguish from a
- * broken product.
- */
+/** `GET /v1/models` - OpenAI-compatible listing; `qvac-eval.json`'s `readyPath` polls this, so it must not return 200 before the model is actually usable. */
 export function createPublicModelsRouter(readiness: ReadinessService): Router {
   const router = Router();
   router.get("/v1/models", (_req, res) => {

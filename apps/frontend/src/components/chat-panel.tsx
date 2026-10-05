@@ -1,6 +1,4 @@
-// The middle column: the scrolling conversation with the composer floating on
-// top of it. This is the only component that knows the conversation scrolls —
-// MessageList just draws bubbles and Composer just draws an input.
+// Only this component knows the conversation scrolls; MessageList and Composer don't.
 
 import { ArrowDown } from 'lucide-react'
 import { MessageList } from '@/components/message-list'
@@ -21,31 +19,25 @@ type Props = { modelStatus: ModelStatus; modelCancelled: boolean; embeddingReady
 export function ChatPanel({ modelStatus, modelCancelled, embeddingReady, serverUnreachable }: Props) {
   const { history, isStreaming, sendMessage, stop } = useChat()
   const { phase: voicePhase, start: startVoice, send: sendVoice, discard: discardVoice, setLevelListener } = useVoiceTurn()
-  // The composer is out of the normal flow, so it takes up no room. The spacer
-  // at the end of the list gives that room back, exactly as much as it needs.
+  // Composer floats out of flow; this spacer reserves its height at the end of the list.
   const [overlayRef, overlayHeight] = useElementHeight<HTMLDivElement>()
   const { scrollRef, contentRef, isPinned, scrollToBottom } = useStickToBottom<HTMLDivElement, HTMLDivElement>()
 
-  // Sending always takes you back down: you just wrote it, you want to see it.
   function handleSend(text: string, images: ImageAttachment[]) {
     sendMessage(text, images)
     scrollToBottom()
   }
 
   const modelReady = modelStatus === 'ready'
-  // A full conversation takes no new messages of any kind (typed, attached or
-  // spoken). It stays readable; only New chat continues.
+  // Exhausted: a full conversation accepts no new messages of any kind; only New chat continues.
   const contextExhausted = useChatStore((state) => state.contextExhausted)
   // An answer still playing keeps the turn open: Stop stays, sending waits.
   const isSpeaking = useChatStore((state) => state.speakingMessageId !== null)
-  // Text and voice never compete for the same turn: each one disables the
-  // other - except once voice is already recording, where the mic must
-  // always be able to stop.
+  // Text and voice disable each other, except the mic must stay enabled to stop an in-progress recording.
   const micDisabled = !modelReady || contextExhausted || (voicePhase.type !== 'recording' && isStreaming)
   const textDisabled =
     !modelReady || contextExhausted || voicePhase.type === 'recording' || voicePhase.type === 'processing'
-  // Why the composer can't send right now, in the box itself. While the
-  // model loads it stays neutral: the Welcome in the middle already says why.
+  // Model-loading isn't reflected here; the Welcome screen already covers that case.
   const placeholder = contextExhausted
     ? 'This chat is full. Start a new chat to continue.'
     : voicePhase.type === 'processing'
@@ -59,8 +51,7 @@ export function ChatPanel({ modelStatus, modelCancelled, embeddingReady, serverU
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={scrollRef} className="chat-scrollbar min-h-0 flex-1 overflow-y-auto">
-        {/* min-h-full + flex: an empty conversation can center the Welcome
-            in the visible area; the spacer keeps it above the composer. */}
+        {/* min-h-full + flex: centers Welcome in the visible area above the composer. */}
         <div ref={contentRef} className="flex min-h-full flex-col">
           {history.length === 0 ? (
             <Welcome
@@ -90,8 +81,7 @@ export function ChatPanel({ modelStatus, modelCancelled, embeddingReady, serverU
         </Button>
       )}
 
-      {/* pointer-events-none on the wrapper, auto on the bar: the fade strip
-          is see-through to the mouse, so text under it stays selectable. */}
+      {/* pointer-events-none on the wrapper, auto on the bar: fade strip stays click-through, text under it stays selectable. */}
       <div ref={overlayRef} className="pointer-events-none absolute inset-x-0 bottom-0">
         <div className="h-8 bg-linear-to-t from-background to-background/0" />
         <div className="pointer-events-auto bg-background px-3 pb-3">

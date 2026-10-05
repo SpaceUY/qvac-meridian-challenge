@@ -1,16 +1,5 @@
-// Reads a stream of Server-Sent Events (the format OpenAI uses and therefore
-// also LM Studio and, later, our own API).
-//
-// The format sends "events" separated by a blank line:
-//   data: {"choices":[{"delta":{"content":"Hello"}}]}
-//
-//   data: {"choices":[{"delta":{"content":" world"}}]}
-//
-//   data: [DONE]
-//
-// The real problem: the browser delivers the body in byte chunks that do NOT
-// respect these boundaries. One event can arrive split across two reads, or
-// two events can arrive glued together in one. That's why a buffer is needed.
+// Reads an OpenAI-style SSE stream. Events are separated by a blank line, but the browser
+// delivers the body in byte chunks that don't respect those boundaries - hence the buffer.
 
 /** End of event: a blank line. The \r? covers Windows line endings. */
 const EVENT_SEPARATOR = /\r?\n\r?\n/
@@ -24,18 +13,13 @@ export async function* readSSEEvents(body: ReadableStream<Uint8Array>): AsyncGen
   const decoder = new TextDecoder()
   let buffer = ''
 
-  // The try/finally is what guarantees the connection closes: it runs whether
-  // we finish normally, something explodes, or whoever consumes us
-  // abandons the `for await` halfway. Without it, the reader stays held
-  // and the stream stays open.
+  // Guarantees the connection closes even if the consumer abandons the `for await` halfway.
   try {
     while (true) {
       const { value, done } = await reader.read()
       if (done) break
 
-      // { stream: true } tells the decoder that more bytes can come:
-      // if a character (a tilde, an emoji) was split across two reads,
-      // it saves the half instead of spitting out a broken symbol.
+      // { stream: true }: a multi-byte character split across reads is buffered, not corrupted.
       buffer += decoder.decode(value, { stream: true })
 
       const { complete, partial } = splitEvents(buffer)
@@ -53,31 +37,14 @@ export async function* readSSEEvents(body: ReadableStream<Uint8Array>): AsyncGen
   }
 }
 
-/**
- * Separates the buffer into complete events and the rest that is still
- * partial. Answers just one question: WHERE does each event end. It does not
- * care what they say.
- *
- * The split trick: the last chunk is always the incomplete one, because if
- * it were complete there would be a separator after it and split would have
- * generated an empty chunk at the end.
- */
+/** The last chunk after splitting on the separator is always the incomplete one - a complete final event would leave an empty trailing chunk instead. */
 function splitEvents(buffer: string): { complete: string[]; partial: string } {
   const chunks = buffer.split(EVENT_SEPARATOR)
   const partial = chunks.pop() ?? ''
   return { complete: chunks, partial }
 }
 
-/**
- * Extracts the payload of an event. Answers the other question: WHAT does it say. It does not
- * care where it started or where it ended.
- *
- * The spec allows multiple "data:" lines in one event; they are concatenated with
- * a newline between them. OpenAI does not use it, but supporting it is free.
- * Returns null if the block had no data lines (for example a
- * ":keep-alive" comment, which some servers send to keep the
- * connection from dying from inactivity).
- */
+/** Multiple "data:" lines in one event are joined with a newline (SSE spec; OpenAI doesn't use it, but it's free). Null if the block has no data line (e.g. a ":keep-alive" comment). */
 function extractData(block: string): string | null {
   const lines = block
     .split(LINE_SEPARATOR)

@@ -33,7 +33,7 @@ type Props = {
   placeholder: string
 }
 
-/** The bottom bar: write, send, or stop a response in progress (req. [1.4]), plus voice input and (now) image attachments. While recording, RecordingBar takes over the whole row - no Textarea, no MicButton, no attachments row (the images/text state is preserved underneath, just not rendered). */
+/** Req. [1.4]. While recording, RecordingBar takes over the row; text/image state underneath is preserved, just not rendered. */
 export function Composer({
   isStreaming,
   textDisabled = false,
@@ -47,21 +47,18 @@ export function Composer({
   registerVoiceLevelListener,
   placeholder,
 }: Props) {
-  // What is being written, still not sent. It is pure UI - it does not matter
-  // to anyone outside this component - that's why useState and not the chat reducer.
+  // Pure UI state, not sent yet - no one outside this component needs it, so useState over the chat reducer.
   const [text, setText] = useState('')
   const [images, setImages] = useState<ImageAttachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   const imagesRef = useMirrorRef(images)
-  // Typing the next question while the answer streams is fine (it just
-  // can't be sent yet); attaching is not - same rule as the mic.
+  // Typing during a stream is fine, attaching is not - same rule as the mic.
   const attachBlocked = textDisabled || isStreaming
   const limit = promptLimitState(text)
 
-  // Revoke any still-pending (never sent) preview URLs if the composer goes
-  // away - sent images are handed off to chat history and outlive this.
+  // Revoke never-sent preview URLs on unmount; sent images outlive this, owned by chat history.
   useEffect(() => () => revokeAttachments(imagesRef.current), [imagesRef])
 
   function handleFilesSelected(files: File[]) {
@@ -86,13 +83,12 @@ export function Composer({
   function send() {
     if ((!text.trim() && images.length === 0) || isStreaming || textDisabled || text.length > MAX_PROMPT_CHARS) return
     onSend(text, images)
-    setText('') // empty it now: no need to wait for the server to reply
-    setImages([]) // ownership moves to chat history - don't revoke, it still needs these
+    setText('')
+    setImages([]) // ownership moves to chat history - don't revoke, still needed there
     setAttachError(null)
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    // Enter sends, Shift+Enter adds a line - the convention of any chat.
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       send()
@@ -104,7 +100,7 @@ export function Composer({
       .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
       .map((item) => item.getAsFile())
       .filter((file): file is File => file !== null)
-    if (files.length === 0) return // no image in the clipboard: let normal text paste happen
+    if (files.length === 0) return // let normal text paste happen
     e.preventDefault()
     handleFilesSelected(files)
   }
@@ -169,11 +165,7 @@ export function Composer({
             placeholder={placeholder}
             rows={1}
             className="no-scrollbar max-h-40 min-h-9 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
-            // The base Textarea defaults to field-sizing: content (grows to fit,
-            // no scroll). Forced back to the classic fixed-box behavior here via
-            // inline style (wins regardless of how cn()/tailwind-merge resolves
-            // the class list) so max-h-40 actually clips and scrolls internally
-            // instead of the two properties fighting over how overflow works.
+            // Overrides Textarea's default field-sizing: content so max-h-40 actually clips/scrolls.
             style={{ fieldSizing: 'fixed' }}
           />
           {isStreaming ? (

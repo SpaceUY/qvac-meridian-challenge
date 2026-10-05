@@ -11,8 +11,7 @@ this dataset or its outputs for anything beyond this compatibility check. See
 `docs/i5-lora-stage1-results.md` (repo root) for the recorded outcome once this has been run.
 
 Does **not** touch production config (`apps/backend/src/config/models.config.ts`,
-`ai/orchestrator/`, `chat.router.ts`) — this only proves the mechanism works, in isolation, the
-same way `models/demo.ts` and `ai/multimodalDemo.ts` prove other pieces of the stack end-to-end
+`ai/orchestrator/`, `chat.router.ts`) — this only proves the mechanism works, in isolation,
 without going through the server.
 
 ## What this script does

@@ -3,14 +3,7 @@ import type { VectorStorePort, VectorStoreWriterPort } from '../domain/ports.js'
 import type { ChunkRecord, RetrievedChunk } from '../domain/types.js';
 import { CHUNKS_TABLE } from '../../config/rag.config.js';
 
-/**
- * One row of the `chunks` table. Deliberately FLAT - no nested objects.
- * LanceDB infers the Arrow schema from the first rows written, and a nested
- * `metadata` object would become a nested struct: harder to filter on and
- * more fragile across writes. `title`/`documentType` are stored as plain
- * columns and folded back into `RetrievedChunk.metadata` on the way out, so
- * this storage shape never leaks past this file.
- */
+/** Deliberately flat (no nested `metadata`) - LanceDB infers the Arrow schema from the first write, and a nested object becomes a harder-to-filter struct. Folded back into `RetrievedChunk.metadata` on the way out. */
 interface ChunkRow {
   id: string;
   vector: number[];
@@ -24,16 +17,7 @@ interface ChunkRow {
   _distance: number;
 }
 
-/**
- * File-backed `VectorStorePort` over LanceDB. Read side only: the server
- * needs to search, not to write, and keeping the write API out of this
- * interface means an HTTP request path can't delete corpus chunks by
- * accident. Writing lives in `LanceDbVectorStoreWriter`, used by the ingest
- * CLI.
- *
- * Opened once and reused: `connect()`/`openTable()` are I/O, and the server
- * process is long-lived.
- */
+/** Read side only - keeping write out of this interface means a request path can't delete corpus chunks by accident. Writing lives in `LanceDbVectorStoreWriter` (ingest CLI only). */
 export class LanceDbVectorStore implements VectorStorePort {
   private constructor(private readonly table: lancedb.Table) {}
 
@@ -43,8 +27,7 @@ export class LanceDbVectorStore implements VectorStorePort {
       const db = await lancedb.connect(dbDir);
       return (await db.tableNames()).includes(tableName);
     } catch {
-      // A missing/unreadable directory means "nothing ingested yet", which
-      // is a normal first-run state, not an error the caller should handle.
+      // Missing/unreadable dir just means nothing ingested yet.
       return false;
     }
   }
@@ -59,15 +42,10 @@ export class LanceDbVectorStore implements VectorStorePort {
     embedding: number[],
     options: { topK: number; minScore: number }
   ): Promise<RetrievedChunk[]> {
-    // `vectorSearch()`, not `search()`: `search()` also accepts a string for
-    // full-text search, so it is typed `VectorQuery | Query | AutoQuery` and
-    // would need a cast before `distanceType()`. `vectorSearch()` returns a
-    // `VectorQuery` directly (verified in `dist/table.d.ts` of 0.39.0).
+    // vectorSearch() (not search(), which is typed for text search too and needs a cast before distanceType()).
     const rows = (await this.table
       .vectorSearch(embedding)
-      // Not LanceDB's default (l2). Cosine ignores vector magnitude, which
-      // is what text embeddings need, AND it makes `score` below land on the
-      // [-1, 1] similarity scale `RagRetrievalConfig.minScore` is expressed in.
+      // cosine, not LanceDB's default l2: ignores magnitude and matches the [-1,1] scale minScore expects.
       .distanceType('cosine')
       .limit(options.topK)
       .toArray()) as ChunkRow[];
@@ -78,15 +56,7 @@ export class LanceDbVectorStore implements VectorStorePort {
   }
 }
 
-/**
- * The write side. Separate class from `LanceDbVectorStore` so the query
- * path never gets a handle that can delete.
- *
- * The table is created lazily, from the first batch of rows written:
- * LanceDB infers the Arrow schema - including the vector dimension - from
- * the data. `CorpusIngestService` checks that dimension against the
- * configured one before it ever gets here, so inference is safe.
- */
+/** Separate class from `LanceDbVectorStore` so the query path never gets a handle that can delete. Table is created lazily from the first write so LanceDB infers the Arrow schema/vector dimension from real data. */
 export class LanceDbVectorStoreWriter implements VectorStoreWriterPort {
   private table?: lancedb.Table;
 
@@ -107,16 +77,12 @@ export class LanceDbVectorStoreWriter implements VectorStoreWriterPort {
   async replaceDocumentChunks(source: string, records: ChunkRecord[]): Promise<void> {
     const rows = records.map(toRow);
 
-    // No table yet means nothing was ever ingested: create it from these
-    // rows, so LanceDB infers the schema (vector width included) from real
-    // data. There is nothing to delete in that case.
     if (!this.table) {
       if (rows.length > 0) this.table = await this.db.createTable(this.tableName, rows);
       return;
     }
 
-    // Delete first, then add: a changed document can produce a different
-    // number of chunks, so overwriting by id alone would strand the extras.
+    // Delete then add: a changed document can produce a different chunk count, so overwrite-by-id would strand extras.
     await this.table.delete(sourceFilter(source));
     if (rows.length > 0) await this.table.add(rows);
   }
@@ -134,9 +100,7 @@ export class LanceDbVectorStoreWriter implements VectorStoreWriterPort {
     const hashes = new Map<string, string>();
     if (!this.table) return hashes;
 
-    // Two string columns only. LanceDB stores data column by column, so this
-    // never reads the 768-float vectors. A plain `query()` has no default
-    // limit (a vector search defaults to 10) - verified in `dist/query.d.ts`.
+    // Columnar store, so selecting only these two columns never reads the vectors; plain query() has no row limit (unlike vectorSearch's default 10).
     const rows = (await this.table.query().select(['source', 'contentHash']).toArray()) as {
       source: string;
       contentHash: string;
