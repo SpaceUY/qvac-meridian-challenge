@@ -1,32 +1,7 @@
 /**
- * Peak-RSS sampler for the `bare.exe` process(es) that actually hold the
- * loaded GGUF weights - for BOTH benchmark paths. `@qvac/sdk` spawns its own
- * `bare` worker per model (see `node-rpc-client.js`'s `ensureRPC()`), so the
- * SDK path's real memory cost lives in a separate `bare.exe` process just
- * like the native path's does; `process.memoryUsage().rss` of the Node/tsx
- * driver script would only capture the thin RPC client, not the model.
- *
- * Windows-only - this spike only runs on this dev machine (see
- * `docs/i4-native-addon-results.md` for the Linux/macOS equivalent this
- * would need, e.g. reading `/proc/<pid>/status`).
- *
- * IMPORTANT: uses `cmd.exe /c tasklist`, NOT PowerShell. An earlier version
- * of this file shelled out to `powershell.exe -Command "Get-Process ..."`
- * via `execFileSync` on a 100ms `setInterval`. On this machine a single
- * `powershell.exe` invocation costs ~300ms (likely AMSI/script-scanning
- * overhead - `cmd.exe /c tasklist` for the same information costs ~90ms) -
- * and because `execFileSync` is SYNCHRONOUS, that 300ms call blocked
- * Node's entire event loop, including the socket callback that resolves a
- * pending `@qvac/sdk` `embed()` RPC call. Sampling every 100ms while that
- * call itself takes ~300ms meant the event loop was blocked almost
- * continuously for the whole benchmark, which is what actually produced the
- * ~600ms/call `embed()` latency reported in the first version of
- * `docs/i4-native-addon-results.md` - not a real `@qvac/sdk` cost. See that
- * doc's "correction" section for the full story. This version uses async,
- * non-blocking `execFile` on a self-rescheduling `setTimeout` (never
- * overlapping calls, never blocking the loop) specifically so sampling
- * memory cannot distort the very latency numbers being measured alongside
- * it.
+ * Peak-RSS sampler for the `bare.exe` process(es) holding the loaded GGUF weights, for BOTH benchmark paths - `@qvac/sdk` spawns its own `bare` worker too, so `process.memoryUsage().rss` of the Node driver would only capture the thin RPC client, not the model.
+ * Windows-only (see `docs/i4-native-addon-results.md` for the Linux/macOS equivalent).
+ * IMPORTANT: uses `cmd.exe /c tasklist`, not PowerShell - an earlier version shelled out to `powershell.exe` synchronously on a 100ms `setInterval`; a single `powershell.exe` call costs ~300ms here (vs ~90ms for `tasklist`) and blocked Node's entire event loop, including the RPC callback resolving `embed()` - which is what actually produced the false ~600ms/call latency in the first draft of `docs/i4-native-addon-results.md`, not a real `@qvac/sdk` cost (see that doc's "correction" section). This version uses async, non-overlapping `execFile` so sampling can't distort the latency it's measuring alongside.
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -67,13 +42,7 @@ async function sampleBareWorkingSetBytes(): Promise<number> {
   }
 }
 
-/**
- * Waits until no `bare.exe` process is running (polling), so the benchmark's
- * two phases never overlap in the RSS sample - `close()`/process exit is
- * asynchronous from the caller's point of view. Resolves immediately if none
- * are running. Gives up after `timeoutMs` rather than hanging forever on a
- * process that failed to exit.
- */
+/** Waits until no `bare.exe` is running (polling) so the benchmark's two phases never overlap in the RSS sample - `close()`/exit is async from the caller's view. Gives up after `timeoutMs` rather than hanging forever. */
 export async function waitForNoBareProcesses(timeoutMs = 10_000, pollIntervalMs = 150): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while ((await sampleBareWorkingSetBytes()) > 0) {
@@ -82,11 +51,7 @@ export async function waitForNoBareProcesses(timeoutMs = 10_000, pollIntervalMs 
   }
 }
 
-/**
- * Self-rescheduling (via `setTimeout` after each sample resolves, not
- * `setInterval`) so samples never overlap and never queue up - each tick's
- * async `execFile` call yields the event loop for its whole duration.
- */
+/** Self-rescheduling via `setTimeout` (not `setInterval`) so samples never overlap or queue - each tick's `execFile` yields the event loop for its whole duration. */
 export function startBareRssSampler(intervalMs = 150): RssSampler {
   let peakBytes = 0;
   let stopped = false;

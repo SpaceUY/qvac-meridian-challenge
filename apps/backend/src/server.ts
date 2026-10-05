@@ -27,29 +27,18 @@ import { createHealthRouter, createPublicModelsRouter } from "./health/router/he
 const app = express();
 
 app.use(cors());
-// Default 100kb is too small for /v1/chat/voice-completions' base64 audio
-// body - a few seconds of audio already exceeds it.
+// 25mb: the default 100kb is too small for /v1/chat/voice-completions' base64 audio body.
 app.use(express.json({ limit: "25mb" }));
 
 const qvacRuntimeAdapter = new QvacRuntimeAdapter();
 const modelManagementService = new ModelManagementService(qvacRuntimeAdapter, qvacRuntimeAdapter);
 
-/**
- * Retrieval over the persisted LanceDB table written by `npm run ingest`,
- * queried with BGE-M3 through the same `ModelManagementService` as the chat
- * model: one QVAC worker, one owner of `close()`, and `unloadAll()` on
- * shutdown releases both models. The server only READS the table - it
- * never ingests - so a restart never re-embeds the corpus.
- */
+/** Retrieval over the ingest-built LanceDB table via BGE-M3, sharing `ModelManagementService` with the chat model (one worker, one `close()` owner). The server only reads, never ingests, so a restart never re-embeds. */
 if (!(await LanceDbVectorStore.exists(VECTOR_DB_DIR))) {
   throw new Error(`No vector store at ${VECTOR_DB_DIR}. Run "npm run ingest --workspace=apps/backend" first.`);
 }
-// I.4: native @qvac/embed-llamacpp path primary, @qvac/sdk path as fallback
-// (init failure or a mid-session worker crash) - see
-// docs/i4-native-addon-results.md. Same constructor shape as the
-// QvacEmbeddingService it replaces, plus EMBEDDING_MODEL_EXPECTED_SIZE so
-// the native path can verify its cached download of whatever
-// EMBEDDING_MODEL_SOURCE currently points at.
+// I.4: native @qvac/embed-llamacpp path primary, @qvac/sdk path as fallback on init failure/crash (see docs/i4-native-addon-results.md).
+// EMBEDDING_MODEL_EXPECTED_SIZE lets the native path verify its cached download.
 const embeddingPort = new ResilientEmbeddingService(
   modelManagementService,
   new QvacEmbeddingAdapter(),
@@ -69,27 +58,9 @@ const agentService = new AgentService(
   documentRepository,
 );
 
-// Auto-preload so `GET /health` can signal readiness without a separate
-// POST /api/chat/preload call - required for qvac-eval.json's "start must
-// not require network access" contract: by the time this runs, `npm run
-// models:fetch` has already cache-warmed every asset this touches. Chat and
-// embedding warm-up run CONCURRENTLY (both fire-and-forget, neither awaited
-// before the other starts) so total time-to-ready is max(chat load,
-// embedding load), not their sum.
-//
-// Both warm-ups are self-healing across `/health` polls rather than
-// permanently latching on one transient failure (this branch loads chat +
-// embedding concurrently into the same worker process, which is exactly the
-// situation most likely to produce a one-off hiccup): `AgentService.preload()`
-// is idempotent and safe to call again once its status is "error" - it only
-// no-ops while "loading"/"ready" (see its own doc comment) - and
-// `warmUpEmbedding()` below mirrors `QvacEmbeddingService.ensureModel()`'s own
-// cached-promise-cleared-on-failure pattern so a later call actually retries
-// instead of reusing a rejected promise forever.
-//
-// Constructed here, before the chat status router below, so GET
-// /api/chat/status can merge embeddingReady into the same payload the
-// engine panel already polls - one readiness signal, not two.
+// Auto-preload so GET /health signals readiness without a separate POST /api/chat/preload - required by qvac-eval.json's "start must not require network access" contract (npm run models:fetch already cache-warmed everything). Chat and embedding warm-up run concurrently, so time-to-ready is max(chat, embedding), not their sum.
+// Self-healing across /health polls, not a permanent latch: AgentService.preload() is idempotent and warmUpEmbedding() clears its cached promise on failure so a later call retries.
+// Constructed before the chat status router so GET /api/chat/status can merge embeddingReady into one payload.
 const readiness = new ReadinessService(agentService, embeddingPort);
 readiness.start();
 app.use("/api/chat", createChatStatusRouter(agentService, readiness));
@@ -111,26 +82,13 @@ const SHUTDOWN_CLEANUP_TIMEOUT_MS = 3000;
 
 let shuttingDown = false;
 
-/**
- * Best-effort cleanup with a hard timeout, guarded against re-entry (SIGINT
- * can be delivered/forwarded more than once, e.g. by npm/tsx's own wrapper
- * chain). On a real Ctrl+C, @qvac/sdk's spawned worker process shares this
- * process's terminal process group and receives the same SIGINT, so it can
- * die concurrently with (or before) unloadAll()/close() try to talk to it -
- * either call can then hang for as long as the SDK's own internal RPC
- * timeout (30s). The worker is going down either way, so there's no reason
- * to wait that long here.
- */
+/** Best-effort cleanup with a hard timeout, guarded against re-entry (SIGINT can fire more than once via npm/tsx's wrapper chain). The SDK's worker shares this process's terminal group and may die mid-unload, which could otherwise hang up to the SDK's 30s RPC timeout - no reason to wait that long. */
 async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
 
   await Promise.race([
-    // embeddingPort.unload() first: if the native path is active, this asks
-    // its bare.exe worker to unload and exit gracefully (see
-    // nativeEmbeddingClient.ts) instead of relying solely on the
-    // process.once("exit") kill-if-still-alive safety net that class also
-    // registers.
+    // embeddingPort.unload() first: if the native path is active, asks its bare.exe worker to exit gracefully (see nativeEmbeddingClient.ts) rather than relying solely on its process.once("exit") safety net.
     embeddingPort
       .unload()
       .then(() => modelManagementService.unloadAll())
@@ -141,8 +99,7 @@ async function shutdown(): Promise<void> {
   });
 
   server.close(() => process.exit(0));
-  // Last resort in case server.close() never calls back (e.g. a lingering
-  // keep-alive connection).
+  // Last resort if server.close() never calls back (e.g. a lingering keep-alive connection).
   setTimeout(() => process.exit(0), 1000).unref();
 }
 

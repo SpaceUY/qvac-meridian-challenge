@@ -1,13 +1,9 @@
-// apps/backend/src/health/evalContract.test.ts
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-// apps/backend/src/health/evalContract.test.ts -> repo root is 5 levels up
-// (health/ -> src/ -> backend/ -> apps/ -> repo root). Verified with `node -e`
-// before writing this, not guessed - an off-by-one here silently makes every
-// assertion below read the wrong (or a nonexistent) qvac-eval.json.
+// 5 levels up to repo root (health/ -> src/ -> backend/ -> apps/ -> root) - verified, not guessed.
 const REPO_ROOT = path.resolve(fileURLToPath(import.meta.url), "../../../../..");
 
 describe("qvac-eval.json contract", () => {

@@ -26,12 +26,7 @@ const TYPE_BY_TOP_LEVEL_FOLDER: Record<string, DocumentType> = {
   policies: DocumentType.POLICIES,
 };
 
-/**
- * Skips hidden entries and `__MACOSX/`: the official `corpus.zip` ships macOS
- * metadata files like `__MACOSX/emails/._007-sla-reminder.md` - binary, but
- * with a `.md` extension, so an extension check alone would ingest (and later
- * cite) them.
- */
+/** Skips hidden entries and `__MACOSX/`: the official `corpus.zip` ships macOS metadata files with a `.md` extension that an extension check alone would ingest. */
 export async function listFilesRecursively(dir: string): Promise<string[]> {
   const entries = await fs.readdir(dir, { withFileTypes: true });
   const files: string[] = [];
@@ -67,12 +62,7 @@ function toDocumentType(id: string): DocumentType {
   return TYPE_BY_TOP_LEVEL_FOLDER[topLevelFolder] ?? DocumentType.DATA;
 }
 
-/**
- * Reads a document's current state straight from `corpus/` on disk - the
- * same directory `loadCorpusContext` reads for full-context injection - so
- * the inventory always reflects whatever is actually ingested, not a
- * separately maintained list.
- */
+/** Reads straight from `corpus/` on disk so the inventory always matches what's actually ingested, never a separately maintained list. */
 export class CorpusDocumentRepository implements DocumentRepository {
   constructor(private readonly corpusDir: string = CORPUS_ROOT) {}
 

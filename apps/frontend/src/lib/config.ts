@@ -1,33 +1,11 @@
-// ---------------------------------------------------------------------------
-// CONFIGURATION
-//
-// Everything that changes between environments lives here, not buried in a hook. It is read
-// from environment variables with a default value, so the project starts
-// without any .env and continues working.
-//
-// NOTE: Vite only exposes to the browser variables that start with VITE_.
-// It is a protection, not a whim: anything that reaches the frontend ends up
-// in plain text inside the bundle the user downloads. NEVER put a
-// secret (an API key, a password) in a VITE_ variable.
-// ---------------------------------------------------------------------------
+// Env vars, with defaults so the project runs without a .env. Vite only exposes VITE_-prefixed
+// vars to the browser (they end up in plain text in the bundle) - never put a secret in one.
 
 export const CONFIG = {
-  /**
-   * Where the conversation is sent. It is a relative path on purpose: the proxy in
-   * vite.config.ts forwards it to the chosen engine (LM Studio or the backend), so
-   * the browser sees a single origin and there are no CORS problems.
-   *
-   * CORS: the browser rule that prevents a page served from one
-   * domain from hitting another different domain without explicit permission. By passing everything through
-   * the proxy, for the browser there is never "another domain".
-   */
+  /** Relative path on purpose: vite.config.ts's proxy forwards it to the chosen engine, keeping the browser on a single origin (no CORS). */
   completionsEndpoint: import.meta.env.VITE_ENDPOINT_COMPLETIONS ?? '/v1/chat/completions',
 
-  /**
-   * The name that LM Studio exposes today in /v1/models. When we talk to
-   * our own API, this becomes the alias we define there (eg:
-   * "meridian-assistant") - and now it changes without touching code.
-   */
+  /** The model alias the target engine (LM Studio or our own API) exposes at /v1/models. */
   model: import.meta.env.VITE_MODEL ?? 'llama-3.2-3b-instruct',
 
   /** Header with which the backend groups the KV cache by session (req. [6.3]). */

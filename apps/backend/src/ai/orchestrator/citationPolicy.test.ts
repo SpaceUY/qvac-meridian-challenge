@@ -44,11 +44,7 @@ describe("isInsufficientContextAnswer", () => {
   });
 
   it("tells the model to answer the latest message instead of an earlier turn's topic", () => {
-    // Regression guard for a real repro: attaching an image and asking "what
-    // do you see" made the model ignore the image and re-answer a previous
-    // turn's document question (with a fabricated excuse) once retrieval for
-    // the new turn came back empty. Confirmed fixed manually against the
-    // live model; this just guards the instruction text from being reverted.
+    // Regression guard: attaching an image and asking about it made the model ignore it and re-answer a stale document question once retrieval came back empty for the new turn.
     const lower = GROUNDING_INSTRUCTIONS.toLowerCase();
     expect(lower).toContain("most recent message");
     expect(lower).toContain("describe or analyze the image directly");

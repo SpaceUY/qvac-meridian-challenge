@@ -6,12 +6,7 @@ import { ResilientEmbeddingService } from '../../service/resilientEmbeddingServi
 import { resolveNativeEmbeddingModelPath } from '../nativeEmbedding/embeddingGemmaModel.js';
 import { QvacEmbeddingAdapter } from '../qvacEmbeddingAdapter.js';
 
-/**
- * Whether the production embedding model is in the local QVAC cache
- * (`npm run models:fetch`). Tests that embed for real gate on this with
- * `describe.skipIf(!isEmbeddingModelCached())` so a machine without the
- * ~437MB model skips them instead of failing or downloading it mid-run.
- */
+/** Whether the embedding model is already in the local QVAC cache - gates real-embedding tests (`describe.skipIf`) so a machine without it skips instead of downloading ~437MB mid-run. */
 export function isEmbeddingModelCached(): boolean {
   try {
     resolveNativeEmbeddingModelPath(EMBEDDING_MODEL_SOURCE, EMBEDDING_MODEL_EXPECTED_SIZE);

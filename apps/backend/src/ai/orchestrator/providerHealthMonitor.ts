@@ -15,18 +15,12 @@ export interface ProviderHealthMonitorOptions {
   heartbeat: () => Promise<void>;
   /** Called after every heartbeat (not only on a state change) with the mode the provider's health calls for. */
   reconcile: (desired: DesiredProviderMode) => Promise<void>;
-  /** Checked at the start of every tick; when it returns `true` the tick sends no heartbeat, records nothing and does not reconcile - e.g. while a chat is in flight, so a heartbeat probe never disturbs the connection it is using. */
+  /** Checked at the start of every tick; when `true`, that tick sends no heartbeat/reconcile — e.g. skip while a chat is in flight. */
   shouldSkipTick?: () => boolean;
   now?: () => number;
 }
 
-/**
- * Polls a provider heartbeat on a timer and asks `reconcile` to move the
- * chat model to whichever mode the provider's health calls for. The
- * request is level-triggered - repeated every tick - so a switch that
- * failed or was deferred because the model was busy is simply retried by
- * the next tick, with no separate retry code.
- */
+/** Polls a provider heartbeat on a timer and asks `reconcile` to move the chat model to the health-indicated mode; level-triggered every tick, so a failed/deferred switch is simply retried next tick, no separate retry logic. */
 export class ProviderHealthMonitor {
   private readonly tracker: HealthTracker;
   private readonly now: () => number;

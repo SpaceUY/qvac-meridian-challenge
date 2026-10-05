@@ -1,13 +1,4 @@
-/**
- * Pre-downloads every model asset the graded HTTP surface (`/v1/chat/completions`)
- * needs before `npm run serve` starts, so `serve` never touches the network -
- * required by qvac-eval.json's contract (Req 6.1.4: "start must not require
- * network access"). Run via `npm run models:fetch`.
- *
- * Only provisions the resolved resource tier (not all three - see
- * `config/resourceTier.ts`), to avoid downloading tens of GB this machine
- * won't use. Set `QVAC_RESOURCE_TIER` to pin a specific tier.
- */
+/** Pre-downloads every asset `/v1/chat/completions` needs so `npm run serve` never touches the network (qvac-eval.json Req 6.1.4). Only provisions the resolved tier - set `QVAC_RESOURCE_TIER` to pin one. */
 import { QvacRuntimeAdapter } from "./infra/qvacRuntimeAdapter.js";
 import { ModelManagementService } from "./service/models.service.js";
 import { LLM_MODELS_BY_TIER, WHISPER_MODELS_BY_TIER, TTS_MODELS_BY_TIER, EMBEDDING_MODEL_SOURCE } from "../config/models.config.js";

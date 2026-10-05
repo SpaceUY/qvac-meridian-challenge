@@ -36,7 +36,7 @@ const TONE_DOT: Record<Exclude<EngineTone, 'working'>, string> = {
 }
 const HARDWARE_TIER_LABEL: Record<ResourceTier, string> = { low: 'Low', medium: 'Medium', high: 'High' }
 
-/** "With what" the assistant runs: status card, active models, peers. Req. [5.1] + [5.1.1]. What each state says is decided in lib/engine-status.ts and lib/peers.ts - this file only draws it. */
+/** Req. [5.1] + [5.1.1]. State text is decided in lib/engine-status.ts and lib/peers.ts - this file only draws it. */
 export function EnginePanel(props: Props) {
   const { modelStatus, statusError, serverUnreachable, hardwareTier, delegation, providerHealth, recovering, cancelled } = props
   const view = describeEngineStatus({ status: modelStatus, cancelled, serverUnreachable, recovering, statusError, delegation })
@@ -84,7 +84,7 @@ export function EnginePanel(props: Props) {
   )
 }
 
-/** Chat/VLM, STT and TTS (PR #48). Rows without data are left out instead of showing "—". */
+/** Rows without data are left out instead of showing "—". */
 function ActiveModels({ model, sttModel, ttsModel }: Pick<Props, 'model' | 'sttModel' | 'ttsModel'>) {
   if (!model && !sttModel && !ttsModel) return null
   return (
@@ -111,7 +111,7 @@ function ModelRow({ kind, name, extra }: { kind: string; name: string; extra?: s
   )
 }
 
-/** Heartbeat of the delegate (PR #48): short label on screen, detail in the native tooltip. */
+/** Heartbeat of the delegate: short label on screen, detail in the native tooltip. */
 function ProviderHealthLine({ health }: { health: ProviderHealth }) {
   const view = describeProviderHealth(health)
   return (

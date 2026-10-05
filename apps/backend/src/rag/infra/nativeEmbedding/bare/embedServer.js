@@ -1,40 +1,8 @@
 /**
- * Persistent Bare worker for the native embedding path (I.4 integration).
- * Unlike the I.4 spike's `experiments/native-embed-spike/bare/embedWorker.js`
- * (one-shot: load -> embed N texts -> unload -> exit, built for
- * benchmarking), this process loads the model ONCE and stays alive for the
- * life of the server, serving embed requests over a named pipe until told to
- * shut down or until it crashes. `nativeEmbeddingClient.ts` is the Node-side
- * counterpart.
- *
- * No `@qvac/sdk` import anywhere in this file or its dependency chain - same
- * property the spike established.
- *
- * Wire protocol: newline-delimited JSON over a `bare-pipe` connection to the
- * named pipe path passed as `Bare.argv[2]` (mirrors Node's `process.argv`:
- * [bareExePath, scriptPath, ...userArgs] - same indexing lesson the spike's
- * `embedWorker.js` documents).
- *
- *   argv: [pipePath, modelPath, configJson]
- *
- *   worker -> node, once connected and the model has loaded:
- *     {"type":"ready"}
- *   worker -> node, if the model fails to load:
- *     {"type":"initError","error":"..."}
- *   node -> worker:
- *     {"id":1,"type":"embed","texts":["a","b"]}
- *     {"id":2,"type":"shutdown"}
- *   worker -> node:
- *     {"id":1,"ok":true,"results":[{"embedding":[...],"stats":{...}}, ...]}
- *     {"id":1,"ok":false,"error":"..."}
- *     {"id":2,"ok":true}   // after shutdown - worker exits right after
- *
- * A single bad request (e.g. malformed JSON, unknown "type") reports an
- * error over the socket without killing the worker. An uncaught exception,
- * or a native crash the JS layer never gets a chance to catch, kills the
- * whole process - `nativeEmbeddingClient.ts` treats an unexpected exit as a
- * crash and fails the native provider over to the SDK path for the rest of
- * the session.
+ * Persistent Bare worker (unlike the I.4 spike's one-shot `embedWorker.js`): loads the model once,
+ * serves embed requests over a named pipe (newline-delimited JSON) until shutdown or crash.
+ * argv: [pipePath, modelPath, configJson]. A crash here makes `nativeEmbeddingClient.ts` fail the
+ * session over to the SDK embedding path.
  */
 import Pipe from "bare-pipe";
 import GGMLBert from "@qvac/embed-llamacpp";
@@ -109,9 +77,7 @@ socket.on("data", (chunk) => {
       send({ id: null, ok: false, error: `invalid JSON request: ${err.message}` });
       continue;
     }
-    // Chain onto `processing` so concurrent lines (shouldn't happen given the
-    // client is single-flight, but defends against it) are still handled
-    // strictly in order rather than racing the addon's single-job queue.
+    // Chain onto processing so lines stay ordered, defending against the addon's single-job queue.
     processing = processing.then(() => handleMessage(message));
   }
 });

@@ -1,16 +1,6 @@
 /**
- * Starts a QVAC provider service: makes this process reachable over the
- * DHT by public key, serving loadModel()/completion() to any consumer that
- * delegates to it (see ../config/delegate.config.ts on the consumer side).
- *
- * Usage: npm run provider --workspace=apps/backend -- [seed] [allowedConsumerPublicKey]
- *  - seed: optional 64-char hex QVAC_HYPERSWARM_SEED for a reproducible
- *    provider identity across restarts. Prefer setting it as an actual env
- *    var (`QVAC_HYPERSWARM_SEED=<seed> npm run provider ...`) instead of
- *    this argument - it's identity material, and a CLI argument is visible
- *    in `ps` output and shell history.
- *  - allowedConsumerPublicKey: optional firewall allow-list entry - when
- *    set, only that consumer's public key may delegate to this provider.
+ * Starts a QVAC provider service: reachable over the DHT by public key, serving loadModel()/completion() to a delegating consumer (see ../config/delegate.config.ts).
+ * Usage: npm run provider --workspace=apps/backend -- [seed] [allowedConsumerPublicKey]. `seed` is identity material - prefer the QVAC_HYPERSWARM_SEED env var over this CLI arg (visible in `ps`/shell history).
  */
 import { startProvider, stopProvider } from './infra/qvacProviderAdapter.js';
 
@@ -25,9 +15,7 @@ async function main(): Promise<void> {
     }
     process.env['QVAC_HYPERSWARM_SEED'] = seed;
   }
-  // Lowercased: the DHT's own public keys are canonical lowercase hex, and
-  // the SDK's firewall allow-list check is case-sensitive - an
-  // uppercase-pasted key would otherwise be silently denied.
+  // Lowercased: DHT public keys are canonical lowercase hex and the SDK's allow-list check is case-sensitive.
   const allowedConsumerPublicKey = process.argv[3]?.toLowerCase();
   if (allowedConsumerPublicKey && !HEX64.test(allowedConsumerPublicKey)) {
     throw new Error('allowedConsumerPublicKey must be a 64-character hex string (see usage above)');

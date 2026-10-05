@@ -5,24 +5,10 @@ import { EmbeddingDimensionMismatchError, MalformedEmbeddingError } from '../dom
 import type { QvacEmbeddingAdapter } from '../infra/qvacEmbeddingAdapter.js';
 
 /**
- * `EmbeddingPort` backed by a local QVAC embedding model. Owns the model's
- * load lifecycle (same cached-promise `ensureModel()` pattern as
- * `ChatQVAC`/`TtsService`) so the model loads once and is reused across
- * every `embed()`/`embedBatch()` call instead of per request. Query
- * embeddings (`embed`) and document embeddings (`embedBatch`) both go
- * through this same cached model, so they're never accidentally produced
- * by two different models.
- *
- * The first vector this instance ever produces fixes the expected
- * dimension; anything after that with a different length, or containing a
- * non-finite number, is rejected rather than handed to the vector store.
- *
- * QVAC's llama.cpp embedding engine runs one job per model at a time
- * (`GGMLBert`'s exclusive run queue) - a second concurrent `embed()` call
- * against the same loaded model fails with "Cannot set new job". `queue`
- * below serializes every SDK call this instance makes so concurrent
- * `embed()`/`embedBatch()` callers (e.g. embedding several fixture chunks
- * via `Promise.all`) queue up instead of racing the engine.
+ * `EmbeddingPort` backed by a local QVAC embedding model, loaded once and reused across calls. The
+ * first vector produced fixes the expected dimension; later vectors of a different length, or with a
+ * non-finite value, are rejected. `queue` serializes SDK calls: QVAC's embedding engine runs one job
+ * per model at a time, so concurrent `embed()`/`embedBatch()` calls would otherwise race the engine.
  */
 export class QvacEmbeddingService implements EmbeddingPort {
   private modelIdPromise?: Promise<string>;

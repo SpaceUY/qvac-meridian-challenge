@@ -1,7 +1,4 @@
-// Qwen3 (and other reasoning models) wrap their internal reasoning in
-// <think>...</think> before the real answer. This file knows how to split
-// that reasoning away from what the user should actually see — nothing else
-// in the app needs to know the tag even exists.
+// Splits Qwen3's <think>...</think> reasoning block away from the answer the user should see.
 
 const THINK_OPEN = '<think>'
 const THINK_CLOSE = '</think>'

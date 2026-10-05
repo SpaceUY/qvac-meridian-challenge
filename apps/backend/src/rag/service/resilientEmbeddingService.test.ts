@@ -18,12 +18,7 @@ function sdkFallback(embedOne: (modelId: string, text: string) => Promise<number
   return new QvacEmbeddingService(fakeModels(loadModel), adapter, MODEL_SOURCE, 16);
 }
 
-/**
- * `Object.defineProperties` (not `{...defaults, ...overrides}`) so a getter
- * passed in `overrides` (used below to make `isCrashed` reflect live,
- * mutable test state) stays a live getter - a plain object spread would
- * evaluate it once and freeze the result as a static value.
- */
+/** Uses `Object.defineProperties`, not a spread, so a getter in `overrides` (e.g. live `isCrashed`) stays a live getter instead of being evaluated once and frozen. */
 function fakeNative(overrides: Partial<NativeEmbeddingLike> = {}): NativeEmbeddingLike {
   const base: NativeEmbeddingLike = {
     ensureLoaded: vi.fn().mockResolvedValue(undefined),
@@ -36,8 +31,7 @@ function fakeNative(overrides: Partial<NativeEmbeddingLike> = {}): NativeEmbeddi
 }
 
 function service(native: NativeEmbeddingLike, createSdkFallback: () => QvacEmbeddingService): ResilientEmbeddingService {
-  // The first five args are never read when native/sdkFallback are both
-  // injected (see constructor) - dummy values matching production shapes.
+  // Dummy values: unread when native/sdkFallback are both injected (see constructor).
   return new ResilientEmbeddingService(
     fakeModels(vi.fn()),
     {} as QvacEmbeddingAdapter,

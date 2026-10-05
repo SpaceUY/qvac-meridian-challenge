@@ -8,12 +8,7 @@ import { ChatQVAC } from "@space-uy/qvac-langgraph";
 import { buildLlmNode, classifyGreeting } from "./graph.js";
 import { INSUFFICIENT_CONTEXT_MESSAGE } from "./ragGraph.const.js";
 
-/**
- * Fakes just enough of ChatQVAC's surface for buildLlmNode:
- * `bindTools(tools).stream([...])` yielding a single chunk for the main
- * reply, and `invoke()` for the greeting classifier call the guard makes
- * when that reply has no evidence, no image, and no tool call.
- */
+/** Fakes just enough of ChatQVAC for buildLlmNode: `bindTools(tools).stream([...])` yields the main reply, and `invoke()` handles the greeting classifier call the guard makes when that reply has no evidence/image/tool call. */
 function fakeModelWithResponse(
   chunk: AIMessageChunk,
   classifierReplyText = "OTHER",

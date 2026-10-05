@@ -9,17 +9,7 @@ import { CorpusIngestService, type IngestReport } from './corpusIngest.service.j
 import { CORPUS_ROOT, VECTOR_DB_DIR } from '../../config/rag.config.js';
 import { DEFAULT_EMBEDDING_BATCH_SIZE, EMBEDDING_MODEL_EXPECTED_SIZE, EMBEDDING_MODEL_SOURCE } from '../../config/models.config.js';
 
-/**
- * True for `@qvac/sdk`'s `RPC_INIT_TIMEOUT` (code 50204) - thrown when the
- * shared `bare.exe` worker doesn't establish its IPC handshake within the
- * SDK's hardcoded 30s window. `QvacChunker.chunk()` (`ragChunk()`, a raw SDK
- * call outside `ModelManagementService`'s error wrapping) is the first thing
- * ingest touches that needs this worker, so a slow first spawn - e.g.
- * antivirus scanning `bare.exe` the first time a process runs it - surfaces
- * here raw, before any embedding call. Checked on both the raw error and
- * `ModelManagementError.cause`, since a `ModelManagementService.loadModel()`
- * call could in principle hit the same timeout too.
- */
+/** True for `@qvac/sdk`'s `RPC_INIT_TIMEOUT` - a slow first `bare.exe` spawn (e.g. antivirus scanning it) can miss the SDK's hardcoded 30s handshake window. Checked on both the raw error and `ModelManagementError.cause`. */
 function isRpcInitTimeout(err: unknown): boolean {
   const code = (err as { code?: unknown } | null)?.code;
   const causeCode = (err as { cause?: { code?: unknown } } | null)?.cause?.code;
@@ -45,10 +35,7 @@ function printReport(report: IngestReport, totalRows: number): void {
 async function main(): Promise<void> {
   const adapter = new QvacRuntimeAdapter();
   const modelService = new ModelManagementService(adapter, adapter);
-  // I.4: native @qvac/embed-llamacpp path primary, @qvac/sdk path as fallback
-  // (init failure or a mid-session worker crash) - see
-  // docs/i4-native-addon-results.md. Same constructor shape as the
-  // QvacEmbeddingService it replaces.
+  // Native @qvac/embed-llamacpp path primary, @qvac/sdk path as fallback - see docs/i4-native-addon-results.md.
   const embeddingPort = new ResilientEmbeddingService(
     modelService,
     new QvacEmbeddingAdapter(),
@@ -69,9 +56,7 @@ async function main(): Promise<void> {
       report = await ingestService.ingest(CORPUS_ROOT);
     } catch (err) {
       if (!isRpcInitTimeout(err)) throw err;
-      // Re-running is safe: ingest is idempotent (unchanged documents are
-      // skipped, see CorpusIngestService), so a retry after a cold-spawn
-      // timeout never re-embeds anything already written.
+      // Safe to retry: ingest is idempotent, so a cold-spawn timeout never re-embeds already-written documents.
       console.warn('[ingest] RPC init timed out on the first attempt (cold worker spawn) - retrying once...');
       report = await ingestService.ingest(CORPUS_ROOT);
     }
@@ -80,13 +65,10 @@ async function main(): Promise<void> {
     failure = err;
   }
 
-  // Always runs: leaving the QVAC worker open keeps Node alive and the
-  // terminal hangs. Cleanup failures are reported but never mask the real
-  // error, if there was one.
+  // Always runs: an open QVAC worker keeps Node alive and the terminal hangs.
   try {
     await embeddingPort.unload();
-    // Project rule, verified: give the unload a moment before tearing the
-    // connection down, or the two can race.
+    // Unload and close can race without this pause.
     await new Promise((resolve) => setTimeout(resolve, 150));
     await modelService.close();
   } catch (cleanupErr) {

@@ -78,11 +78,7 @@ class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
     const response =
       this.responses[Math.min(this.callCount, this.responses.length - 1)];
     this.callCount++;
-    // Mirrors the real adapter's streaming contract: deltas sum to the full
-    // text, so a single delta with the whole response satisfies it here.
-    // AgentService.invoke() now always streams (graph.stream(...) drives
-    // ChatQVAC._streamResponseChunks), which only ever sees the answer text
-    // through this callback - without it, the final answer is always "".
+    // AgentService.invoke() always streams (graph.stream(...) drives ChatQVAC._streamResponseChunks) and only ever sees the answer text through this callback - without it, the final answer is always "".
     if (response.text) onToken?.(response.text);
     return Object.assign(Promise.resolve(response), {
       requestId: `req-chat-${this.chatRequests.length}`,

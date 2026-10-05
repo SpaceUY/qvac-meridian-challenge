@@ -31,12 +31,7 @@ export function formatProviderKey(providerPublicKey: string): string {
   return `${providerPublicKey.slice(0, 16)}…`
 }
 
-/**
- * Everything the engine card shows, decided in one place. Order matters:
- * - an unreachable server also reports status 'error', so it goes first;
- * - a cancelled load wins over `recovering`, and `recovering` wins over
- *   loading/ready - the same precedence the PR #48 label chain had.
- */
+/** Order matters: unreachable-server beats status 'error' (it also reports that), and cancelled beats recovering beats loading/ready. */
 export function describeEngineStatus({ status, cancelled, serverUnreachable, recovering, statusError, delegation }: EngineStatusInput): EngineStatusView {
   // No retry button: useModelStatus keeps polling while the request fails, so the app reconnects by itself.
   if (serverUnreachable) return { tone: 'error', label: 'Server unreachable', detail: 'Reconnecting automatically…' }

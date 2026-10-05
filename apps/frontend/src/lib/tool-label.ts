@@ -1,6 +1,4 @@
-// Human-readable names for a tool the agent used this turn. The API sends
-// only the machine name (e.g. "lookup_stock") - this is the one place that
-// turns it into the short badge label and the longer hover description.
+// The API sends only a tool's machine name (e.g. "lookup_stock") - this turns it into the badge label + hover description.
 
 type ToolCopy = { label: string; description: string }
 

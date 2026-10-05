@@ -11,15 +11,8 @@ const { loadModelMock, getLoadedModelInfoMock, completionMock, downloadAssetMock
 }));
 
 /**
- * A cancelled `loadModel()` call never round-trips as an
- * `InferenceCancelledError` instance - per `@qvac/sdk`'s own
- * `rpc-error.ts` comment, that class is only ever constructed
- * client-side from the completion/streaming path's aggregated partial
- * state. A cancelled load instead crosses the RPC boundary as a
- * generic reconstructed error carrying the same `INFERENCE_CANCELLED`
- * code/message, since that code has no typed reconstructor registered.
- * Only `loadModel` is overridden here - everything else (including
- * `SDK_SERVER_ERROR_CODES`, used below) stays real.
+ * A cancelled `loadModel()` never round-trips as `InferenceCancelledError` (per `@qvac/sdk`'s own `rpc-error.ts`, that class is only reconstructed from the completion path's partial state) - it crosses as a generic error carrying the same `INFERENCE_CANCELLED` code.
+ * Only `loadModel` is mocked here; everything else (incl. `SDK_SERVER_ERROR_CODES`) stays real.
  */
 vi.mock("@qvac/sdk", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@qvac/sdk")>();

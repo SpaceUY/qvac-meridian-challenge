@@ -1,9 +1,4 @@
-/**
- * Which phase of local model management a failure happened in. `not-found`
- * is a precondition failure (the requested model isn't currently loaded),
- * distinct from `inference`/`unload` actually failing on a loaded model -
- * callers can tell the two apart instead of treating every failure the same.
- */
+/** Which phase failed; `not-found` is a precondition miss, distinct from a genuine inference/unload failure. */
 export type ModelManagementStage =
   | 'discovery'
   | 'download'
@@ -17,13 +12,7 @@ export type ModelManagementStage =
   | 'heartbeat'
   | 'not-found';
 
-/**
- * Single error type for the whole feature so callers (the chat path, the
- * demo script) have one thing to catch instead of reaching into
- * `@qvac/sdk`'s error hierarchy. `cause` keeps the original error for
- * server-side logging; callers surface a generic, user-safe message instead
- * of serializing it back to a client.
- */
+/** Single error type for the whole feature; `cause` is logged server-side but never serialized back to a client. */
 export class ModelManagementError extends Error {
   readonly stage: ModelManagementStage;
   override readonly cause?: unknown;
@@ -43,13 +32,7 @@ export function toModelManagementError(stage: ModelManagementStage, err: unknown
   return new ModelManagementError(stage, message, err);
 }
 
-/**
- * Thrown by a `ModelRuntimePort` implementation when a load or inference
- * settles because `cancel(requestId)` was called, as opposed to genuinely
- * failing. Domain-level (not `@qvac/sdk`'s `InferenceCancelledError`) so
- * `ModelManagementService` can tell "cancelled" apart from "failed" - see
- * `getRequestStatus()` - without importing the SDK.
- */
+/** Domain-level (not the SDK's own) so `ModelManagementService` can tell "cancelled" from "failed" without importing `@qvac/sdk`. */
 export class OperationCancelledError extends Error {
   readonly requestId: string;
 
@@ -65,20 +48,7 @@ export function isCancellationError(err: unknown): boolean {
   return err instanceof ModelManagementError && err.cause instanceof OperationCancelledError;
 }
 
-/**
- * Thrown by a `ModelRuntimePort` implementation when a chat completion
- * fails specifically because a *delegated* model's remote provider could
- * not be reached (the provider process is down/unreachable), as opposed
- * to a genuine completion failure (bad input, a model crash, etc.) on an
- * otherwise-healthy connection. Distinct from `OperationCancelledError`
- * for the same reason: `@qvac/sdk`'s `fallbackToLocal` only ever applies
- * at `loadModel()` time - once a model is loaded and registered as
- * delegated, a later completion against a now-dead provider just fails,
- * with no SDK-level recovery. `QvacChatSession` uses this to tell "the provider
- * died mid-session, reload (which will itself fall back to local) and
- * retry once" apart from any other inference failure, which it should
- * not blindly retry.
- */
+/** Signals a delegated provider went unreachable mid-session (`@qvac/sdk`'s `fallbackToLocal` only applies at `loadModel()` time) - lets `QvacChatSession` reload+retry once instead of treating it like any other completion failure. */
 export class DelegatedProviderUnreachableError extends Error {
   constructor(cause?: unknown) {
     super('The delegated model\'s provider could not be reached');

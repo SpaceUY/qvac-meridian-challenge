@@ -9,13 +9,7 @@ const configDir = path.dirname(fileURLToPath(import.meta.url));
 /** `src/config` -> `src` -> `backend` -> `apps` -> repo root. */
 const repoRoot = path.resolve(configDir, '..', '..', '..', '..');
 
-/**
- * Corpus root as shipped in `corpus.zip`. Every `source` stored in the
- * vector table is relative to THIS directory - the challenge requires
- * citations to carry corpus-relative paths ("reports/x.md", never
- * "corpus/reports/x.md" and never an absolute path), and this constant is
- * the single place that defines what "relative to the corpus root" means.
- */
+/** Every vector-table `source` is relative to this directory - the challenge requires corpus-relative citation paths ("reports/x.md", never absolute or `corpus/`-prefixed). */
 export const CORPUS_ROOT = path.join(repoRoot, 'corpus');
 
 /** File-backed LanceDB directory. Derived data: gitignored, rebuilt by `npm run ingest`. */
@@ -26,12 +20,7 @@ export const CHUNKS_TABLE = 'chunks';
 /** Text file extensions ingested from the corpus. `corpus/pictures/` is skipped: `ragChunk()` does not process binaries. */
 export const TEXT_EXTENSIONS = new Set(['.md', '.txt', '.html', '.json', '.csv']);
 
-/**
- * `chunkSize`/`chunkOverlap` are in WORDS (`splitStrategy: 'word'`) - not
- * characters. Re-validated as part of the BGE-M3 retrieval benchmark (30-doc
- * real corpus, EN+ES, 13-question holdout): these two values were already
- * the sweep's winner (90/180/270/360 tested) and carry over unchanged.
- */
+/** Word-based (not character) chunk size/overlap - winner of a 90/180/270/360 sweep against the BGE-M3 retrieval benchmark (30-doc corpus, EN+ES, 13-question holdout). */
 export const CHUNK_OPTIONS = {
   chunkSize: 180,
   chunkOverlap: 40,
@@ -39,30 +28,12 @@ export const CHUNK_OPTIONS = {
   splitStrategy: 'word'
 } as const;
 
-/**
- * Output dimension of `EMBEDDING_MODEL_SOURCE` (BGE-M3, see
- * `models.config.ts`). The challenge requires the store's vector dimension
- * to match the embedding model's; `CorpusIngestService` asserts the first
- * real vector against this number rather than trusting it, so a model swap
- * fails loudly at ingest instead of silently writing a table nothing can
- * query. Changing this value alone does nothing to existing data - a full
- * reindex is required, see `EMBEDDING_MODEL_SOURCE`'s doc comment.
- */
+/** Must match `EMBEDDING_MODEL_SOURCE`'s output dimension; `CorpusIngestService` asserts the first real vector against this so a model swap fails loudly at ingest instead of writing an unqueryable table. Changing this needs a full reindex. */
 export const EMBEDDING_DIMENSIONS = 1024;
 
 /**
- * `topK` is the search pool feeding `metadataRerank()`, not the final
- * count - `maxContextChunks` is what reaches the LLM (the benchmark's own
- * "topK/Recall@3" figures refer to this, `maxContextChunks`, not the search
- * pool below). `topK` here is set equal to `RERANK_CANDIDATE_POOL` so the
- * reranker always sees every retrieved candidate - a lower `topK` would
- * starve `RERANK_CANDIDATE_POOL` of candidates it could otherwise rerank.
- * `minScore` is a flat 0.551 - the pooled Youden's J optimum across EN+ES,
- * assuming a downstream LLM guardrail that can say "I don't know" rather
- * than hallucinate on weak context. It strictly dominates the previously
- * used 0.57: identical false-accept rate (16.7%) in both languages, but
- * accepts ~7pp more valid questions in each. Applied uniformly since this
- * codebase has no EN/ES query-language routing today.
+ * `topK` is the search pool feeding `metadataRerank()` (equal to `RERANK_CANDIDATE_POOL` so the reranker sees every candidate); `maxContextChunks` is what reaches the LLM and what the benchmark's "Recall@3" refers to.
+ * `minScore` 0.551 is the pooled Youden's J optimum across EN+ES - same false-accept rate as the prior 0.57 but ~7pp more valid questions accepted.
  */
 export const DEFAULT_RAG_CONFIG: RagRetrievalConfig = {
   topK: 15,
@@ -71,25 +42,10 @@ export const DEFAULT_RAG_CONFIG: RagRetrievalConfig = {
   dedupeExactContent: true
 };
 
-/**
- * Longest text, in UTF-16 characters, embedded for one retrieval search -
- * see `toRetrievalQuery()` (`rag/service/retrievalQuery.ts`). Mirrors the
- * frontend composer's `MAX_PROMPT_CHARS` (`apps/frontend/src/lib/prompt-limit.ts`);
- * the backend still clips on its own because API clients and voice
- * transcripts never pass through that composer. A message pasted whole
- * (tens of thousands of characters) overflows the embedder's context and
- * fails the turn; 700 characters stay far below it even at one token per
- * character.
- */
+/** Longest text (UTF-16 chars) embedded per search - mirrors the frontend's `MAX_PROMPT_CHARS`, but enforced here too since API clients and voice transcripts bypass the composer. 700 stays well under the embedder's context limit even at one token/char. */
 export const MAX_RETRIEVAL_QUERY_CHARS = 700;
 
-/**
- * Tunable data for `metadataRerank()` (`../rag/service/metadataRerank.ts`).
- * Re-tuned specifically for BGE-M3 (120-combination sweep, validated against
- * a 13-question holdout never used to pick the weights) - see
- * `EMBEDDING_MODEL_SOURCE` in `models.config.ts` for the full benchmark
- * context.
- */
+/** Tunable data for `metadataRerank()` - re-tuned for BGE-M3 via a 120-combination sweep validated against a held-out 13-question set. */
 export type AuthorityLabel =
   | 'official-policy'
   | 'official-reference'
@@ -126,10 +82,5 @@ export const AUTHORITY_BY_DOCUMENT_TYPE: Record<string, AuthorityLabel> = {
   [DocumentType.TRANSCRIPT]: 'informal-notes'
 };
 
-/**
- * Corpus-relative `source` paths known to be superseded. Deliberately
- * empty: nothing in `corpus/` self-declares supersession, and guessing
- * would inject an unverified claim into grounded answers. Populate once
- * there's a real signal for it.
- */
+/** Corpus-relative paths known to be superseded. Empty: nothing in `corpus/` self-declares supersession, and guessing would inject an unverified claim into answers. */
 export const SUPERSEDED_SOURCES: ReadonlySet<string> = new Set();

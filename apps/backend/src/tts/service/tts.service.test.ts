@@ -18,7 +18,7 @@ import { DEFAULT_SUPERTONIC_ENGINE_CONFIG, TTS_MODELS_BY_TIER } from '../../conf
 import { RESOURCE_TIER, type ResourceTier } from '../../config/resourceTier.js';
 import { TtsService } from './tts.service.js';
 
-/** Resolves every load() immediately with a fresh modelId - no cancellation support needed for these tests. */
+/** Resolves every load() immediately with a fresh modelId. */
 class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
   loadCalls: { source: ModelSource; options?: LoadModelOptions }[] = [];
   private nextRequestId = 0;
@@ -88,7 +88,7 @@ class FakeTtsPort implements TextToSpeechPort {
   }
 }
 
-/** Lets already-queued microtasks (the service's internal .then/.catch chain) run before assertions. */
+/** Lets queued microtasks (the service's .then/.catch chain) run before assertions. */
 function flushMicrotasks(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }

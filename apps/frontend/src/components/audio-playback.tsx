@@ -1,4 +1,3 @@
-// apps/frontend/src/components/audio-playback.tsx
 import { useEffect, useRef, useState } from 'react'
 import { Pause, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -6,12 +5,12 @@ import { useMirrorRef } from '@/hooks/use-mirror-ref'
 import { AudioChunkQueue } from '@/lib/audio-chunk-queue'
 
 type Props = {
-  /** One entry per synthesized sentence. During a live voice turn this array keeps growing - AudioChunkQueue decides when to auto-advance into a chunk that just arrived. */
+  /** Grows during a live voice turn; AudioChunkQueue decides when to auto-advance into a newly arrived chunk. */
   chunks: { dataUrl: string }[]
   autoPlay?: boolean
 }
 
-/** Play/pause for a message's synthesized audio, one chunk at a time. Autoplay is best-effort: if the browser blocks it, the button stays available regardless, with no error shown. */
+/** Autoplay is best-effort: if the browser blocks it, the button still works, silently. */
 export function AudioPlayback({ chunks, autoPlay = false }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const queueRef = useRef(new AudioChunkQueue())
@@ -19,18 +18,13 @@ export function AudioPlayback({ chunks, autoPlay = false }: Props) {
   const [loadedIndex, setLoadedIndex] = useState<number | undefined>(undefined)
   const [isPlaying, setIsPlaying] = useState(false)
 
-  // Runs on mount (first chunk already present) and every time the chunk
-  // count grows - decides whether to start playing (autoPlay) or
-  // auto-continue into a chunk that just arrived after playback had run out
-  // and was waiting for more.
+  // Decides whether to (auto)play on mount or auto-continue as new chunks arrive.
   useEffect(() => {
     const next = queueRef.current.advance(chunks.length, autoPlay)
     if (next !== undefined) setLoadedIndex(next)
   }, [chunks.length, autoPlay])
 
-  // Plays whatever index was just loaded - covers both the initial autoplay
-  // and every later auto-advance, without duplicating a .play() call at
-  // each call site above.
+  // Single .play() call site for both initial autoplay and later auto-advance.
   useEffect(() => {
     if (loadedIndex !== undefined) audioRef.current?.play().catch(() => {})
   }, [loadedIndex])

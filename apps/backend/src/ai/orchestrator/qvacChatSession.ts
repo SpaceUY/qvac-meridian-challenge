@@ -38,13 +38,7 @@ export interface QvacChatSessionOptions {
   maxConcurrency?: number;
 }
 
-/**
- * Owns the chat model's lifecycle on top of `ModelManagementService`: lazy
- * load, switching between local and delegated, recovery when a delegated
- * provider dies mid-session, cancellation, and the busy/recovering/delegation
- * state `AgentService` reports. `complete` is what `ChatQVAC` (the LangChain
- * adapter in `qvac-langgraph`) calls for every generation.
- */
+/** Owns the chat model's lifecycle on `ModelManagementService`: lazy load, local/delegated switching, mid-session recovery, cancellation, and the status `AgentService` reports. `complete` is what `ChatQVAC` calls per generation. */
 export class QvacChatSession {
   private readonly service: QvacChatSessionService;
   private readonly modelSource: ModelSource;
@@ -55,21 +49,13 @@ export class QvacChatSession {
   private modelIdPromise?: Promise<string>;
   /** Cache backing `getCachedDelegationInfo()`, kept fresh by `getDelegationInfo()`, `switchTo()` and `recoverFromDelegationFailure()`. */
   private delegationInfo?: LoadedModelDelegationInfo;
-  /** `true` for the duration of a `recoverFromDelegationFailure()` or `switchTo("local")` call - lets `AgentService.getStatus()` report "reconnecting" instead of the frontend inferring it 60s late from a state change that already finished. Not raised by `switchTo("delegated")`: a move back to the provider is not a reconnect after a failure. */
+  /** True during `recoverFromDelegationFailure()`/`switchTo("local")` so `getStatus()` can report "reconnecting"; not raised by `switchTo("delegated")`. */
   private recovering = false;
   /** Number of `switchTo()` calls in flight, either direction - backs `isBusy()`, so overlapping switches keep it `true` until the last one settles. */
   private switchesInFlight = 0;
   /** Bounds how many `complete()` calls run concurrently against the loaded model; extra calls queue (see `maxConcurrency`). */
   private readonly limiter: ConcurrencyLimiter;
-  /**
-   * `requestId` (the caller's own, from `ChatCompletionRequest.requestId`) ->
-   * the sdk-level `requestId` `chatComplete()` minted for that specific call,
-   * for every completion currently ADMITTED (past the limiter, dispatched to
-   * the service) - lets `cancelActive(requestId)` target exactly that one
-   * without disturbing any other concurrently in-flight completion. A
-   * request still queued behind the concurrency limit has no entry here yet;
-   * see `limiter.cancel()` for that case.
-   */
+  /** Caller requestId -> SDK-level requestId, per completion admitted past the limiter - lets `cancelActive()` target exactly one. A still-queued request has no entry yet (see `limiter.cancel()`). */
   private readonly activeRequestIds = new Map<string, string>();
   /** Same keys as `activeRequestIds` - the model each admitted completion is running on, needed to decide whether a model-wide `cancelCompletions()` fallback is safe (see `cancelActive()`). */
   private readonly activeModelIds = new Map<string, string>();
@@ -79,12 +65,7 @@ export class QvacChatSession {
   private recoveryPromise?: Promise<string>;
   /** The `requestId` of the `loadModel` call currently in flight, if any - lets `cancelLoad()` cancel it. */
   private loadRequestId?: string;
-  /**
-   * Set while a load is in flight; `cancelLoad()` uses it to force
-   * `ensureModel()`'s pending promise to reject immediately. See
-   * `cancelLoad()`'s doc comment for why this exists alongside the
-   * service-level `cancel()` call.
-   */
+  /** Set while a load is in flight; `cancelLoad()` uses it to force `ensureModel()`'s pending promise to reject immediately. */
   private loadAbandonSignal?: { reject: (err: unknown) => void };
 
   constructor(options: QvacChatSessionOptions) {
@@ -98,29 +79,12 @@ export class QvacChatSession {
   }
 
   /**
-   * Runs one chat completion against the (lazily loaded) model, recovering
-   * once if it fails specifically because the delegated provider died
-   * mid-session - reloads (falling back to local) and retries against the
-   * new model. Any other failure, or a second failure after recovery,
-   * propagates as-is: this is a one-shot recovery, not a retry loop.
-   *
-   * Recovery is only safe before the caller has seen any output - a
-   * provider dying after tokens already streamed can't be silently retried
-   * without duplicating/garbling what's already shown, so that case
-   * surfaces the error as-is instead. A call without `onToken` never
-   * streams, so it is always eligible.
-   *
-   * Bounded by `limiter`: a call past `maxConcurrency` queues here until an
-   * earlier one releases its slot, rather than starting unbounded
-   * concurrent inference. `request.requestId`, when present, is what
-   * `cancelActive()` targets this specific call by - both while queued
-   * (rejected without ever reaching the service) and once admitted
-   * (forwarded to `service.cancel()`/`cancelCompletions()`). Falls back to a
-   * locally-generated id when absent (e.g. a caller that doesn't thread one
-   * through) so the queue itself still works; that call just isn't
-   * externally cancellable by name.
-   *
-   * An arrow property so it can be handed to `ChatQVAC` directly.
+   * Runs one completion, recovering once if the delegated provider died
+   * before any token streamed (a provider dying mid-stream surfaces the
+   * error as-is instead, to avoid duplicating/garbling output already
+   * shown). Queues behind `limiter`; `request.requestId` (or a generated
+   * fallback) is what `cancelActive()` targets. An arrow property so
+   * `ChatQVAC` can hold it directly.
    */
   readonly complete = async (
     request: ChatCompletionRequest,
@@ -176,35 +140,13 @@ export class QvacChatSession {
   }
 
   /**
-   * Cancels the `complete()` call identified by `requestId` - used by a
-   * host's cancel endpoint to stop a running (or still-queued) generation
-   * without disturbing any other concurrently active or queued one. No-op
-   * when `requestId` is unknown (already settled, or never existed).
-   *
-   * Checks the concurrency queue first: a call still waiting for a slot has
-   * never reached the service, so cancelling it there (via `limiter`)
-   * rejects it directly instead of forwarding to `service.cancel()`, which
-   * has nothing to target yet.
-   *
-   * For an admitted call, rejecting its abandon signal frees the caller
-   * immediately regardless of whether the cancel RPC(s) below actually land
-   * in time, then `service.cancel(requestId)` targets that one completion.
-   *
-   * `service.cancel()` alone cannot stop a completion running on a
-   * *delegated* model (the SDK handles a request-id cancel locally and
-   * reports success without forwarding it to the provider, which keeps
-   * generating), so a model-wide `cancelCompletions(modelId)` normally
-   * follows for the delegated case - but that cancels *every* completion on
-   * that model, not just this one. Under concurrency, calling it while a
-   * sibling completion is still active on the same model would cancel that
-   * sibling too, violating "cancelling one must never affect another". So
-   * it's only called when this is the sole active completion on that
-   * model; otherwise cancellation here is best-effort by request-id alone -
-   * the caller is freed either way via the abandon signal, but the remote
-   * generation may keep running on the provider until it finishes. This is
-   * an inherent limitation of delegating to a model that only exposes a
-   * model-wide remote cancel, not something concurrency itself introduces
-   * the risk of avoiding.
+   * Cancels the `complete()` call for `requestId`; no-op if unknown/settled.
+   * A still-queued call is rejected via `limiter` directly. An admitted
+   * call's abandon signal frees the caller immediately; `service.cancel()`
+   * alone can't stop a *delegated* completion (the SDK reports success
+   * locally without forwarding to the provider), so `cancelCompletions(modelId)`
+   * also runs, but only when no sibling completion is active on that model -
+   * otherwise it would cancel them too.
    */
   async cancelActive(requestId: string): Promise<void> {
     if (this.limiter.cancel(requestId)) return;
@@ -223,13 +165,7 @@ export class QvacChatSession {
     }
   }
 
-  /**
-   * Coalesces concurrent recovery attempts into one reload: if two (or
-   * more) `complete()` calls discover the delegated provider died at
-   * roughly the same time, only the first starts `recoverFromDelegationFailure()`;
-   * the rest await that same in-flight attempt instead of each unloading/
-   * reloading the model independently.
-   */
+  /** Coalesces concurrent recovery attempts into one reload instead of each call unloading/reloading independently. */
   private recoverOnce(): Promise<string> {
     if (!this.recoveryPromise) {
       this.recoveryPromise = this.recoverFromDelegationFailure().finally(() => {
@@ -240,18 +176,10 @@ export class QvacChatSession {
   }
 
   /**
-   * Cancels the `loadModel` call currently in flight on this session, if
-   * any - used by a host's cancel-preload path to stop a running
-   * `preload()`. No-op when nothing is in flight.
-   *
-   * `service.cancel()` is best-effort here, not a guarantee: a delegated
-   * load's connection-establishment phase can fail to register with the
-   * underlying runtime's request-cancellation registry at all, so
-   * `cancel()` during that phase may just report success without
-   * interrupting anything - the connection attempt keeps running until it
-   * times out on its own (`DelegateOptions.timeout`). Rejecting
-   * `loadAbandonSignal` guarantees the caller isn't stuck waiting that
-   * long regardless of whether the service-level cancel actually took effect.
+   * Cancels the in-flight `loadModel` call, if any. `service.cancel()` is
+   * best-effort during a delegated load's connect phase (it may report
+   * success without interrupting anything), so `loadAbandonSignal` also
+   * rejects to guarantee the caller isn't stuck past `DelegateOptions.timeout`.
    */
   async cancelLoad(): Promise<void> {
     if (!this.loadRequestId) return;
@@ -262,14 +190,7 @@ export class QvacChatSession {
     );
   }
 
-  /**
-   * Races the real load against a manually-triggered "abandon" signal
-   * (see `cancelLoad()`) so a caller is never stuck waiting on this
-   * promise longer than a cancel request, even when the underlying service
-   * can't actually interrupt the operation. The real load keeps running
-   * in the background either way - this only stops the caller from
-   * waiting on it.
-   */
+  /** Races the real load against `cancelLoad()`'s abandon signal so a caller is never stuck past a cancel request; the load itself keeps running in the background either way. */
   async ensureModel(): Promise<string> {
     if (!this.modelIdPromise) {
       this.modelIdPromise = this.startLoad(this.delegate).catch((error: unknown) => {
@@ -280,20 +201,11 @@ export class QvacChatSession {
     return this.modelIdPromise;
   }
 
-  /**
-   * The load itself, shared by `ensureModel()` and `switchTo()`: races the
-   * real load against `cancelLoad()`'s abandon signal and clears the
-   * in-flight bookkeeping when it settles. Deliberately does not touch
-   * `modelIdPromise` - each caller decides how the resulting promise is
-   * cached (and cleared on failure).
-   */
+  /** Shared load path for `ensureModel()`/`switchTo()`; doesn't touch `modelIdPromise` itself - each caller decides how to cache/clear the result. */
   private startLoad(delegate: DelegateOptions | undefined): Promise<string> {
     const pending = this.service.loadModel(this.modelSource, {
       ctxSize: this.ctxSize,
-      // The llamacpp-completion addon only parses tool calls when the model
-      // was loaded with `tools: true` *and* the request carries tools -
-      // load-time opt-in is required even though it's a no-op without the
-      // latter, so this can't be deferred to the request.
+      // Tool-call parsing needs tools:true at load time even before the request carries any - can't be deferred.
       tools: true,
       engineConfig: this.engineConfig,
       delegate,
@@ -308,21 +220,7 @@ export class QvacChatSession {
     });
   }
 
-  /**
-   * Whether the currently loaded model is running on a remote provider or
-   * locally - `undefined` until a model has loaded, or if no `delegate`
-   * was configured at all (a non-delegating load is always local, so
-   * there's nothing to query). Best-effort: if the introspection query
-   * itself fails, resolves `undefined` rather than throwing, so a caller
-   * never has its own success/failure hinge on this - the model is either
-   * loaded and usable or it isn't, independent of whether its delegation
-   * status could be confirmed.
-   *
-   * Caches its result (see `getCachedDelegationInfo()`) - also refreshed
-   * by `recoverFromDelegationFailure()` after a mid-session recovery, so
-   * the cache never goes stale after the model that was originally
-   * delegated falls back to running locally.
-   */
+  /** Whether the loaded model runs remotely or locally; undefined until loaded, or if no `delegate` is configured. Best-effort (resolves undefined on introspection failure) and cached - refreshed after a mid-session recovery so the cache never goes stale. */
   async getDelegationInfo(): Promise<LoadedModelDelegationInfo | undefined> {
     if (!this.delegate) {
       this.delegationInfo = undefined;
@@ -338,30 +236,17 @@ export class QvacChatSession {
     return this.ctxSize;
   }
 
-  /**
-   * Synchronous snapshot of the last `getDelegationInfo()` result. Exists
-   * so a host's status endpoint - itself synchronous, if it's polled by a
-   * frontend every second - can report current delegation status without
-   * an async round-trip (and a service call) on every poll.
-   */
+  /** Synchronous snapshot of the last `getDelegationInfo()` result, so a frequently-polled status endpoint avoids an async round-trip per poll. */
   getCachedDelegationInfo(): LoadedModelDelegationInfo | undefined {
     return this.delegationInfo;
   }
 
-  /** Synchronous snapshot of whether a delegation-recovery reload is currently in flight. See the `recovering` field's doc comment. */
+  /** Synchronous snapshot of whether a delegation-recovery reload is currently in flight. */
   isRecovering(): boolean {
     return this.recovering;
   }
 
-  /**
-   * `true` while any completion - active or still queued behind the
-   * concurrency limit - a load, a recovery reload or a `switchTo()` is in
-   * flight. A host uses it to defer a proactive `switchTo()` until nothing
-   * would be interrupted. Queued completions count too: each already
-   * captured the `modelId` it will call `service.chatComplete()` with once
-   * admitted, so a switch that unloads the model out from under a merely
-   * *queued* call would be just as disruptive as interrupting an active one.
-   */
+  /** True while any completion (active or queued), a load, a recovery, or a `switchTo()` is in flight - queued completions count too since they already captured the `modelId` a switch would unload out from under them. */
   isBusy(): boolean {
     return (
       this.activeRequestIds.size > 0 ||
@@ -373,28 +258,14 @@ export class QvacChatSession {
   }
 
   /**
-   * Proactively moves the model between running locally and running on the
-   * configured delegate - the health-check counterpart to the reactive
-   * `recoverFromDelegationFailure()`. Callers should check `isBusy()`
-   * first; this does not wait for an in-flight completion.
-   *
-   * `"local"` loads with no `delegate`, so it starts immediately instead
-   * of waiting out a connect timeout against a provider that is known to be
-   * down. `"delegated"` loads with the configured `delegate` (still
-   * `fallbackToLocal`); if that load rejects anyway (e.g. the provider
-   * answers but fails to load the model, which the service does not fall
-   * back from), it loads locally within the same call, so the old model is
-   * never left unloaded just because the provider could not serve it.
-   * Only `"local"` raises `isRecovering()`; both directions count towards
-   * `isBusy()`.
-   *
-   * `modelIdPromise` is set to the switch itself synchronously, before any
-   * `await`, so a chat request arriving mid-switch awaits this load
-   * instead of starting a second one. The old model is unloaded first for
-   * the same reason `recoverFromDelegationFailure()` does (see its doc
-   * comment). On failure the cached promise and delegation info are
-   * cleared: the old model is already gone, so the next `ensureModel()`
-   * must reload rather than reuse a stale id.
+   * Proactively moves the model between local and the configured delegate
+   * (the health-check counterpart to `recoverFromDelegationFailure()`).
+   * `"local"` starts immediately, skipping a connect timeout against a
+   * known-down provider. `"delegated"` falls back to local within the same
+   * call if the provider answers but can't serve the load. Sets
+   * `modelIdPromise` synchronously (before any await) so a request arriving
+   * mid-switch awaits this same load instead of starting a second one; only
+   * `"local"` raises `isRecovering()`.
    */
   async switchTo(mode: "local" | "delegated"): Promise<string> {
     if (mode === "delegated" && !this.delegate) {
@@ -427,30 +298,13 @@ export class QvacChatSession {
   }
 
   /**
-   * Called when a chat completion fails because the delegated model's
-   * provider died mid-session. A typical service's own fallback-to-local
-   * behavior only applies at load time, so an already-loaded delegated
-   * model has no service-level recovery of its own once its provider goes
-   * down.
-   *
-   * Unloading the stale model *before* reloading is required, not just
-   * cleanup: many local-load implementations only register a model when
-   * it isn't already registered under that same model id - a plain reload
-   * would find the id still registered (as delegated, pointing at the dead
-   * provider) and silently no-op, leaving the model delegated forever and
-   * turning every later request into another doomed connection attempt to
-   * the same dead provider. `unloadModel()` on a delegated model is
-   * expected to unregister it synchronously before even trying to notify
-   * the (unreachable) provider, so this is safe and fast even with the
-   * provider down. Best-effort: if the unload itself fails, still attempt
-   * the reload - the stale entry may cause another no-op fallback, but
-   * that's no worse than not trying.
-   *
-   * Also refreshes `getCachedDelegationInfo()`'s cache once the reload
-   * settles - without this, a host's status endpoint would keep reporting
-   * the pre-recovery "running on remote peer" snapshot from the original
-   * preload forever, even after the model is genuinely running locally
-   * again.
+   * Called when a completion fails because the delegated provider died
+   * mid-session (the SDK's own fallback-to-local only applies at load
+   * time). Must unload the stale model before reloading, not just for
+   * cleanup: a plain reload would find the model id still registered as
+   * delegated and silently no-op, leaving every later request pointed at
+   * the same dead provider. Refreshes the cached delegation info once the
+   * reload settles.
    */
   private async recoverFromDelegationFailure(): Promise<string> {
     this.recovering = true;

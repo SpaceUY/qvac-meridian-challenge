@@ -24,12 +24,7 @@ function makeEmbedding(): EmbeddingPort & { calls: number } {
   return port;
 }
 
-/**
- * In-memory stand-in for the LanceDB table. It is ALSO the ingest state
- * (`listDocumentHashes` reads it back), so a test about "the second run"
- * reuses the same writer - the same way the real table survives on disk
- * between two processes.
- */
+/** In-memory stand-in for the LanceDB table; it's also the ingest state, so a "second run" test reuses the same writer. */
 function makeWriter(): VectorStoreWriterPort & { rows: Map<string, ChunkRecord[]> } {
   const rows = new Map<string, ChunkRecord[]>();
   return {

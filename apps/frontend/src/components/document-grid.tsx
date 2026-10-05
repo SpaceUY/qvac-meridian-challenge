@@ -6,7 +6,7 @@ import type { CorpusDocument } from '@/lib/documents-client'
 
 type Props = { documents: CorpusDocument[]; query: string }
 
-/** The corpus modal's body: one section per document type, cards inside. Pure presentation - the grouping rules live in document-groups.ts. */
+/** Pure presentation - grouping rules live in document-groups.ts. */
 export function DocumentGrid({ documents, query }: Props) {
   if (documents.length === 0) return <EmptyMessage>The corpus is empty.</EmptyMessage>
 

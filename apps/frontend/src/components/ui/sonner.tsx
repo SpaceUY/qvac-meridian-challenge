@@ -2,10 +2,7 @@ import type { CSSProperties } from 'react'
 import { CircleCheck, OctagonX, TriangleAlert } from 'lucide-react'
 import { Toaster as SonnerToaster } from 'sonner'
 
-// Tuned for the dark theme only: index.html pins class="dark" on <html>, and the
-// 400 text tones would be unreadable on a light tint.
-// Literals copied from tailwindcss/theme.css - Tailwind only emits a color variable
-// when some class uses it, so var(--color-emerald-400) may not exist.
+// Dark-theme only (index.html pins class="dark"). Literals copied from tailwindcss/theme.css since Tailwind only emits a color variable when some class uses it.
 const EMERALD_500 = 'oklch(69.6% 0.17 162.48)'
 const EMERALD_400 = 'oklch(76.5% 0.177 163.223)'
 const AMBER_500 = 'oklch(76.9% 0.188 70.08)'
@@ -19,8 +16,7 @@ function tint(color: string, percent: number): string {
   return `color-mix(in oklab, ${color} ${percent}%, var(--background))`
 }
 
-// Inline on the toaster element on purpose: Sonner declares these same variables
-// there with a two-attribute selector, and an inline style beats any stylesheet rule.
+// Inline on purpose: Sonner declares these same variables via a two-attribute selector, and inline style beats any stylesheet rule.
 const THEME = {
   '--success-bg': tint(EMERALD_500, TINT_PERCENT),
   '--success-border': tint(EMERALD_500, TINT_PERCENT * 2),

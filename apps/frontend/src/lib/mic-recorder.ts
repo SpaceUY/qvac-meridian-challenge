@@ -1,12 +1,5 @@
-// apps/frontend/src/lib/mic-recorder.ts
-//
-// Captures the microphone and delivers it as mono 16-bit WAV at 16kHz. It
-// knows nothing about React or HTTP - its entire contract is "here's a Blob".
-//
-// Capture happens in real time at the mic's native sample rate (an
-// AudioWorklet has no time to resample on the audio thread); resampling to
-// 16kHz happens once, after stop(), via OfflineAudioContext - leaning on the
-// browser's own resampler instead of hand-rolled interpolation.
+// Captures mic audio at its native sample rate (an AudioWorklet has no time to resample on the
+// audio thread) and resamples to 16kHz once, after stop(), via the browser's OfflineAudioContext.
 
 const PCM_RECORDER_WORKLET_URL = '/pcm-recorder-processor.js'
 const PCM_RECORDER_PROCESSOR_NAME = 'pcm-recorder-processor' // must match public/pcm-recorder-processor.js
@@ -41,8 +34,7 @@ export class MicRecorder {
 
     const source = this.audioContext.createMediaStreamSource(this.stream)
     source.connect(this.workletNode)
-    // Not connected to audioContext.destination on purpose: we only want to
-    // capture, never to loop the mic back out through the speakers.
+    // Never connects to audioContext.destination - capture only, no mic-to-speaker loopback.
   }
 
   /** Stops capture, resamples to 16kHz, and encodes a WAV. `undefined` if the recording was under ~300ms (ignored, not an error). */

@@ -1,40 +1,17 @@
 import type { DelegateOptions } from '../models/domain/types.js';
 
-/**
- * `@qvac/sdk`'s `delegateSchema` validates `providerPublicKey` against this
- * exact pattern (a Hyperswarm/DHT public key) and rejects the whole
- * `loadModel()` call - before `fallbackToLocal` ever gets a chance - when
- * it doesn't match. Checked here too so a malformed key degrades to local
- * inference instead of breaking chat.
- */
+/** `@qvac/sdk`'s `delegateSchema` requires this exact pattern (a Hyperswarm/DHT key) and rejects `loadModel()` outright otherwise - checked here too so a malformed key degrades to local instead of breaking chat. */
 const PROVIDER_PUBLIC_KEY_PATTERN = /^[0-9a-fA-F]{64}$/;
 
 /** The SDK rejects a `delegate.timeout` below this (same reason as the key pattern above). */
 const MIN_DELEGATE_TIMEOUT_MS = 100;
 
-/**
- * Cold-DHT bootstrap (looking up a provider for the first time in a
- * process) can take 15-45s per `@qvac/sdk`'s own delegated-inference
- * example (`examples/delegated-inference/consumer.js`), which uses the
- * same 60s figure for exactly this reason. Applied whenever
- * `DELEGATE_TIMEOUT_MS` is unset or invalid, so a delegated load always
- * has a bound and a stalled/unreachable provider falls back to local
- * instead of hanging indefinitely (the SDK never times out a call with no
- * `timeout` at all).
- */
+/** Cold-DHT bootstrap can take 15-45s (same figure `@qvac/sdk`'s own delegated-inference example uses) - applied whenever `DELEGATE_TIMEOUT_MS` is unset/invalid so a stalled provider falls back to local instead of hanging forever. */
 const DEFAULT_DELEGATE_TIMEOUT_MS = 60_000;
 
 /**
- * Derives the chat-completion model's delegate target from environment
- * variables. A pure function of `env` (not just a module-level read of
- * `process.env`) so it's directly testable without module-reset tricks -
- * see `delegate.config.test.ts`.
- *
- * `fallbackToLocal` is always `true` when a provider key is configured -
- * not a separate env toggle, matching the P2P delegated inference spec
- * exactly. Never throws: an invalid key or timeout is logged as a warning
- * and treated as unset/default respectively, so a typo degrades to local
- * inference rather than breaking the chat model entirely.
+ * Derives the delegate target from env vars; a pure function of `env` (not a direct `process.env` read) so it's testable without module-reset tricks.
+ * Never throws - an invalid key/timeout is warned and treated as unset/default, so a typo degrades to local rather than breaking chat.
  */
 export function resolveDelegateConfig(env: NodeJS.ProcessEnv = process.env): DelegateOptions | undefined {
   const providerPublicKey = env.DELEGATE_PROVIDER_PUBLIC_KEY?.trim();
@@ -62,11 +39,7 @@ export function resolveDelegateConfig(env: NodeJS.ProcessEnv = process.env): Del
   return { providerPublicKey, timeout, fallbackToLocal: true };
 }
 
-/**
- * Resolved once at process startup. `AgentService` reads this (not
- * `resolveDelegateConfig()` directly) so every consumer of the chat model
- * agrees on the same delegate target for the life of the process.
- */
+/** Resolved once at startup so every consumer agrees on the same delegate target for the process's life. */
 export const DELEGATE_CONFIG: DelegateOptions | undefined = resolveDelegateConfig();
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
@@ -91,12 +64,7 @@ function parseMillisecondsEnv(env: NodeJS.ProcessEnv, name: string, minimum: num
   return fallback;
 }
 
-/**
- * Derives the provider heartbeat cadence from environment variables. Same
- * contract as `resolveDelegateConfig()`: never throws, an invalid value is
- * warned about and replaced by its default. The timeout minimum matches
- * the SDK's `delegate.timeout` floor (`MIN_DELEGATE_TIMEOUT_MS`).
- */
+/** Derives heartbeat cadence from env vars; same never-throws contract as `resolveDelegateConfig()`. Timeout floor matches the SDK's `delegate.timeout` minimum. */
 export function resolveHeartbeatConfig(env: NodeJS.ProcessEnv = process.env): HeartbeatConfig {
   return {
     intervalMs: parseMillisecondsEnv(

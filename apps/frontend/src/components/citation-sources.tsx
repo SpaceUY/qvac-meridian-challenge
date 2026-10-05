@@ -2,13 +2,7 @@ import { FileText } from 'lucide-react'
 import { citationTitle, formatScore } from '@/lib/citation-label'
 import type { Citation } from '@/lib/chat-types'
 
-/**
- * The human-readable side of req. [6.1.2]: every cited document as a card
- * under the answer - number, readable title, corpus path and similarity
- * score. Always visible (no hover needed): the sources are the proof that
- * the answer came from the corpus. Built only from `citations`, the same
- * array the API returns: the UI never has a second source of truth.
- */
+/** Req. [6.1.2]. Always visible, not hover-only: sources are the proof the answer came from the corpus. */
 export function CitationSources({ citations }: { citations: Citation[] }) {
   if (citations.length === 0) return null
 

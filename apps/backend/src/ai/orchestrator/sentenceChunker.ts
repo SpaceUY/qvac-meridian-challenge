@@ -1,13 +1,6 @@
 const SENTENCE_END_RE = /[.!?]+(?=\s|$)/;
 
-/**
- * Buffers streamed text deltas and emits complete sentences once the
- * buffer has grown to at least `minChunkChars` - short leading sentences
- * are bundled together into one chunk rather than each becoming its own
- * (expensive) TTS call. Sentence detection is a simple punctuation regex,
- * not NLP - it won't handle abbreviations ("Mr. Smith") perfectly, which
- * is an acceptable trade-off for grounded assistant prose.
- */
+/** Buffers streamed deltas and emits complete sentences once the buffer reaches `minChunkChars`, batching short leading sentences into one TTS call. Punctuation-regex detection, not NLP — doesn't handle abbreviations ("Mr. Smith") perfectly. */
 export class SentenceChunker {
   private buffer = "";
 

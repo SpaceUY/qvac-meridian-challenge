@@ -40,10 +40,7 @@ export function buildRetrieveNode(
     const hasVisualInput = hasImageContent(lastHuman);
     const query = lastHuman.text.trim();
     if (!query) {
-      // An embedding search on an empty string returns meaningless
-      // results - an image-only turn (or one with only whitespace text)
-      // skips RAG entirely rather than risk surfacing chunks that look
-      // like real evidence but aren't.
+      // Empty query (image-only turn) skips RAG rather than risk meaningless embedding-search results.
       return { chunks: [], hasEvidence: false, hasVisualInput };
     }
 

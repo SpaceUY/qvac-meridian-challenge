@@ -9,12 +9,7 @@ import {
 } from '../../config/rag.config.js';
 import type { RetrievedChunk } from '../domain/types.js';
 
-/**
- * Deterministic reorder by document authority + supersession penalty - not
- * an ML reranker. Tunable weights live in `../../config/rag.config.ts`.
- * Authority is derived from `chunk.metadata.documentType` (already present
- * on every real chunk) rather than a separate per-source catalog.
- */
+/** Deterministic reorder by document authority + supersession penalty - not an ML reranker. Tunable weights live in `rag.config.ts`. */
 
 const DEFAULT_AUTHORITY: AuthorityLabel = 'informal-notes';
 
@@ -28,12 +23,7 @@ function isSuperseded(chunk: RetrievedChunk): boolean {
   return chunk.source !== undefined && SUPERSEDED_SOURCES.has(chunk.source);
 }
 
-/**
- * Reorders the top `RERANK_CANDIDATE_POOL` chunks (expected pre-sorted by
- * `score` descending) by `score + authority bonus - superseded penalty`.
- * `score` itself is left untouched; `metadata.authority`/`status` are added
- * for `contextBuilder.ts` to surface.
- */
+/** Reorders the top `RERANK_CANDIDATE_POOL` chunks (expected pre-sorted by `score`) by `score + authority bonus - superseded penalty`; `score` itself is untouched. */
 export function metadataRerank(chunks: RetrievedChunk[]): RetrievedChunk[] {
   const pool = chunks.slice(0, RERANK_CANDIDATE_POOL);
   const rest = chunks.slice(RERANK_CANDIDATE_POOL);

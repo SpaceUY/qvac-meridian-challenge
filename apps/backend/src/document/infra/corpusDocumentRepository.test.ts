@@ -20,7 +20,7 @@ describe("CorpusDocumentRepository", () => {
       path.join(corpusDir, "emails", "004-hiring-plan.md"),
       "# Hiring plan\n\nApproved to hire two technicians.",
     );
-    // Binary/non-text files are present on disk but not part of the ingested inventory.
+    // Binary file: on disk but not part of the ingested inventory.
     await fs.writeFile(path.join(corpusDir, "logo.png"), Buffer.from([0, 1, 2]));
   });
 

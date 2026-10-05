@@ -39,20 +39,10 @@ For everything else, ground your answer only in the evidence actually available 
 
 ${GROUNDING_INSTRUCTIONS}`;
 
-/**
- * Tag that LangGraph's "messages" stream mode checks to skip a chat model
- * call's tokens (`handleChatModelStart` in @langchain/langgraph's
- * dist/pregel/messages.js). The node's returned message is still emitted
- * once, when the node ends.
- */
+/** Tag LangGraph's "messages" stream mode checks to skip a model call's tokens (`handleChatModelStart` in `@langchain/langgraph`'s `dist/pregel/messages.js`); the final message still emits once, at node end. */
 const NO_STREAM_TAG = "nostream";
 
-/**
- * Whether the grounding guard in `buildLlmNode` may replace this turn's
- * reply: only when retrieval found no evidence and no tool has run yet.
- * Both are known before the model is called, which is what lets the node
- * decide up front whether the reply may stream.
- */
+/** Whether the grounding guard may still replace this turn's reply: true only when retrieval found no evidence and no tool has run yet. */
 function guardMayReplaceReply(state: typeof State.State): boolean {
   const usedTool = state.messages.some((message) =>
     ToolMessage.isInstance(message),
@@ -66,18 +56,11 @@ Reply OTHER for anything else, including real questions, even short ones.
 Respond with exactly one word: GREETING or OTHER.`;
 
 /**
- * Classifies `lastHuman` as greeting/small-talk vs. a real question, via a
- * dedicated (untooled, unstreamed) model call. Only called from
- * `buildLlmNode`, in the one case it matters: the guard above is about to
- * discard this turn's reply (no evidence/image, no tool call), and a plain
- * "hi"/"hola" deserves its own natural reply instead of the fixed
- * insufficient-context fallback — a real question with no evidence still
- * gets the fallback. Never reached for a tool-calling turn (e.g. a stock
- * lookup): those also start with no RAG evidence, but the model's response
- * already carries a tool call by the time this would run, so the guard
- * above never discards it in the first place. Deliberately doesn't forward
- * `sessionId`: this is a one-off classification, not part of the visible
- * conversation, and must not pollute the turn's KV-cache session history.
+ * Classifies `lastHuman` as greeting vs. a real question, via a dedicated
+ * untooled/unstreamed call — only reached when the guard is about to
+ * discard the reply, so a bare "hi" gets a natural response instead of the
+ * insufficient-context fallback. Doesn't forward `sessionId`: this is a
+ * one-off classification that must not pollute the turn's KV-cache history.
  */
 export async function classifyGreeting(
   model: ChatQVAC,
@@ -140,8 +123,7 @@ export function buildLlmNode(
       `${SYSTEM_PROMPT}\n\nContext:\n${context}`,
     );
 
-    // Decided before the model runs: a reply the guard below may discard
-    // must never stream, or the client sees it with the fallback glued on.
+    // Decided before the model runs: a reply the guard may discard must never stream.
     const guardMayReplace = guardMayReplaceReply(state);
     const response = await generateReply(
       model.bindTools(tools),
@@ -155,14 +137,10 @@ export function buildLlmNode(
       },
     );
 
-    // Measured before the guard below may discard the reply: the call
-    // filled the session's KV cache either way.
+    // Measured even if the guard discards the reply: the call filled the KV cache either way.
     const completionStats = readCompletionStats(response);
 
-    // Guard against hallucinated/refused answers: if this turn never called a
-    // tool and retrieval found no supporting evidence, don't trust freeform
-    // model text — fall back to the fixed insufficient-context message,
-    // unless it's just a greeting (see `classifyGreeting`).
+    // No tool call and no supporting evidence: don't trust freeform text, fall back unless it's a greeting.
     if (guardMayReplace && !response.tool_calls?.length) {
       const lastHuman = [...state.messages]
         .reverse()
@@ -198,7 +176,6 @@ export function buildToolNode(
     const result: ToolMessage[] = [];
     for (const toolCall of lastMessage.tool_calls ?? []) {
       const tool = toolsByName[toolCall.name];
-      console.log(`looking for tool: ${toolCall.name}`);
 
       if (!tool) {
         result.push(
@@ -226,7 +203,6 @@ export function createGraph(
   ragService: RagRetrievalService,
   documentRepository: DocumentRepository,
 ) {
-  // Augment the LLM with tools
   const listDocumentsTool = createListDocumentsTool(documentRepository);
   const toolsByName: Record<string, StructuredToolInterface> = {
     [lookupStockTool.name]: lookupStockTool,
@@ -238,7 +214,6 @@ export function createGraph(
     Nodes: "toolNode";
   }> = (state) => {
     const lastMessage = state.messages[state.messages.length - 1];
-    // Check if it's an AIMessage before accessing tool_calls
     if (!lastMessage || !AIMessage.isInstance(lastMessage)) {
       return END;
     }
@@ -247,7 +222,6 @@ export function createGraph(
       return "toolNode";
     }
 
-    // Otherwise, we stop (reply to the user)
     return END;
   };
 

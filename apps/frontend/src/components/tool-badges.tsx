@@ -1,13 +1,7 @@
 import { Wrench } from 'lucide-react'
 import { toolLabel } from '@/lib/tool-label'
 
-/**
- * One chip per tool the agent used for this reply, in a row of its own above
- * the source cards: seeing "Checked inventory" tells the user the answer used
- * live data, not only the model. Squarer than the old pills and with a wrench,
- * so they don't read as sources. `title` carries the longer description as a
- * native tooltip, same convention document-grid.tsx uses for `doc.id`.
- */
+/** One chip per tool used, above the source cards - e.g. "Checked inventory" shows the answer used live data, not just the model. Squarer+wrench so they don't read as sources; `title` carries the long description as a tooltip (same convention as document-grid.tsx's `doc.id`). */
 export function ToolBadges({ tools }: { tools: string[] }) {
   if (tools.length === 0) return null
 

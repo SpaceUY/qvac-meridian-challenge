@@ -8,17 +8,8 @@ export interface ProviderModeTarget {
 }
 
 /**
- * Moves the chat model to `desired` if it isn't there already and nothing
- * would be interrupted. Called on every monitor tick, so every "not now"
- * outcome here (busy, mode unknown) is safe: the next tick tries again.
- *
- * The decision uses the model's live mode, not `QvacChatSession`'s cached copy of
- * it: `getDelegationInfo()` re-reads the SDK registry on every call (a
- * local call, no network) and reloads the model if none is loaded, so a
- * model that changed mode outside a tracked switch is still corrected. An
- * unknown live mode (the introspection failed) changes nothing; the next
- * tick compares again. A chat that started while the mode was being read
- * also cancels the switch.
+ * Moves the chat model to `desired` if not already there and nothing would be interrupted; every "not now" outcome (busy, unknown mode) is safe since the next tick retries.
+ * Re-reads the model's live mode each call (not a cached copy), so drift outside a tracked switch self-corrects.
  */
 export async function reconcileProviderMode(
   target: ProviderModeTarget,
