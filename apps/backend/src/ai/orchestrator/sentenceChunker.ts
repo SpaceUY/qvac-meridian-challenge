@@ -7,6 +7,11 @@ const SENTENCE_END_RE = /[.!?]+(?=\s|$)/;
  * (expensive) TTS call. Sentence detection is a simple punctuation regex,
  * not NLP - it won't handle abbreviations ("Mr. Smith") perfectly, which
  * is an acceptable trade-off for grounded assistant prose.
+ *
+ * Chunks come out verbatim: joined back together they reproduce the
+ * streamed text exactly, whitespace included - the line breaks are what
+ * separate Markdown paragraphs, headings and list items on screen. A
+ * consumer that only needs the words (TTS) trims its own copy.
  */
 export class SentenceChunker {
   private buffer = "";
@@ -24,16 +29,16 @@ export class SentenceChunker {
       if (!match) break;
 
       const cutIndex = searchStart + match.index + match[0].length;
-      sentences.push(this.buffer.slice(0, cutIndex).trim());
+      sentences.push(this.buffer.slice(0, cutIndex));
       this.buffer = this.buffer.slice(cutIndex);
     }
 
     return sentences;
   }
 
-  /** Returns whatever text is left buffered (trimmed), clearing it - `undefined` if nothing remains. */
+  /** Returns whatever text is left buffered, verbatim, clearing it - `undefined` if nothing remains. */
   flush(): string | undefined {
-    const remainder = this.buffer.trim();
+    const remainder = this.buffer;
     this.buffer = "";
     return remainder.length > 0 ? remainder : undefined;
   }
