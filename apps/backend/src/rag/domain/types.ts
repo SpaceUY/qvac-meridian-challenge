@@ -13,7 +13,7 @@ export interface RagRetrievalConfig {
   dedupeExactContent: boolean;
 }
 
-/** Retrieval's output - `hasEvidence` lets callers (the graph's router, `ragDemo.ts`) branch without re-deriving it from `chunks.length`. */
+/** Retrieval's output - `hasEvidence` lets callers (the graph's router) branch without re-deriving it from `chunks.length`. */
 export interface RagRetrievalResult {
   chunks: RetrievedChunk[];
   hasEvidence: boolean;

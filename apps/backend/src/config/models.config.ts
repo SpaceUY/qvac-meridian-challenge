@@ -53,13 +53,6 @@ function mapTiers<T, R>(
  *
  * LLM/STT/TTS entries are grouped into `*_BY_TIER` maps keyed by
  * `ResourceTier` (`config/resourceTier.ts`). Embeddings stay untiered.
- *
- * Entries pulled from the SDK's model-serving preload config (previously
- * `qvac.config.json`, since deleted from this repo) that no pipeline
- * consumes yet are kept as plain catalog-name strings rather than
- * `@qvac/sdk` imports, since there's no local install to confirm those
- * exports against - the same "search/reference by name" approach
- * `REGISTRY_MODEL_NAME` below already used.
  */
 
 /* =============================================================================
@@ -69,7 +62,7 @@ function mapTiers<T, R>(
 /** Default engine used when a `ModelSource` doesn't specify one - the only inference engine the models feature targets. */
 export const DEFAULT_MODEL_TYPE = "llamacpp-completion";
 
-/** Same `ModelSource` `LLM_MODELS_BY_TIER`'s `low` entry below draws from, exposed separately for callers (e.g. `ai/ragDemo.ts`) that build their own `AgentModelConfig` with different temperature/ctxSize choices. */
+/** Same `ModelSource` `LLM_MODELS_BY_TIER`'s `low` entry below draws from, exposed separately for callers (e.g. `experiments/lora-spike/spike.ts`) that build their own `AgentModelConfig` with different temperature/ctxSize choices. */
 export const QWEN3_600M_MODEL_SOURCE: ModelSource = {
   kind: "registry",
   registryPath: QWEN3_600M_INST_Q4.registryPath,
@@ -204,29 +197,6 @@ export const LLM_MODELS_BY_TIER: Record<ResourceTier, AgentModelConfig> = {
     maxConcurrency: 2,
   },
 };
-
-export const HTTP_MODEL_URL =
-  "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_0.gguf";
-
-/**
- * Exact name of the single-file (non-sharded) Qwen3 1.7B Q4 entry in the
- * QVAC registry - matches `@qvac/sdk`'s own exported catalog constant
- * `QWEN3_1_7B_INST_Q4` (registryPath: "unsloth/Qwen3-1.7B-GGUF/resolve/...",
- * registrySource: "hf"), verified against the installed 0.18.2 package.
- * Searched by name instead of importing that constant directly so callers
- * (e.g. `models/demo.ts`) stay free of `@qvac/sdk` imports (only
- * `qvacRuntimeAdapter.ts` imports it).
- */
-export const REGISTRY_MODEL_NAME = "Qwen3-1.7B-Q4_0";
-
-/**
- * Previously preloaded via the SDK's model-serving config
- * ("llama-tool-calling-1b-inst-q4-k", tool calling enabled) - not currently
- * used by any tier in `LLM_MODELS_BY_TIER`. No adapter consumes this yet,
- * so it's kept as a catalog-name string rather than an `@qvac/sdk` import.
- */
-export const LLAMA_TOOL_CALLING_1B_INST_Q4_K_MODEL_NAME =
-  "LLAMA_TOOL_CALLING_1B_INST_Q4_K";
 
 /* =============================================================================
  * Embeddings models
@@ -381,16 +351,3 @@ export const DEFAULT_SUPERTONIC_ENGINE_CONFIG = {
   language: "en",
   voice: "F1",
 };
-
-/* =============================================================================
- * World models
- * ========================================================================== */
-
-/**
- * Previously preloaded via the SDK's model-serving config
- * ("abot-world-0-5b-lf-vae", config: `{ prediction: "v" }`) - a world model
- * for agent state simulation/prediction. No world-model pipeline exists in
- * this backend yet. Kept as a catalog-name string rather than an
- * `@qvac/sdk` import since nothing currently loads it.
- */
-export const ABOT_WORLD_0_5B_LF_VAE_MODEL_NAME = "ABOT_WORLD_0_5B_LF_VAE";

@@ -1,9 +1,6 @@
 import {
   type GraphNode,
   type ConditionalEdgeRouter,
-  StateGraph,
-  START,
-  END,
 } from "@langchain/langgraph";
 import {
   AIMessage,
@@ -80,23 +77,4 @@ export function buildLlmNode(model: ChatQVAC): GraphNode<typeof State> {
     const response = await model.invoke([systemMessage, ...state.messages]);
     return { messages: [response] };
   };
-}
-
-/** Builds the compiled always-on-retrieval RAG graph around the given chat model and retrieval service. */
-export function createRagGraph(
-  model: ChatQVAC,
-  ragService: RagRetrievalService,
-) {
-  return new StateGraph(State)
-    .addNode("retrieve", buildRetrieveNode(ragService))
-    .addNode("llm", buildLlmNode(model))
-    .addNode("insufficientContext", insufficientContextNode)
-    .addEdge(START, "retrieve")
-    .addConditionalEdges("retrieve", routeOnEvidence, [
-      "llm",
-      "insufficientContext",
-    ])
-    .addEdge("llm", END)
-    .addEdge("insufficientContext", END)
-    .compile();
 }

@@ -58,7 +58,7 @@ const embeddingPort = new ResilientEmbeddingService(
   EMBEDDING_MODEL_EXPECTED_SIZE,
 );
 const vectorStore = await LanceDbVectorStore.open(VECTOR_DB_DIR);
-// No config override: DEFAULT_RAG_CONFIG, the same tuning as ragDemo.
+// No config override: DEFAULT_RAG_CONFIG.
 const ragService = new RagRetrievalService(embeddingPort, vectorStore);
 
 const documentRepository = new CorpusDocumentRepository();

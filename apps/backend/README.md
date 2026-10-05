@@ -17,7 +17,6 @@ Run from the repo root, or with `--workspace=apps/backend`:
 | Command | What it does |
 |---|---|
 | `npm run dev:server` | Starts the Express server on `:3001` (`tsx watch`) |
-| `npm run model-lifecycle-demo --workspace=apps/backend` | Runs the full lifecycle for real, both sources, no HTTP — see [Demo script](#demo-script) |
 | `npm run provider --workspace=apps/backend` | Starts a QVAC provider service for P2P delegated inference — see [Delegated inference (P2P)](#delegated-inference-p2p) |
 | `npm run seed:generate --workspace=apps/backend` | Generates a `QVAC_HYPERSWARM_SEED` and prints the public key it produces — see [Generating a seed](#generating-a-seed-fixed-identity--provider-firewall) |
 | `npm run ingest --workspace=apps/backend` | Builds or updates the vector store in `.lancedb/` from `corpus/` — see [RAG: corpus ingestion](#rag-corpus-ingestion) |
@@ -27,7 +26,7 @@ Run from the repo root, or with `--workspace=apps/backend`:
 | `npm run serve:stop --workspace=apps/backend` | Stops the process `serve` started (SIGTERM, then SIGKILL after a 5s grace period) — the grading harness's `shutdown` command |
 | `npm run build --workspace=apps/backend` | Produces a tree-shaken, plugin-scoped `@qvac/sdk` bundle and writes `docs/bundle-size-report.md` — see [Build](#build) |
 
-Only run **one** QVAC-backed process at a time per machine (`dev:server`, `serve`, a demo script, or `provider`) — the SDK locks its local storage to a single process; running more than one concurrently fails with `File descriptor could not be locked`.
+Only run **one** QVAC-backed process at a time per machine (`dev:server`, `serve`, or `provider`) — the SDK locks its local storage to a single process; running more than one concurrently fails with `File descriptor could not be locked`.
 
 ### Endpoints
 
@@ -68,8 +67,6 @@ src/
     service/
       models.service.ts        Orchestrates the lifecycle, owns "what's loaded" state
       models.service.const.ts
-    demo.ts                     End-to-end proof script (see below)
-    demo.const.ts
     provider.ts                 Standalone script: starts a QVAC provider (see Delegated inference)
   rag/
     domain/                    Types and ports (EmbeddingPort, VectorStorePort, VectorStoreWriterPort, ChunkerPort)
@@ -130,15 +127,6 @@ discover  ->  provision (setup)  ->  load  ->  infer  ->  unload  ->  close
 ### Error handling
 
 Every failure becomes a single `ModelManagementError` type tagged with the stage it happened in (`discovery`, `download`, `load`, `inference`, `unload`, `close`, `not-found`), with the original SDK error as `cause` — callers log it and surface a generic, user-safe message instead of the raw SDK error.
-
-### Demo script
-
-`apps/backend/src/models/demo.ts` (`npm run model-lifecycle-demo --workspace=apps/backend`) exercises the real `ModelManagementService`/`QvacRuntimeAdapter` end to end, no HTTP involved:
-
-1. **Registry source** — searches for a specific known-small model (`Qwen3-1.7B-Q4_0`) and runs `provision -> load -> infer -> unload` on it.
-2. **URL source** — same lifecycle, loading directly from a HuggingFace file URL.
-
-`unload` runs in a `finally` block, so it happens even if inference fails. This is the closest thing to a real acceptance test this feature has — it downloads an actual model over the network, so it needs real disk space and connectivity to run.
 
 ### Config
 
@@ -362,17 +350,7 @@ SDK's broad-cancel escape hatch (`cancel({ modelId, kind: 'tts' })`) rather
 than a per-request cancel. The real voice path (`VoiceAgentService`, behind
 `POST /v1/chat/voice-completions`) bypasses this slot entirely via
 `synthesizeSync()`; the queued `synthesize()`/`cancel()`/`getStatus()`/`getAudio()`
-flow exists for the demo script below.
-
-### Demo script
-
-`apps/backend/src/tts/demo.ts` (`npm run tts-demo --workspace=apps/backend`)
-exercises the real `TtsService`/`QvacTtsAdapter` end to end, no HTTP
-involved: synthesizes a short sentence, writes + plays the resulting WAV
-locally, then starts a longer synthesis and cancels it mid-flight to prove
-the stop control actually interrupts local synthesis — no cloud service
-involved anywhere in the path. Same "only one QVAC-backed process at a
-time" constraint as the other demo scripts applies.
+flow is covered by `tts.service.test.ts` but has no production caller today.
 
 ## RAG: corpus ingestion
 
@@ -437,7 +415,6 @@ needs to be rebuilt — this is not automatic.
   nothing that answers a business question, so nothing answerable is lost
   today — checked by eye, not by OCR. A corpus with scanned documents or
   photographed text would need OCR to be searchable.
-- `ai/demo.ts` and `speech/demo.ts` still use the in-memory fixture store.
 
 ## Citations
 
