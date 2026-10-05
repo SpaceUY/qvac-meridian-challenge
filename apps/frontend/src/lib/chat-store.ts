@@ -18,6 +18,14 @@ type ChatStore = {
    * same handle from different parts of the tree.
    */
   activeTurn: AbortController | null
+  /**
+   * The assistant message whose audio is playing - or waiting for its next
+   * chunk - right now, if any. AudioPlayback reports it; the composer keeps
+   * Stop showing while it is set, since for the user a voice turn ends when
+   * the voice goes quiet, not when the backend is done. Clearing it is how
+   * Stop, a new voice turn or New chat silence that message.
+   */
+  speakingMessageId: string | null
   /** The backend reported this conversation's context window full (ContextUsage.exhausted). Stays true until New chat: the composer is disabled, the conversation stays readable. */
   contextExhausted: boolean
   /** Whether the "conversation full" notice is showing. Opens once, when contextExhausted first turns true; OK closes it without unlocking anything. */
@@ -41,6 +49,10 @@ type ChatStore = {
   voiceTranscriptReceived: (id: string, transcript: string) => void
   activeTurnStarted: (controller: AbortController) => void
   activeTurnSettled: (controller: AbortController) => void
+  speechStarted: (id: string) => void
+  speechEnded: (id: string) => void
+  speechStopped: () => void
+  turnStopped: () => void
   conversationReset: () => void
 }
 
@@ -48,6 +60,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   history: [],
   sessionId: crypto.randomUUID(),
   activeTurn: null,
+  speakingMessageId: null,
   contextExhausted: false,
   contextNoticeOpen: false,
 
@@ -134,6 +147,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   activeTurnSettled: (controller) =>
     set((state) => (state.activeTurn === controller ? { activeTurn: null } : {})),
 
+  speechStarted: (id) => set({ speakingMessageId: id }),
+
+  /** Only clears it if that message is still the one speaking - another may have taken over since. */
+  speechEnded: (id) => set((state) => (state.speakingMessageId === id ? { speakingMessageId: null } : {})),
+
+  speechStopped: () => set({ speakingMessageId: null }),
+
+  /** The composer's Stop: aborts the turn in flight, if any (the backend stops on disconnect), and silences whatever is playing. */
+  turnStopped: () => {
+    get().activeTurn?.abort()
+    set({ speakingMessageId: null })
+  },
+
   /** Only the first "exhausted" opens the notice - later ones (a voice turn that was already in flight) leave it as the user left it. */
   contextUsageReceived: (usage) =>
     set((state) => (usage.exhausted && !state.contextExhausted ? { contextExhausted: true, contextNoticeOpen: true } : {})),
@@ -155,7 +181,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       console.error('Could not delete the KV cache of the previous chat', error)
     })
     revokeAttachments(history.flatMap((message) => message.images ?? []))
-    set({ history: [], sessionId: crypto.randomUUID(), activeTurn: null, contextExhausted: false, contextNoticeOpen: false })
+    set({
+      history: [],
+      sessionId: crypto.randomUUID(),
+      activeTurn: null,
+      speakingMessageId: null,
+      contextExhausted: false,
+      contextNoticeOpen: false,
+    })
   },
 }))
 
