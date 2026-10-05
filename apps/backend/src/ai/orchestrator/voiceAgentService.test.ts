@@ -12,7 +12,7 @@ import type {
   ModelSource,
 } from "../../models/domain/types.js";
 import { AgentService } from "./agentService.js";
-import type { ConversationMessage } from "./agentService.js";
+import type { ConversationMessage, InvokeResult } from "./agentService.js";
 import { RagRetrievalService } from "../../rag/service/rag.service.js";
 import { StubEmbeddingPort } from "../../rag/infra/fixtures/stubEmbedding.testSupport.js";
 import { buildFixtureVectorStore } from "../../rag/infra/fixtures/corpus-chunks.fixture.js";
@@ -240,12 +240,9 @@ async function setupStreaming(
   const ttsPort = options.ttsPort ?? new ImmediateTtsPort();
   const ttsService = new TtsService(modelService, ttsPort);
 
-  const voiceAgentService = new VoiceAgentService(
-    agentService,
-    transcriptionService,
-    ttsService,
-    options.minSentenceChunkChars ?? 1,
-  );
+  const voiceAgentService = new VoiceAgentService(agentService, transcriptionService, ttsService, {
+    minSentenceChunkChars: options.minSentenceChunkChars ?? 1,
+  });
 
   return { runtime, voiceAgentService, ttsPort };
 }
@@ -423,5 +420,143 @@ describe("VoiceAgentService.invokeStreaming", () => {
       EmptyTranscriptError,
     );
     expect(onChunk).not.toHaveBeenCalled();
+  });
+});
+
+describe("VoiceAgentService - what TTS hears", () => {
+  it("sends TTS the spoken form of each chunk, while the chunk's text stays as written", async () => {
+    const { voiceAgentService, ttsPort } = await setupStreaming(
+      [
+        { text: "", toolCalls: [{ id: "call_1", name: "list_documents", arguments: {} }] },
+        { text: "Revenue was $18.4M in Q2 2026. Done.", toolCalls: [] },
+      ],
+      "hi",
+    );
+
+    const chunks: { text: string }[] = [];
+    await voiceAgentService.invokeStreaming([], Buffer.from([1]), (chunk) => {
+      chunks.push(chunk);
+    });
+
+    expect(chunks.map((chunk) => chunk.text)).toEqual(["Revenue was $18.4M in Q2 2026.", " Done."]);
+    expect((ttsPort as ImmediateTtsPort).synthesizeCalls.map((call) => call.text)).toEqual([
+      "Revenue was eighteen point four million dollars in Q two, twenty twenty-six.",
+      "Done.",
+    ]);
+  });
+
+  it("emits a chunk with nothing left to say as text only, without sending it to TTS", async () => {
+    const { voiceAgentService, ttsPort } = await setupStreaming(
+      [
+        { text: "", toolCalls: [{ id: "call_1", name: "list_documents", arguments: {} }] },
+        { text: "Done.\n---", toolCalls: [] },
+      ],
+      "hi",
+    );
+
+    const chunks: { text: string; audio?: Buffer }[] = [];
+    await voiceAgentService.invokeStreaming([], Buffer.from([1]), (chunk) => {
+      chunks.push(chunk);
+    });
+
+    expect(chunks.map((chunk) => [chunk.text, chunk.audio !== undefined])).toEqual([
+      ["Done.", true],
+      ["\n---", false],
+    ]);
+    expect((ttsPort as ImmediateTtsPort).synthesizeCalls.map((call) => call.text)).toEqual(["Done."]);
+  });
+});
+
+/** Stands in for AgentService: streams `text` as one delta, then stays pending until cancel() rejects it - lets a test stop a turn mid-generation. */
+class HangingAgent {
+  readonly cancelledRequestIds: string[] = [];
+  invokeCount = 0;
+  private rejectActive?: (err: unknown) => void;
+
+  constructor(private readonly text: string) {}
+
+  invoke(
+    _messages: ConversationMessage[],
+    _options?: unknown,
+    onToken?: (textDelta: string) => void,
+  ): Promise<InvokeResult> & { requestId: string } {
+    this.invokeCount += 1;
+    const promise = new Promise<InvokeResult>((_resolve, reject) => {
+      this.rejectActive = reject;
+      queueMicrotask(() => onToken?.(this.text));
+    });
+    return Object.assign(promise, { requestId: "req-1" });
+  }
+
+  async cancel(requestId: string): Promise<void> {
+    this.cancelledRequestIds.push(requestId);
+    this.rejectActive?.(new Error("cancelled"));
+  }
+}
+
+function setupWithAgent(agent: HangingAgent, ttsPort: TextToSpeechPort) {
+  const runtime = new FakeModelRuntime();
+  const modelService = new ModelManagementService(runtime, runtime);
+  const transcriptionService = new TranscriptionService(modelService, new FakeSpeechPort("hi"));
+  const ttsService = new TtsService(modelService, ttsPort);
+  return new VoiceAgentService(agent as unknown as AgentService, transcriptionService, ttsService, {
+    minSentenceChunkChars: 1,
+  });
+}
+
+describe("VoiceAgentService - stopping a turn", () => {
+  it("never reaches the LLM when the turn was already stopped", async () => {
+    const { runtime, voiceAgentService } = await setupStreaming([{ text: "ok", toolCalls: [] }], "hi");
+
+    await expect(
+      voiceAgentService.invokeStreaming([], Buffer.from([1]), () => {}, { signal: AbortSignal.abort() }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(runtime.lastChatRequest).toBeUndefined();
+  });
+
+  it("cancels the LLM when the turn is stopped mid-generation, and rejects with the stop", async () => {
+    const agent = new HangingAgent("Still thinking");
+    const voiceAgentService = setupWithAgent(agent, new ImmediateTtsPort());
+    const controller = new AbortController();
+
+    const turn = voiceAgentService.invokeStreaming([], Buffer.from([1]), () => {}, { signal: controller.signal });
+    await vi.waitFor(() => expect(agent.invokeCount).toBe(1));
+    controller.abort();
+
+    await expect(turn).rejects.toMatchObject({ name: "AbortError" });
+    expect(agent.cancelledRequestIds).toEqual(["req-1"]);
+  });
+
+  it("stops between sentences: the one being synthesized is dropped and nothing after it is synthesized or emitted", async () => {
+    const agent = new HangingAgent("First sentence here. Second one follows. ");
+    const ttsPort = new FakeTtsPort();
+    const voiceAgentService = setupWithAgent(agent, ttsPort);
+    const controller = new AbortController();
+    const chunks: string[] = [];
+
+    const turn = voiceAgentService.invokeStreaming([], Buffer.from([1]), (chunk) => {
+      chunks.push(chunk.text);
+    }, { signal: controller.signal });
+    await waitForSynthesis(ttsPort);
+    controller.abort();
+    ttsPort.resolveNext({ audio: Buffer.from([1]), sampleRate: 44100 });
+
+    await expect(turn).rejects.toMatchObject({ name: "AbortError" });
+    expect(chunks).toEqual([]);
+    expect(ttsPort.synthesizeCalls.map((call) => call.text)).toEqual(["First sentence here."]);
+  });
+
+  it("stops invoke() too: no synthesis once the turn is stopped mid-generation", async () => {
+    const agent = new HangingAgent("An answer.");
+    const ttsPort = new ImmediateTtsPort();
+    const voiceAgentService = setupWithAgent(agent, ttsPort);
+    const controller = new AbortController();
+
+    const turn = voiceAgentService.invoke([], Buffer.from([1]), { signal: controller.signal });
+    await vi.waitFor(() => expect(agent.invokeCount).toBe(1));
+    controller.abort();
+
+    await expect(turn).rejects.toMatchObject({ name: "AbortError" });
+    expect(ttsPort.synthesizeCalls).toEqual([]);
   });
 });

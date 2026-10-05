@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { Response } from "express";
 import sharp from "sharp";
 import type { ConversationMessage } from "../ai/orchestrator/agentService.js";
 import type { GenerationOptions } from "../ai/orchestrator/domain.js";
@@ -322,4 +323,20 @@ export function toVoiceDoneChunk(
 /** Sent instead of `toVoiceDoneChunk` when the turn fails after SSE headers are already committed (so a JSON 4xx/5xx is no longer possible) - includes the SSE terminator. */
 export function toVoiceErrorChunk(envelope: CompletionEnvelope, error: string): string {
   return `${toVoiceEvent(envelope, { type: "error", error })}data: [DONE]\n\n`;
+}
+
+/**
+ * A signal that aborts if the client hangs up before this response is
+ * done - the way an OpenAI-style client cancels a request. `res`'s `close`
+ * fires both then and after a normal `res.end()`; `writableEnded` tells
+ * them apart (same check as the completions route). Call `dispose()` once
+ * the handler is done with the response.
+ */
+export function abortOnClientDisconnect(res: Response): { signal: AbortSignal; dispose: () => void } {
+  const controller = new AbortController();
+  const abortIfUnfinished = () => {
+    if (!res.writableEnded) controller.abort();
+  };
+  res.on("close", abortIfUnfinished);
+  return { signal: controller.signal, dispose: () => res.off("close", abortIfUnfinished) };
 }

@@ -6,10 +6,12 @@ export type AudioChunkQueueAction = number | undefined
 export class AudioChunkQueue {
   private index = -1
   private waitingForMore = false
+  /** Set by stop(): nothing advances on its own until resume(). */
+  private stopped = false
 
   /** Call whenever the number of available chunks may have grown. */
   advance(totalChunks: number, autoPlay: boolean): AudioChunkQueueAction {
-    if (totalChunks === 0) return undefined
+    if (totalChunks === 0 || this.stopped) return undefined
 
     if (this.index === -1) {
       if (!autoPlay) return undefined
@@ -28,6 +30,7 @@ export class AudioChunkQueue {
 
   /** Call when the currently loaded chunk finishes playing. */
   ended(totalChunks: number): AudioChunkQueueAction {
+    if (this.stopped) return undefined
     if (this.index + 1 < totalChunks) {
       this.index += 1
       return this.index
@@ -41,6 +44,22 @@ export class AudioChunkQueue {
     if (this.index !== -1 || totalChunks === 0) return undefined
     this.index = 0
     return this.index
+  }
+
+  /** Call when the user hits Stop: stays on the current chunk, but no longer moves on by itself. */
+  stop(): void {
+    this.stopped = true
+    this.waitingForMore = false
+  }
+
+  /** Call when the user presses play again after a stop(): moving on resumes. */
+  resume(): void {
+    this.stopped = false
+  }
+
+  /** True once the last available chunk finished and the queue is waiting for another to arrive. */
+  get isWaitingForMore(): boolean {
+    return this.waitingForMore
   }
 
   get currentIndex(): number {

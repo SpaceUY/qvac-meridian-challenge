@@ -20,6 +20,7 @@ import {
   toVoiceAudioChunk,
   toVoiceDoneChunk,
   toVoiceErrorChunk,
+  abortOnClientDisconnect,
 } from "./chat.router.helpers.js";
 import {
   SSE_HEADERS,
@@ -180,9 +181,13 @@ export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatu
       return;
     }
 
+    // A voice turn runs STT, the LLM and TTS - all of it for nobody once
+    // the client hangs up, so the turn is stopped then (see VoiceTurnOptions).
+    const disconnect = abortOnClientDisconnect(res);
+
     if (!wantsStream(req.body)) {
       try {
-        const result = await voiceAgent.invoke(history, audio);
+        const result = await voiceAgent.invoke(history, audio, { signal: disconnect.signal });
         res.json({
           transcript: result.transcript,
           answer: result.answer,
@@ -191,12 +196,15 @@ export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatu
           ...(result.audio ? { audioBase64: result.audio.toString("base64"), sampleRate: result.sampleRate } : {}),
         });
       } catch (err) {
+        if (disconnect.signal.aborted) return; // the client is gone: nobody to answer, and stopping isn't a failure
         if (err instanceof EmptyTranscriptError) {
           res.status(400).json({ error: EMPTY_TRANSCRIPT_ERROR });
           return;
         }
         console.error("[chat:voice-completions]", err);
         res.status(500).json({ error: VOICE_COMPLETION_ERROR });
+      } finally {
+        disconnect.dispose();
       }
       return;
     }
@@ -207,16 +215,22 @@ export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatu
 
     // Headers are already committed here, so failures below surface as a stream error event, not a 400/500.
     try {
-      const result = await voiceAgent.invokeStreaming(history, audio, (chunk) => {
-        res.write(
-          toVoiceAudioChunk(envelope, {
-            text: chunk.text,
-            ...(chunk.audio ? { audioBase64: chunk.audio.toString("base64"), sampleRate: chunk.sampleRate } : {}),
-          }),
-        );
-      });
+      const result = await voiceAgent.invokeStreaming(
+        history,
+        audio,
+        (chunk) => {
+          res.write(
+            toVoiceAudioChunk(envelope, {
+              text: chunk.text,
+              ...(chunk.audio ? { audioBase64: chunk.audio.toString("base64"), sampleRate: chunk.sampleRate } : {}),
+            }),
+          );
+        },
+        { signal: disconnect.signal },
+      );
       res.write(toVoiceDoneChunk(envelope, { transcript: result.transcript, toolsUsed: result.toolsUsed, citations: result.citations, context: result.context }));
     } catch (err) {
+      if (disconnect.signal.aborted) return; // the client is gone: no error event to send
       if (err instanceof EmptyTranscriptError) {
         res.write(toVoiceErrorChunk(envelope, EMPTY_TRANSCRIPT_ERROR));
       } else {
@@ -224,6 +238,7 @@ export function createVoiceCompletionsRouter(agent: Pick<AgentService, "getStatu
         res.write(toVoiceErrorChunk(envelope, VOICE_COMPLETION_ERROR));
       }
     } finally {
+      disconnect.dispose();
       if (!res.writableEnded && !res.destroyed) res.end();
     }
   });

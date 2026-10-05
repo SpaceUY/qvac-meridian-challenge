@@ -10,7 +10,7 @@ import { State, type GenerationOptions } from "./domain.js";
 import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
 import type { ModelManagementService } from "../../models/service/models.service.js";
 import type { SupportedImageMimeType } from "../../models/domain/types.js";
-import { isCancellationError } from "../../models/domain/errors.js";
+import { isCancellationError, ModelManagementError, OperationCancelledError } from "../../models/domain/errors.js";
 import type { LoadedModelDelegationInfo } from "../../models/domain/types.js";
 import {
   LLM_MODELS_BY_TIER,
@@ -110,6 +110,13 @@ export class AgentService {
   private statusError: string | undefined;
   /** In-flight `invoke()` requestIds; lets `cancel()` no-op safely for an unknown/settled id. */
   private readonly pendingRequests = new Set<string>();
+  /**
+   * `requestId`s that `cancel()` reached while still pending. An invoke
+   * makes several LLM calls (tool call, then answer); a cancel that lands
+   * between them finds no call to stop, so this is what keeps the next one
+   * from starting. Cleared when the invoke settles.
+   */
+  private readonly cancelledRequests = new Set<string>();
   /** Set once `preload()` succeeds, if a delegate is configured. */
   private healthMonitor?: ProviderHealthMonitor;
   /** Caps re-delegation to one attempt per down->up transition; cleared on each observed divergence. */
@@ -138,7 +145,15 @@ export class AgentService {
       maxConcurrency,
     });
     this.chatModel = new ChatQVAC({
-      complete: this.chatSession.complete,
+      complete: (request, onToken) => {
+        // A cancelled invoke never starts another LLM call (see cancelledRequests).
+        if (request.requestId && this.cancelledRequests.has(request.requestId)) {
+          return Promise.reject(
+            new ModelManagementError("cancel", "Operation cancelled", new OperationCancelledError(request.requestId)),
+          );
+        }
+        return this.chatSession.complete(request, onToken);
+      },
       temperature,
     });
     this.graph = createGraph(this.chatModel, ragService, documentRepository);
@@ -284,6 +299,7 @@ export class AgentService {
 
     const result = this.runInvoke(messages, options, requestId, onToken).finally(() => {
       this.pendingRequests.delete(requestId);
+      this.cancelledRequests.delete(requestId);
     });
     return Object.assign(result, { requestId });
   }
@@ -291,6 +307,7 @@ export class AgentService {
   /** Cancels the in-flight (or queued) completion for `requestId`, without disturbing other concurrent `invoke()` calls; safe no-op for an unknown/settled id. */
   async cancel(requestId: string): Promise<void> {
     if (!this.pendingRequests.has(requestId)) return;
+    this.cancelledRequests.add(requestId);
     await this.chatSession.cancelActive(requestId);
   }
 

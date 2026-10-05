@@ -40,6 +40,9 @@ export function useVoiceTurn() {
   const start = useCallback(async () => {
     if (startingRef.current || recorderRef.current) return
     startingRef.current = true
+    // Talking over an answer that is still playing interrupts it - and
+    // keeps the mic from recording the assistant's own voice.
+    useChatStore.getState().speechStopped()
 
     const recorder = new MicRecorder()
     // Set before getUserMedia resolves so the unmount cleanup above can still cancel it.
