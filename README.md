@@ -148,7 +148,7 @@ The backend build produces a plugin-scoped, tree-shaken `@qvac/sdk` bundle and w
 ## Grading harness
 
 `qvac-eval.json` (repo root) declares the commands an external grader uses to stand up and
-exercise this backend end to end: `setup` (`npm ci && npm run models:fetch && npm run corpus:ingest`),
+exercise this backend end to end: `setup` (`npm ci && npm run build:server && npm run models:fetch && npm run corpus:ingest` — the build step generates the plugin-scoped QVAC worker the rest of `setup` and `start` then use),
 `start` (`npm run serve`), and `shutdown` (`npm run serve:stop`), plus `readyPath` (`/models`, i.e. the grader polls `GET /v1/models` until it stops returning 503) that
 the grader polls until the server is ready. Once ready, the grader exercises
 `POST /v1/chat/completions` directly. See

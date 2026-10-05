@@ -20,11 +20,8 @@ services:
     # The empty first arg leaves the seed to QVAC_HYPERSWARM_SEED (env var, not
     # a CLI argument); the second arg allow-lists only the server's public key.
     command:
-      - npm
-      - run
-      - provider
-      - --workspace=apps/backend
-      - --
+      - node
+      - dist/models/provider.js
       - ""
       - ${SERVER_PUBLIC_KEY:?set SERVER_PUBLIC_KEY in .env}
     environment:
@@ -34,7 +31,7 @@ services:
 
   server:
     <<: *qvac-image
-    command: ["npm", "run", "dev:server"]
+    command: ["node", "dist/server.js"]
     environment:
       QVAC_HYPERSWARM_SEED: ${SERVER_SEED:?set SERVER_SEED in .env}
       DELEGATE_PROVIDER_PUBLIC_KEY: ${PROVIDER_PUBLIC_KEY:?set PROVIDER_PUBLIC_KEY in .env}

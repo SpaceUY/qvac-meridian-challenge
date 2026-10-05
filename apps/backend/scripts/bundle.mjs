@@ -6,6 +6,10 @@ import { tmpdir } from "node:os";
 
 const backendDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const repoRoot = join(backendDir, "..", "..");
+// npm hoists @qvac/sdk to the repo root's node_modules. `bundleSdk()` only looks
+// for it under `<projectRoot>/node_modules` (its require.resolve fallback), so with
+// `projectRoot: backendDir` the location has to be passed explicitly.
+const sdkPath = join(repoRoot, "node_modules", "@qvac", "sdk");
 
 // Mirrors @qvac/sdk's own `DEFAULT_HOSTS` (dist/commands/bundle/constants.js) -
 // not re-exported from the public `@qvac/sdk/commands` entrypoint, so it's
@@ -37,30 +41,36 @@ function dirSizeBytes(path) {
 // directory - `<projectRoot>/qvac/` - because the SDK keys its output dir
 // only on `projectRoot`, not `configPath` (confirmed in the installed SDK:
 // `outputDir = path.join(projectRoot, 'qvac')`, `dist/commands/bundle/index.js`).
-// So whichever build runs LAST is the one left on disk at `repoRoot/qvac/`.
+// So whichever build runs LAST is the one left on disk at `apps/backend/qvac/`.
 // We want that to be the plugin-scoped (tree-shaken) bundle - that's the
-// actual Req 6.2.2 deliverable and what `apps/backend/README.md` promises
-// ("Output goes to `qvac/` at the repo root") - so the full-SDK comparison
-// build runs FIRST and is measured immediately, before the scoped build
-// overwrites it. This also means no snapshot/temp copy is needed for the
-// scoped side: it's simply the last thing written, so it's still there
-// (unmodified) when we measure and verify it below.
+// actual Req 6.2.2 deliverable - so the full-SDK comparison build runs FIRST
+// and is measured immediately, before the scoped build overwrites it. This
+// also means no snapshot/temp copy is needed for the scoped side: it's simply
+// the last thing written, so it's still there (unmodified) when we measure and
+// verify it below.
+//
+// `projectRoot` is `backendDir` (not the repo root) on purpose: the SDK picks
+// up `qvac/worker.entry.mjs` from the nearest package.json dir above the cwd,
+// and every `npm run ... --workspace=apps/backend` command (dev:server, serve,
+// provider, models:fetch, corpus:ingest) runs with cwd = apps/backend, so
+// that is where the bundle has to land for those commands to use it.
 const fullConfigDir = mkdtempSync(join(tmpdir(), "qvac-full-config-"));
 try {
   console.log("[bundle] building a full-SDK bundle for comparison (every builtin plugin)...");
   const fullConfigPath = join(fullConfigDir, "qvac.config.full.mjs");
   // No `plugins` key at all = the SDK's documented default: every builtin plugin included.
   writeFileSync(fullConfigPath, "export default { cacheDirectory: process.cwd() + '/.qvac-cache' };\n");
-  const full = await bundleSdk({ projectRoot: repoRoot, configPath: fullConfigPath });
-  // Measure NOW, before the scoped build below overwrites `repoRoot/qvac/`.
+  const full = await bundleSdk({ projectRoot: backendDir, sdkPath, configPath: fullConfigPath });
+  // Measure NOW, before the scoped build below overwrites `apps/backend/qvac/`.
   const fullBytes = dirSizeBytes(dirname(full.bundlePath));
 
   console.log("[bundle] building the plugin-scoped bundle (this project's real qvac.config.mjs)...");
   const scoped = await bundleSdk({
-    projectRoot: repoRoot,
+    projectRoot: backendDir,
+    sdkPath,
     configPath: join(backendDir, "qvac.config.mjs"),
   });
-  // Nothing overwrites `repoRoot/qvac/` after this point, so this measurement
+  // Nothing overwrites `apps/backend/qvac/` after this point, so this measurement
   // reflects exactly what's left on disk once the script finishes.
   const scopedBytes = dirSizeBytes(dirname(scoped.bundlePath));
 
@@ -75,7 +85,7 @@ try {
   // node_modules directory - it auto-detects which by `fs.stat`. Pointing it at
   // `worker.bundle.js` selects the bare-pack-bundle path.
   const scopedVerify = await verifyBundle({
-    projectRoot: repoRoot,
+    projectRoot: backendDir,
     addonsSource: scoped.bundlePath,
     hosts: ALL_HOSTS,
   });
