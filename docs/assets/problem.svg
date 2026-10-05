@@ -25,7 +25,7 @@
   <line x1="675" y1="75" x2="675" y2="180" stroke="#334155"/>
 
   <text x="112.5" y="105" text-anchor="middle"
-        fill="#2dd4bf" font-size="15"
+        fill="#18b480" font-size="15"
         filter="url(#glow)">COST</text>
   <text x="112.5" y="140" text-anchor="middle"
         fill="#94a3b8" font-size="11">metered tokens</text>
@@ -33,7 +33,7 @@
         fill="#64748b" font-size="10">no predictable ceiling</text>
 
   <text x="337.5" y="105" text-anchor="middle"
-        fill="#2dd4bf" font-size="15"
+        fill="#18b480" font-size="15"
         filter="url(#glow)">MARGIN</text>
   <text x="337.5" y="140" text-anchor="middle"
         fill="#94a3b8" font-size="11">opaque query cost</text>
@@ -41,7 +41,7 @@
         fill="#64748b" font-size="10">hard to forecast</text>
 
   <text x="562.5" y="105" text-anchor="middle"
-        fill="#2dd4bf" font-size="15"
+        fill="#18b480" font-size="15"
         filter="url(#glow)">DATA</text>
   <text x="562.5" y="140" text-anchor="middle"
         fill="#94a3b8" font-size="11">customer context</text>
@@ -49,7 +49,7 @@
         fill="#64748b" font-size="10">left Meridian hardware</text>
 
   <text x="787.5" y="105" text-anchor="middle"
-        fill="#2dd4bf" font-size="15"
+        fill="#18b480" font-size="15"
         filter="url(#glow)">TRUST</text>
   <text x="787.5" y="140" text-anchor="middle"
         fill="#94a3b8" font-size="11">wrong answers</text>

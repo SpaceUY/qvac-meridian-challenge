@@ -25,7 +25,7 @@
         fill="none" stroke="#334155"/>
 
   <text x="125" y="105" text-anchor="middle"
-        fill="#2dd4bf" font-size="13"
+        fill="#18b480" font-size="13"
         filter="url(#glow)">NATIVE EMBEDDINGS</text>
 
   <text x="125" y="145" text-anchor="middle"
@@ -38,7 +38,7 @@
         fill="none" stroke="#334155"/>
 
   <text x="342" y="105" text-anchor="middle"
-        fill="#2dd4bf" font-size="13"
+        fill="#18b480" font-size="13"
         filter="url(#glow)">HARDWARE AWARE</text>
 
   <text x="342" y="145" text-anchor="middle"
@@ -51,7 +51,7 @@
         fill="none" stroke="#334155"/>
 
   <text x="559" y="105" text-anchor="middle"
-        fill="#2dd4bf" font-size="13"
+        fill="#18b480" font-size="13"
         filter="url(#glow)">BATCHING</text>
 
   <text x="559" y="145" text-anchor="middle"
@@ -64,7 +64,7 @@
         fill="none" stroke="#334155"/>
 
   <text x="776" y="105" text-anchor="middle"
-        fill="#2dd4bf" font-size="13"
+        fill="#18b480" font-size="13"
         filter="url(#glow)">P2P RESILIENCE</text>
 
   <text x="776" y="145" text-anchor="middle"

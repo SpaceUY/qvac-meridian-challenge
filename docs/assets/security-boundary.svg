@@ -22,10 +22,10 @@
 
   <!-- local boundary -->
   <rect x="30" y="60" width="520" height="270" rx="10"
-        fill="none" stroke="#2dd4bf" stroke-width="1.5"
+        fill="none" stroke="#18b480" stroke-width="1.5"
         stroke-dasharray="6 6"/>
 
-  <text x="50" y="86" fill="#2dd4bf"
+  <text x="50" y="86" fill="#18b480"
         font-size="11" letter-spacing="1">
     THIS DEVICE
   </text>
@@ -41,7 +41,7 @@
   <text x="310" y="215" fill="#94a3b8" font-size="12">✓ RAG / STT / TTS</text>
 
   <text x="290" y="285" text-anchor="middle"
-        fill="#2dd4bf" font-size="15"
+        fill="#18b480" font-size="15"
         filter="url(#glow)">
     stays local
   </text>
@@ -51,7 +51,7 @@
         fill="none" stroke="#334155"/>
 
   <text x="745" y="118" text-anchor="middle"
-        fill="#2dd4bf" font-size="13">
+        fill="#18b480" font-size="13">
     MERIDIAN PEER
   </text>
   <text x="745" y="145" text-anchor="middle"
@@ -65,10 +65,10 @@
 
   <!-- peer arrow -->
   <line x1="550" y1="140" x2="625" y2="140"
-        stroke="#2dd4bf" stroke-width="1.5"/>
+        stroke="#18b480" stroke-width="1.5"/>
 
   <path d="M615 134 L625 140 L615 146"
-        fill="none" stroke="#2dd4bf"/>
+        fill="none" stroke="#18b480"/>
 
   <text x="587" y="125" text-anchor="middle"
         fill="#64748b" font-size="9">

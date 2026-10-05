@@ -28,7 +28,7 @@
 
   <!-- metric 1 -->
   <text x="90" y="125" text-anchor="middle"
-        fill="#2dd4bf" font-size="30" font-weight="700"
+        fill="#18b480" font-size="30" font-weight="700"
         filter="url(#glow)">18%</text>
   <text x="90" y="155" text-anchor="middle"
         fill="#94a3b8" font-size="11">SMALLER</text>
@@ -37,7 +37,7 @@
 
   <!-- metric 2 -->
   <text x="270" y="125" text-anchor="middle"
-        fill="#2dd4bf" font-size="30" font-weight="700"
+        fill="#18b480" font-size="30" font-weight="700"
         filter="url(#glow)">~13%</text>
   <text x="270" y="155" text-anchor="middle"
         fill="#94a3b8" font-size="11">LOWER EMBEDDING</text>
@@ -46,7 +46,7 @@
 
   <!-- metric 3 -->
   <text x="450" y="125" text-anchor="middle"
-        fill="#2dd4bf" font-size="30" font-weight="700"
+        fill="#18b480" font-size="30" font-weight="700"
         filter="url(#glow)">~16%</text>
   <text x="450" y="155" text-anchor="middle"
         fill="#94a3b8" font-size="11">HIGHER</text>
@@ -55,7 +55,7 @@
 
   <!-- metric 4 -->
   <text x="630" y="125" text-anchor="middle"
-        fill="#2dd4bf" font-size="30" font-weight="700"
+        fill="#18b480" font-size="30" font-weight="700"
         filter="url(#glow)">~4&#215;</text>
   <text x="630" y="155" text-anchor="middle"
         fill="#94a3b8" font-size="11">FASTER MODEL</text>
@@ -64,7 +64,7 @@
 
   <!-- metric 5 -->
   <text x="810" y="125" text-anchor="middle"
-        fill="#2dd4bf" font-size="30" font-weight="700"
+        fill="#18b480" font-size="30" font-weight="700"
         filter="url(#glow)">296</text>
   <text x="810" y="155" text-anchor="middle"
         fill="#94a3b8" font-size="11">BACKEND TESTS</text>

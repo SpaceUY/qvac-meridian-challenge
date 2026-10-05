@@ -21,7 +21,7 @@
   <text x="230" y="75" text-anchor="middle" fill="#94a3b8"
         font-size="13">TYPICAL CLOUD ASSISTANT</text>
 
-  <text x="670" y="75" text-anchor="middle" fill="#2dd4bf"
+  <text x="670" y="75" text-anchor="middle" fill="#18b480"
         font-size="13" filter="url(#glow)">MERIDIAN ASSISTANT</text>
 
   <line x1="450" y1="60" x2="450" y2="300"
@@ -32,7 +32,7 @@
     Cloud inference
   </text>
   <text x="450" y="120" text-anchor="middle" fill="#475569" font-size="15">→</text>
-  <text x="670" y="120" text-anchor="middle" fill="#2dd4bf" font-size="14">
+  <text x="670" y="120" text-anchor="middle" fill="#18b480" font-size="14">
     Local inference
   </text>
 
@@ -41,7 +41,7 @@
     Remote embeddings
   </text>
   <text x="450" y="160" text-anchor="middle" fill="#475569" font-size="15">→</text>
-  <text x="670" y="160" text-anchor="middle" fill="#2dd4bf" font-size="14">
+  <text x="670" y="160" text-anchor="middle" fill="#18b480" font-size="14">
     Local embeddings
   </text>
 
@@ -50,7 +50,7 @@
     Model-generated claims
   </text>
   <text x="450" y="200" text-anchor="middle" fill="#475569" font-size="15">→</text>
-  <text x="670" y="200" text-anchor="middle" fill="#2dd4bf" font-size="14">
+  <text x="670" y="200" text-anchor="middle" fill="#18b480" font-size="14">
     Grounded citations
   </text>
 
@@ -59,7 +59,7 @@
     Fixed compute
   </text>
   <text x="450" y="240" text-anchor="middle" fill="#475569" font-size="15">→</text>
-  <text x="670" y="240" text-anchor="middle" fill="#2dd4bf" font-size="14">
+  <text x="670" y="240" text-anchor="middle" fill="#18b480" font-size="14">
     Hardware-aware + P2P
   </text>
 
@@ -68,7 +68,7 @@
     Vendor-specific client
   </text>
   <text x="450" y="280" text-anchor="middle" fill="#475569" font-size="15">→</text>
-  <text x="670" y="280" text-anchor="middle" fill="#2dd4bf" font-size="14">
+  <text x="670" y="280" text-anchor="middle" fill="#18b480" font-size="14">
     OpenAI-compatible API
   </text>
 </svg>
