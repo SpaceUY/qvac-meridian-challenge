@@ -1,7 +1,7 @@
 {
   "name": "qvac-meridian-challenge",
   "version": "1.0.0",
-  "description": "",
+  "description": "Local-first RAG chat and voice assistant backed by QVAC, with P2P delegated inference and a deterministic stock-lookup tool.",
   "workspaces": [
     "apps/*",
     "stock-tool"
@@ -18,7 +18,5 @@
     "serve:stop": "npm run serve:stop --workspace=apps/backend",
     "provider": "npm run provider --workspace=apps/backend"
   },
-  "keywords": [],
-  "author": "",
   "license": "ISC"
 }

@@ -5,8 +5,8 @@ export const CONFIG = {
   /** Relative path on purpose: vite.config.ts's proxy forwards it to the chosen engine, keeping the browser on a single origin (no CORS). */
   completionsEndpoint: import.meta.env.VITE_ENDPOINT_COMPLETIONS ?? '/v1/chat/completions',
 
-  /** The model alias the target engine (LM Studio or our own API) exposes at /v1/models. */
-  model: import.meta.env.VITE_MODEL ?? 'llama-3.2-3b-instruct',
+  /** The public chat model alias the backend exposes at /v1/models (PUBLIC_CHAT_MODEL in chat.router.const.ts). */
+  model: import.meta.env.VITE_MODEL ?? 'meridian-assistant',
 
   /** Header with which the backend groups the KV cache by session (req. [6.3]). */
   sessionHeader: 'X-Meridian-Session',

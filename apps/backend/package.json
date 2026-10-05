@@ -1,7 +1,7 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "",
+  "description": "Express API: QVAC model lifecycle, RAG-grounded chat, speech-to-text/text-to-speech, and P2P delegated inference.",
   "main": "index.js",
   "scripts": {
     "build": "node scripts/bundle.mjs",
@@ -18,8 +18,6 @@
     "native-embed-benchmark": "tsx src/experiments/native-embed-spike/benchmark.ts",
     "native-embed-verify": "tsx src/experiments/native-embed-spike/verifyVectorStore.ts"
   },
-  "keywords": [],
-  "author": "",
   "license": "ISC",
   "type": "module",
   "devDependencies": {
