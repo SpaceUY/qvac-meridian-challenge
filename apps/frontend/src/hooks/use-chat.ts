@@ -64,7 +64,7 @@ export function useChat() {
     [historyRef, mutate],
   )
 
-  const stop = useCallback(() => useChatStore.getState().activeTurn?.abort(), [])
+  const stop = useCallback(() => useChatStore.getState().turnStopped(), [])
 
   return {
     history,
