@@ -111,11 +111,17 @@
 </p>
 
 <p>
-  Meridian Assistant does not just use QVAC — it also contributes a reusable integration layer back to the ecosystem.
+  <a href="https://www.langchain.com/langgraph"><strong>LangGraph</strong></a> by
+  <a href="https://www.langchain.com/">LangChain</a> has become a widely adopted
+  orchestration framework for building AI agents and complex workflows.
 </p>
 
 <p>
-  We built and published <strong><code>@space-uy/qvac-langgraph</code></strong>, a standalone adapter that makes QVAC behave like a native LangChain chat model, supporting the same <code>invoke()</code>, <code>stream()</code>, and <code>bindTools()</code> workflow LangGraph already expects.
+  We built and published
+  <a href="https://github.com/SpaceUY/qvac-langgraph"><strong><code>@space-uy/qvac-langgraph</code></strong></a>,
+  a reusable adapter that bridges LangGraph with <strong>QVAC</strong>.
+  It makes QVAC behave like a native LangChain chat model, supporting
+  <code>invoke()</code>, <code>stream()</code>, and <code>bindTools()</code>.
 </p>
 
 <blockquote>
@@ -123,15 +129,19 @@
 </blockquote>
 
 <p>
-  This lets other teams keep LangGraph for orchestration, tools, routing, and streaming while using QVAC as the local or delegated inference backend underneath — without rebuilding that bridge themselves.
+  This lets developers use LangGraph for orchestration, tools, routing, state, and streaming,
+  while QVAC provides local or delegated inference underneath — enabling advanced agentic
+  workflows without cloud AI dependencies or per-token fees.
 </p>
 
 <p>
-  This is not a demo-only abstraction: <strong>Meridian Assistant itself uses the published package in its production orchestration path</strong> for RAG, tool calling, streaming, text, and voice.
+  This is not a demo-only abstraction:
+  <strong>Meridian Assistant itself uses the published package in its production orchestration path</strong>
+  for RAG, tool calling, streaming, text, and voice.
 </p>
 
 <p>
-  <strong>Repository:</strong>
+  <strong>Open-source repository:</strong>
   <a href="https://github.com/SpaceUY/qvac-langgraph">
     github.com/SpaceUY/qvac-langgraph
   </a>
