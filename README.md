@@ -105,26 +105,36 @@
 <p align="center">
   <img
     src="docs/assets/qvac-langgraph.svg"
-    alt="@space-uy/qvac-langgraph — a LangGraph ↔ QVAC adapter published on npm"
+    alt="@space-uy/qvac-langgraph — QVAC as a first-class LangGraph chat model"
     width="900"
   />
 </p>
 
 <p>
-  This product's entire orchestrator — tool calling, RAG grounding, streaming, voice —
-  runs on <code>ChatQVAC</code>, a LangGraph-compatible chat model we built and
-  <strong>published as <code>@space-uy/qvac-langgraph</code> on npm</strong>. It wasn't
-  asked for by the exercise: nothing in the brief requires LangGraph specifically, and we
-  could have wired QVAC's completion API directly into our own graph code and stopped there.
+  Meridian Assistant does not just use QVAC — it also contributes a reusable integration layer back to the ecosystem.
 </p>
 
 <p>
-  Instead we packaged the adapter layer itself — the part that makes
-  <code>loadModel()</code>/<code>completion()</code> look like any other LangChain chat
-  model — as a standalone, versioned dependency (currently <code>1.2.0</code>, resolved
-  from the public npm registry, not vendored). Any team building a LangGraph-based agent
-  on top of QVAC can install it and skip writing this bridge themselves. It's the one
-  piece of this submission that's useful outside this submission.
+  We built and published <strong><code>@space-uy/qvac-langgraph</code></strong>, a standalone adapter that makes QVAC behave like a native LangChain chat model, supporting the same <code>invoke()</code>, <code>stream()</code>, and <code>bindTools()</code> workflow LangGraph already expects.
+</p>
+
+<blockquote>
+  <strong>We did not just build a LangGraph application on QVAC — we made QVAC usable as a first-class LangGraph chat model.</strong>
+</blockquote>
+
+<p>
+  This lets other teams keep LangGraph for orchestration, tools, routing, and streaming while using QVAC as the local or delegated inference backend underneath — without rebuilding that bridge themselves.
+</p>
+
+<p>
+  This is not a demo-only abstraction: <strong>Meridian Assistant itself uses the published package in its production orchestration path</strong> for RAG, tool calling, streaming, text, and voice.
+</p>
+
+<p>
+  <strong>Repository:</strong>
+  <a href="https://github.com/SpaceUY/qvac-langgraph">
+    github.com/SpaceUY/qvac-langgraph
+  </a>
 </p>
 
 <h2>Why this is different</h2>
