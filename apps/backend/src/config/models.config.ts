@@ -118,7 +118,6 @@ export const LLM_MODELS_BY_TIER: Record<ResourceTier, AgentModelConfig> = {
   low: {
     modelSource: QWEN3VL_2B_MODEL_SOURCE,
     temperature: 0,
-    // Default ctxSize (4096) is too small to fit the full corpus context alongside the system prompt and reply.
     ctxSize: 8192,
     engineConfig: {
       projectionModelSrc: MMPROJ_QWEN3VL_2B_MULTIMODAL_Q4_K.src,
