@@ -392,6 +392,14 @@ yields at most ~28 s of audio and squeezes/drops words past that, so
 `SUPERTONIC_MAX_CHUNK_CHARS`, see `src/config/models.config.ts`) and joins
 the chunks back into one WAV. Callers still get a single audio buffer.
 
+What reaches the engine is spoken text, not the answer as written:
+`VoiceAgentService` runs each chunk through a `SpeechNormalizer`
+(`src/tts/domain/speech/`) - an ordered list of rules that read Markdown
+tables as sentences, drop Markdown marks, and say codes, dates, fiscal
+periods, symbols, amounts, percentages and numbers as words (`$1.2M` →
+"one point two million dollars"). The screen keeps the text as written. A
+new written format is a new rule in `createEnglishSpeechNormalizer()`.
+
 ### Endpoints
 
 Base path: `/api/tts`
