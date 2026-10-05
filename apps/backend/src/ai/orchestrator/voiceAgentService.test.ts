@@ -244,12 +244,9 @@ async function setupStreaming(
   const ttsPort = options.ttsPort ?? new ImmediateTtsPort();
   const ttsService = new TtsService(modelService, ttsPort);
 
-  const voiceAgentService = new VoiceAgentService(
-    agentService,
-    transcriptionService,
-    ttsService,
-    options.minSentenceChunkChars ?? 1,
-  );
+  const voiceAgentService = new VoiceAgentService(agentService, transcriptionService, ttsService, {
+    minSentenceChunkChars: options.minSentenceChunkChars ?? 1,
+  });
 
   return { runtime, voiceAgentService, ttsPort };
 }
@@ -427,5 +424,49 @@ describe("VoiceAgentService.invokeStreaming", () => {
       EmptyTranscriptError,
     );
     expect(onChunk).not.toHaveBeenCalled();
+  });
+});
+
+describe("VoiceAgentService - what TTS hears", () => {
+  it("sends TTS the spoken form of each chunk, while the chunk's text stays as written", async () => {
+    const { voiceAgentService, ttsPort } = await setupStreaming(
+      [
+        { text: "", toolCalls: [{ id: "call_1", name: "list_documents", arguments: {} }] },
+        { text: "Revenue was $18.4M in Q2 2026. Done.", toolCalls: [] },
+      ],
+      "hi",
+    );
+
+    const chunks: { text: string }[] = [];
+    await voiceAgentService.invokeStreaming([], Buffer.from([1]), (chunk) => {
+      chunks.push(chunk);
+    });
+
+    expect(chunks.map((chunk) => chunk.text)).toEqual(["Revenue was $18.4M in Q2 2026.", " Done."]);
+    expect((ttsPort as ImmediateTtsPort).synthesizeCalls.map((call) => call.text)).toEqual([
+      "Revenue was eighteen point four million dollars in Q two, twenty twenty-six.",
+      "Done.",
+    ]);
+  });
+
+  it("emits a chunk with nothing left to say as text only, without sending it to TTS", async () => {
+    const { voiceAgentService, ttsPort } = await setupStreaming(
+      [
+        { text: "", toolCalls: [{ id: "call_1", name: "list_documents", arguments: {} }] },
+        { text: "Done.\n---", toolCalls: [] },
+      ],
+      "hi",
+    );
+
+    const chunks: { text: string; audio?: Buffer }[] = [];
+    await voiceAgentService.invokeStreaming([], Buffer.from([1]), (chunk) => {
+      chunks.push(chunk);
+    });
+
+    expect(chunks.map((chunk) => [chunk.text, chunk.audio !== undefined])).toEqual([
+      ["Done.", true],
+      ["\n---", false],
+    ]);
+    expect((ttsPort as ImmediateTtsPort).synthesizeCalls.map((call) => call.text)).toEqual(["Done."]);
   });
 });

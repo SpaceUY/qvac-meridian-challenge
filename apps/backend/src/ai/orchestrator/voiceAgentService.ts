@@ -2,6 +2,8 @@ import type { Citation, RetrievedChunk } from "../../rag/domain/types.js";
 import type { AgentService, ConversationMessage } from "./agentService.js";
 import type { TranscriptionService } from "../../speech/service/transcription.service.js";
 import type { TtsService } from "../../tts/service/tts.service.js";
+import type { SpeechNormalizer } from "../../tts/domain/speech/speechNormalizer.js";
+import { createEnglishSpeechNormalizer } from "../../tts/domain/speech/createEnglishSpeechNormalizer.js";
 import type { ContextUsage } from "./contextBudget.js";
 import { SentenceChunker } from "./sentenceChunker.js";
 import { DEFAULT_MIN_SENTENCE_CHUNK_CHARS } from "../../config/voice.config.js";
@@ -49,6 +51,16 @@ export interface VoiceStreamResult {
   context?: ContextUsage;
 }
 
+/** Collaborators with a production default - overridable for tests. */
+export interface VoiceAgentOptions {
+  /** Turns each answer chunk into the words TTS should say. Defaults to the English rules. */
+  speech?: Pick<SpeechNormalizer, "normalize">;
+  /** See SentenceChunker. */
+  minSentenceChunkChars?: number;
+}
+
+type Synthesis = { audio: Buffer; sampleRate: number };
+
 /**
  * Composes the existing text orchestrator with STT/TTS for a single voice
  * turn: transcribe the incoming audio, run it through AgentService's graph
@@ -57,12 +69,21 @@ export interface VoiceStreamResult {
  * fails - the turn itself already succeeded by that point.
  */
 export class VoiceAgentService {
+  private readonly speech: Pick<SpeechNormalizer, "normalize">;
+  private readonly minSentenceChunkChars: number;
+
   constructor(
     private readonly agentService: AgentService,
     private readonly transcriptionService: TranscriptionService,
     private readonly ttsService: TtsService,
-    private readonly minSentenceChunkChars: number = DEFAULT_MIN_SENTENCE_CHUNK_CHARS,
-  ) {}
+    {
+      speech = createEnglishSpeechNormalizer(),
+      minSentenceChunkChars = DEFAULT_MIN_SENTENCE_CHUNK_CHARS,
+    }: VoiceAgentOptions = {},
+  ) {
+    this.speech = speech;
+    this.minSentenceChunkChars = minSentenceChunkChars;
+  }
 
   async invoke(history: ConversationMessage[], audio: Buffer): Promise<VoiceInvokeResult> {
     const transcript = await this.transcriptionService.transcribeBuffer(audio);
@@ -86,12 +107,7 @@ export class VoiceAgentService {
     // event at all (see AgentService.runInvoke's matching safety net).
     const answer = streamedAnswer || result.answer;
 
-    let synthesis: { audio: Buffer; sampleRate: number } | undefined;
-    try {
-      synthesis = await this.ttsService.synthesizeSync(answer);
-    } catch (err) {
-      console.error("[voice:tts]", err);
-    }
+    const synthesis = await this.synthesize(answer);
 
     return {
       transcript,
@@ -114,7 +130,7 @@ export class VoiceAgentService {
    * fails still goes out with its text, `audio`/`sampleRate` undefined.
    * Each chunk's `text` is the sentence verbatim, surrounding whitespace
    * included, so the chunks joined back together are the exact answer;
-   * only the copy sent to TTS is trimmed.
+   * only the copy sent to TTS is normalized (see `synthesize`).
    */
   async invokeStreaming(
     history: ConversationMessage[],
@@ -166,18 +182,25 @@ export class VoiceAgentService {
     sentence: string,
     onChunk: (chunk: VoiceStreamChunk) => void | Promise<void>,
   ): Promise<void> {
-    // The chunk goes out verbatim (its line breaks lay out the Markdown on
-    // screen), but TTS only needs the words - and the SDK rejects
-    // whitespace-only text outright, so such a chunk goes out as text only.
-    const speech = sentence.trim();
-    let synthesis: { audio: Buffer; sampleRate: number } | undefined;
-    if (speech) {
-      try {
-        synthesis = await this.ttsService.synthesizeSync(speech);
-      } catch (err) {
-        console.error("[voice:tts]", err);
-      }
-    }
+    const synthesis = await this.synthesize(sentence);
     await onChunk({ text: sentence, ...synthesis });
+  }
+
+  /**
+   * The text goes out verbatim (its line breaks lay out the Markdown on
+   * screen), but TTS gets the words to say: normalized, then trimmed. Text
+   * with nothing left to say (whitespace, a lone "---") isn't synthesized
+   * at all - the SDK rejects blank text outright. A failed synthesis
+   * degrades to text only.
+   */
+  private async synthesize(text: string): Promise<Synthesis | undefined> {
+    const speech = this.speech.normalize(text).trim();
+    if (!speech) return undefined;
+    try {
+      return await this.ttsService.synthesizeSync(speech);
+    } catch (err) {
+      console.error("[voice:tts]", err);
+      return undefined;
+    }
   }
 }
