@@ -1,0 +1,56 @@
+# Provider + server client on a private virtual network (P2P delegated inference).
+#
+#   cp .env.example .env     # then docker compose up --build
+#
+# Peers find each other through the public HyperDHT bootstrap nodes (the SDK
+# doesn't expose a custom bootstrap), so containers need outbound internet/UDP.
+# The server loads the chat model from the provider by public key and falls
+# back to local inference if the provider is unreachable.
+name: qvac-meridian
+
+x-qvac-image: &qvac-image
+  build: .
+  image: qvac-meridian:local
+  volumes:
+    - ./.qvac-cache:/app/.qvac-cache
+
+services:
+  provider:
+    <<: *qvac-image
+    # The empty first arg leaves the seed to QVAC_HYPERSWARM_SEED (env var, not
+    # a CLI argument); the second arg allow-lists only the server's public key.
+    command:
+      - npm
+      - run
+      - provider
+      - --workspace=apps/backend
+      - --
+      - ""
+      - ${SERVER_PUBLIC_KEY:?set SERVER_PUBLIC_KEY in .env}
+    environment:
+      QVAC_HYPERSWARM_SEED: ${PROVIDER_SEED:?set PROVIDER_SEED in .env}
+    networks:
+      - qvac-net
+
+  server:
+    <<: *qvac-image
+    command: ["npm", "run", "dev:server"]
+    environment:
+      QVAC_HYPERSWARM_SEED: ${SERVER_SEED:?set SERVER_SEED in .env}
+      DELEGATE_PROVIDER_PUBLIC_KEY: ${PROVIDER_PUBLIC_KEY:?set PROVIDER_PUBLIC_KEY in .env}
+      DELEGATE_TIMEOUT_MS: ${DELEGATE_TIMEOUT_MS:-60000}
+    volumes:
+      - ./.qvac-cache:/app/.qvac-cache
+      # Vector store built by `npm run ingest --workspace=apps/backend`; chat
+      # refuses to start without it.
+      - ./.lancedb:/app/.lancedb
+    ports:
+      - "3001:3001"
+    depends_on:
+      - provider
+    networks:
+      - qvac-net
+
+networks:
+  qvac-net:
+    driver: bridge

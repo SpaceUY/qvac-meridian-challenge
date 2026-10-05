@@ -83,6 +83,57 @@ Starts a server connected to previous provider peer with the allowed public key 
 QVAC_HYPERSWARM_SEED=dabbbea7187e11fdac92b41aa6569db22adc882c6fd5d2ff6b62d492e8ba506c DELEGATE_PROVIDER_PUBLIC_KEY=3640fa359b64de0dc045c3aba7f5757b5a4e4174e4405f976ac0b3156330ca9f npm run dev:server
 ```
 
+### Docker
+
+`docker-compose.yml` runs the example above as two containers, a `provider` and a `server` (the delegating client), on a private bridge network (`qvac-net`). Both use the same image, built from the `Dockerfile`.
+
+Requires Docker with the Compose plugin and outbound internet access: the two peers find each other through the public HyperDHT bootstrap nodes, not through the Docker network alone.
+
+1. Ingest the corpus on the host once (the server mounts `.lancedb/` and chat refuses to start without it):
+
+   ```bash
+   npm run ingest --workspace=apps/backend
+   ```
+
+2. Create your env file. `.env.example` holds the same example seeds and public keys as the section above, so it works as-is for local testing:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+3. Build and start both services:
+
+   ```bash
+   docker compose up --build
+   ```
+
+How it is wired:
+
+| Variable (`.env`) | Used by | Purpose |
+|---|---|---|
+| `PROVIDER_SEED` | `provider` | Sets the provider's `QVAC_HYPERSWARM_SEED`, giving it a fixed identity |
+| `PROVIDER_PUBLIC_KEY` | `server` | Becomes `DELEGATE_PROVIDER_PUBLIC_KEY`, the peer the server delegates the chat model to |
+| `SERVER_SEED` | `server` | Sets the server's `QVAC_HYPERSWARM_SEED`, giving it a fixed identity |
+| `SERVER_PUBLIC_KEY` | `provider` | Firewall allow-list: the provider only serves this consumer |
+| `DELEGATE_TIMEOUT_MS` | `server` | Optional, defaults to `60000`; how long a delegated model load can take before falling back to local |
+
+`PROVIDER_PUBLIC_KEY` and `SERVER_SEED`/`SERVER_PUBLIC_KEY` must be the public keys that match their seeds. The example values do; for anything beyond local testing, generate new ones with `npm run seed:generate --workspace=apps/backend` (one per process) and keep `.env` out of git (it is already gitignored).
+
+Both containers mount `./.qvac-cache` at `/app/.qvac-cache`, so model weights are downloaded once and shared. The server is published on `http://localhost:3001`.
+
+To check that delegation works, wait for the provider to log `Provider is running` (the first delegated load can take 15-45 s while the DHT bootstraps), then:
+
+```bash
+curl localhost:3001/api/chat/status
+```
+
+`"delegation": { "isDelegated": true, "providerPublicKey": "..." }` means the chat model is served by the provider container. The provider logs a `New connection established` line for the server and a `kind=completion` line per request. If the provider can't be reached, the server falls back to local inference. Stop everything with `docker compose down`.
+
+Notes:
+
+- Inference runs on CPU in the containers (no GPU passthrough is configured).
+- The provider prints "No seed given - identity is random" even though it uses `PROVIDER_SEED`; this is cosmetic, because the script only checks its CLI argument. Its printed public key is the one that counts.
+
 ## Build
 
 ```bash

@@ -1,0 +1,11 @@
+node_modules
+**/node_modules
+.git
+.claude
+.env
+.qvac-cache
+.lancedb
+dist
+**/dist
+coverage
+*.log
