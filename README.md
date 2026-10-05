@@ -1,17 +1,4 @@
-```text
-███╗   ███╗███████╗██████╗ ██╗██████╗ ██╗ █████╗ ███╗   ██╗
-████╗ ████║██╔════╝██╔══██╗██║██╔══██╗██║██╔══██╗████╗  ██║
-██╔████╔██║█████╗  ██████╔╝██║██║  ██║██║███████║██╔██╗ ██║
-██║╚██╔╝██║██╔══╝  ██╔══██╗██║██║  ██║██║██╔══██║██║╚██╗██║
-██║ ╚═╝ ██║███████╗██║  ██║██║██████╔╝██║██║  ██║██║ ╚████║
-╚═╝     ╚═╝╚══════╝╚═╝  ╚═╝╚═╝╚═════╝ ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝
-
-                       A S S I S T A N T
-      local inference  ·  local RAG  ·  local voice & vision
-
-                       built by SpaceDev
-                for the Meridian Components exercise
-```
+![MERIDIAN ASSISTANT — local inference, local RAG, local voice & vision, built by SpaceDev](docs/assets/meridian-hero.svg)
 
 > Private company knowledge. Available anywhere. Without sending it anywhere.
 
