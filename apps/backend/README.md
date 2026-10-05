@@ -386,6 +386,12 @@ pending gets a `409`, and cancellation goes through the SDK's broad-cancel
 escape hatch (`cancel({ modelId, kind: 'tts' })`) rather than a
 per-request cancel.
 
+Long text is split before it reaches the engine: a single Supertonic job
+yields at most ~28 s of audio and squeezes/drops words past that, so
+`QvacTtsAdapter` uses the SDK's `sentenceStream` mode (chunks of at most
+`SUPERTONIC_MAX_CHUNK_CHARS`, see `src/config/models.config.ts`) and joins
+the chunks back into one WAV. Callers still get a single audio buffer.
+
 ### Endpoints
 
 Base path: `/api/tts`

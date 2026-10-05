@@ -8,6 +8,7 @@ import {
 import {
   SystemMessage,
   AIMessage,
+  HumanMessage,
   ToolMessage,
 } from "@langchain/core/messages";
 import { lookupStockTool } from "./stockTool.js";
@@ -29,6 +30,8 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { DocumentRepository } from "../../document/domain/document-repository.port.js";
 
 const SYSTEM_PROMPT = `You are Meridian's internal assistant.
+
+If the user's message is only a greeting or social small talk with no real question (e.g. "hi", "hello", "hola", "buenas"), reply briefly and naturally as Meridian's assistant, in the same language the user used — do not mention documents, evidence, or missing information for this kind of message.
 
 For stock and inventory questions (SKU, stock levels, price, lead time, region availability), always call the lookup_stock tool instead of answering from memory. SKUs follow a specific format, e.g. SD-X4-001 — use the tool's sku field when one is recognized in the user's query. Never answer stock related queries without calling lookup_stock.
 
@@ -55,6 +58,38 @@ function guardMayReplaceReply(state: typeof State.State): boolean {
     ToolMessage.isInstance(message),
   );
   return !state.hasEvidence && !state.hasVisualInput && !usedTool;
+}
+
+const GREETING_CLASSIFIER_PROMPT = `Classify the user's most recent message as exactly one word.
+Reply GREETING if it is only a greeting or social small talk with no real question or request (e.g. "hi", "hello", "hola", "buenas", "how are you", "bonjour", "ciao").
+Reply OTHER for anything else, including real questions, even short ones.
+Respond with exactly one word: GREETING or OTHER.`;
+
+/**
+ * Classifies `lastHuman` as greeting/small-talk vs. a real question, via a
+ * dedicated (untooled, unstreamed) model call. Only called from
+ * `buildLlmNode`, in the one case it matters: the guard above is about to
+ * discard this turn's reply (no evidence/image, no tool call), and a plain
+ * "hi"/"hola" deserves its own natural reply instead of the fixed
+ * insufficient-context fallback — a real question with no evidence still
+ * gets the fallback. Never reached for a tool-calling turn (e.g. a stock
+ * lookup): those also start with no RAG evidence, but the model's response
+ * already carries a tool call by the time this would run, so the guard
+ * above never discards it in the first place. Deliberately doesn't forward
+ * `sessionId`: this is a one-off classification, not part of the visible
+ * conversation, and must not pollute the turn's KV-cache session history.
+ */
+export async function classifyGreeting(
+  model: ChatQVAC,
+  lastHuman: HumanMessage,
+): Promise<boolean> {
+  const response = await model.invoke(
+    [new SystemMessage(GREETING_CLASSIFIER_PROMPT), lastHuman],
+    { tags: [NO_STREAM_TAG], temperature: 0 },
+  );
+  const label =
+    typeof response.text === "string" ? response.text.trim().toUpperCase() : "";
+  return label.startsWith("GREETING");
 }
 
 /**
@@ -126,12 +161,24 @@ export function buildLlmNode(
 
     // Guard against hallucinated/refused answers: if this turn never called a
     // tool and retrieval found no supporting evidence, don't trust freeform
-    // model text — fall back to the fixed insufficient-context message.
+    // model text — fall back to the fixed insufficient-context message,
+    // unless it's just a greeting (see `classifyGreeting`).
     if (guardMayReplace && !response.tool_calls?.length) {
-      return {
-        messages: [new AIMessage(INSUFFICIENT_CONTEXT_MESSAGE)],
-        completionStats,
-      };
+      const lastHuman = [...state.messages]
+        .reverse()
+        .find((message): message is HumanMessage =>
+          HumanMessage.isInstance(message),
+        );
+      const greeting = lastHuman
+        ? await classifyGreeting(model, lastHuman)
+        : false;
+
+      if (!greeting) {
+        return {
+          messages: [new AIMessage(INSUFFICIENT_CONTEXT_MESSAGE)],
+          completionStats,
+        };
+      }
     }
 
     return { messages: [response], completionStats };
