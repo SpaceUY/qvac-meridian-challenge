@@ -26,8 +26,6 @@
   <sub>QVAC / llama.cpp · BGE-M3 · LanceDB · cached local models</sub>
 </p>
 
-<hr>
-
 <h2>What this is</h2>
 
 <p>
@@ -51,7 +49,6 @@
   · React
 </p>
 
-<hr>
 
 <h2>The problem</h2>
 
@@ -72,8 +69,6 @@
 <blockquote>
   Meridian Assistant moves the answer path back onto Meridian-controlled hardware.
 </blockquote>
-
-<hr>
 
 <h2>What we built</h2>
 
@@ -105,8 +100,6 @@
 <p>
   No outbound call to a cloud model provider exists in the production dependency path.
 </p>
-
-<hr>
 
 <h2>Why this is different</h2>
 
@@ -143,8 +136,6 @@
   </tr>
 </table>
 
-<hr>
-
 <h2>Key capabilities</h2>
 
 <table>
@@ -180,8 +171,6 @@
   </tr>
 </table>
 
-<hr>
-
 <h2>Proven, not mocked</h2>
 
 <p align="center">
@@ -204,8 +193,6 @@
   ·
   <a href="docs/bundle-size-report.md">Bundle report</a>
 </p>
-
-<hr>
 
 <h2>Architecture</h2>
 
@@ -240,8 +227,6 @@
   </tr>
 </table>
 
-<hr>
-
 <h2>How a request flows</h2>
 
 <p align="center">
@@ -257,8 +242,6 @@
   multiple times while tokens stream directly to the client. Citations are
   selected after the graph completes.
 </p>
-
-<hr>
 
 <h2>Engineering decisions</h2>
 
@@ -297,8 +280,6 @@
   </tr>
 </table>
 
-<hr>
-
 <h2>Hardware-aware inference</h2>
 
 <p align="center">
@@ -314,8 +295,6 @@
   <code>low</code>, <code>medium</code>, or <code>high</code>.
   Override with <code>QVAC_RESOURCE_TIER=low|medium|high</code>.
 </p>
-
-<hr>
 
 <h2>Security</h2>
 
@@ -356,8 +335,6 @@
   </tr>
 </table>
 
-<hr>
-
 <h2>Quick start</h2>
 
 <pre><code>npm ci
@@ -370,8 +347,6 @@ npm run dev:client</code></pre>
   Full backend and P2P setup:
   <a href="apps/backend/README.md"><code>apps/backend/README.md</code></a>.
 </p>
-
-<hr>
 
 <h2>Judge this project in 60 seconds</h2>
 
@@ -399,8 +374,6 @@ npm run dev:client</code></pre>
   -H "Content-Type: application/json" \
   -d '{"messages":[{"role":"user","content":"What was Q2 2026 total revenue?"}]}'</code></pre>
 
-<hr>
-
 <details>
 <summary><strong>Challenge requirements coverage</strong></summary>
 
@@ -424,8 +397,6 @@ npm run dev:client</code></pre>
 <!-- keep the detailed limitation table here -->
 
 </details>
-
-<hr>
 
 <h2>Team</h2>
 
