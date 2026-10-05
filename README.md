@@ -21,8 +21,8 @@ Monorepo (npm workspaces) implementing the Meridian Components exercise: an Expr
 ## Features
 
 - **Chat** — `POST /v1/chat/completions` (OpenAI-compatible, streaming), grounded by retrieval over the ingested corpus, with a stock-lookup tool call for inventory questions. `POST /api/chat/preload` / `GET /api/chat/status` manage the chat model's lifecycle.
-- **Voice** — `POST /v1/chat/voice-completions` (speech in, speech out) and a standalone local TTS API (`/api/tts`).
-- **Local model management** — `/api/models`: discover, download, load, run inference on, and unload any QVAC registry or URL-sourced model, all on-device.
+- **Voice** — `POST /v1/chat/voice-completions` (speech in, speech out).
+- **Local model management** — internal QVAC model lifecycle (discover, download, load, run inference, unload), shared by chat, RAG, speech, and TTS; no public HTTP API, all on-device.
 - **RAG / corpus ingestion** — `npm run ingest --workspace=apps/backend` builds a file-backed LanceDB vector store from `corpus/`, incrementally: unchanged documents are never re-embedded. Required before chat can answer from the corpus — see [apps/backend/README.md § RAG: corpus ingestion](apps/backend/README.md#rag-corpus-ingestion).
 - **Citations** — every `POST /v1/chat/completions` answer carries a `citations` array (one `{ file, score }` entry per source document that grounded the answer, empty on a refusal), in both streaming and non-streaming responses; the frontend surfaces them as a hover card over the answer. See [apps/backend/README.md § Citations](apps/backend/README.md#citations).
 - **P2P delegated inference** — a client terminal can offload the chat-completion model to a stronger, controlled peer reachable over the internet by public key (`npm run provider`), with automatic fallback to local inference if delegation fails. Optional — see [apps/backend/README.md § Delegated inference (P2P)](apps/backend/README.md#delegated-inference-p2p) for setup.

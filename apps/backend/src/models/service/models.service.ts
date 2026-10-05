@@ -73,12 +73,11 @@ export class ModelManagementService {
   /**
    * Not `async`: the returned promise is decorated with the `requestId`
    * `ModelRuntimePort.load()` exposes synchronously, so a caller can pass
-   * it to `cancel()` while the load is still in flight - and, since the
-   * HTTP layer responds as soon as `requestId` exists rather than waiting
-   * for this promise to settle (see `models.router.ts`), `getRequestStatus()`
-   * is how a caller later learns the outcome. An `async` method can't
-   * expose `requestId` like this - it always wraps its return value in a
-   * fresh `Promise`, stripping any extra property.
+   * it to `cancel()` while the load is still in flight - without waiting
+   * for this promise to settle, `getRequestStatus()` is how a caller later
+   * learns the outcome. An `async` method can't expose `requestId` like
+   * this - it always wraps its return value in a fresh `Promise`, stripping
+   * any extra property.
    *
    * A cancelled load never reaches the success branch below, so nothing is
    * added to `this.loaded` - the same `source` is safe to load again

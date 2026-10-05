@@ -1,11 +1,9 @@
 import express from "express";
 import cors from "cors";
-import { createModelsRouter } from "./models/router/models.router.js";
 import { ModelManagementService } from "./models/service/models.service.js";
 import { QvacRuntimeAdapter } from "./models/infra/qvacRuntimeAdapter.js";
 import { AgentService } from "./ai/orchestrator/agentService.js";
 import { createChatStatusRouter, createCompletionsRouter, createVoiceCompletionsRouter } from "./chat/chat.router.js";
-import { createTtsRouter } from "./tts/router/tts.router.js";
 import { TtsService } from "./tts/service/tts.service.js";
 import { QvacTtsAdapter } from "./tts/infra/qvacTtsAdapter.js";
 import { createDocumentsRouter } from "./document/router/documents.router.js";
@@ -35,7 +33,6 @@ app.use(express.json({ limit: "25mb" }));
 
 const qvacRuntimeAdapter = new QvacRuntimeAdapter();
 const modelManagementService = new ModelManagementService(qvacRuntimeAdapter, qvacRuntimeAdapter);
-app.use("/api/models", createModelsRouter(modelManagementService));
 
 /**
  * Retrieval over the persisted LanceDB table written by `npm run ingest`,
@@ -101,7 +98,6 @@ app.use(createHealthRouter(readiness));
 app.use(createPublicModelsRouter(readiness));
 
 const ttsService = new TtsService(modelManagementService, new QvacTtsAdapter());
-app.use("/api/tts", createTtsRouter(ttsService));
 
 const transcriptionService = new TranscriptionService(modelManagementService, new QvacTranscriptionAdapter());
 const voiceAgentService = new VoiceAgentService(agentService, transcriptionService, ttsService);

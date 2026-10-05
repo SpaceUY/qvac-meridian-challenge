@@ -2,7 +2,7 @@
  * Which phase of local model management a failure happened in. `not-found`
  * is a precondition failure (the requested model isn't currently loaded),
  * distinct from `inference`/`unload` actually failing on a loaded model -
- * the HTTP layer maps it to 404 instead of the other stages' 502.
+ * callers can tell the two apart instead of treating every failure the same.
  */
 export type ModelManagementStage =
   | 'discovery'
@@ -18,11 +18,11 @@ export type ModelManagementStage =
   | 'not-found';
 
 /**
- * Single error type for the whole feature so callers (the HTTP layer, the
+ * Single error type for the whole feature so callers (the chat path, the
  * demo script) have one thing to catch instead of reaching into
  * `@qvac/sdk`'s error hierarchy. `cause` keeps the original error for
- * server-side logging; it is intentionally never serialized back to a
- * client (see `models.router.ts`).
+ * server-side logging; callers surface a generic, user-safe message instead
+ * of serializing it back to a client.
  */
 export class ModelManagementError extends Error {
   readonly stage: ModelManagementStage;
