@@ -33,6 +33,8 @@ the backend already warm (npm run serve) so the GIF shows inference, not model l
 
 ## The problem
 
+![Why the first cloud pilot failed — cost, margin, data, trust](docs/assets/problem.svg)
+
 Meridian piloted a cloud AI assistant and shut it down. Four reasons kept surfacing:
 
 - **Cost** — usage-based pricing with no ceiling, on a workload (customer calls, field questions) that was only going to grow.
@@ -64,6 +66,8 @@ Every piece of the answer path — embedding the question, searching the vector 
 - **Trust in answers** comes from grounding every claim in a retrieved document and citing it, and from an explicit refusal path when nothing in the corpus supports an answer — not from a bigger model guessing more confidently.
 
 ## Why this is different
+
+![Typical cloud assistant vs. Meridian Assistant](docs/assets/why-different.svg)
 
 This isn't a thin wrapper around a hosted chat completion. The things that make it a real QVAC integration rather than an API client:
 
@@ -117,6 +121,8 @@ generated from the model's own knowledge.
 -->
 
 ## Proven, not mocked
+
+![Measured, not assumed — bundle size, embedding latency/throughput/load time, test count](docs/assets/metrics.svg)
 
 | Metric | Value | Source |
 |---|---|---|
@@ -186,6 +192,8 @@ text.
 
 ## Engineering highlights
 
+![Engineering decisions overview — native embeddings, hardware aware, batching, P2P resilience](docs/assets/engineering-decisions.svg)
+
 ### Native C++ embedding path, with a fallback that's actually exercised
 
 Driving `@qvac/embed-llamacpp` directly (bypassing the SDK's RPC layer) looked like a large win in the first benchmark — until the benchmark itself was found to be measuring a blocking PowerShell call, not the embedding engine.
@@ -230,6 +238,8 @@ Sending two image attachments in one message reproducibly crashed the QVAC/llama
 
 ## Hardware tiers
 
+![One product, three hardware tiers — low, medium, high](docs/assets/hardware-tiers.svg)
+
 | Tier | RAM / cores | Chat / vision model | Speech-to-text | Continuous batching |
 |---|---|---|---|---|
 | `low` | below `medium`'s floor (design target: 8 GB RAM, integrated graphics) | Qwen3VL-2B Q4_K (multimodal) | Whisper tiny Q8_0 | sequential |
@@ -242,31 +252,7 @@ Override the automatic heuristic with `QVAC_RESOURCE_TIER=low|medium|high` on a 
 
 ## Security / what leaves the device
 
-<!-- SECURITY BOUNDARY DIAGRAM
-File: docs/assets/security-boundary.svg
-
-Create a polished, professional diagram (not a terminal/ASCII look) answering one question at a
-glance: "what leaves this device?" Structure:
-
-1. A clearly bounded "on this device" zone containing: corpus documents, embeddings, the LanceDB
-   vector store, retrieved context, prompts, generated answers, and stock/pricing data — each
-   labeled "never leaves" / with a blocked-arrow icon pointing outward.
-2. One single narrow, explicitly-labeled channel leaving that zone: "chat-completion inference
-   request" — and only that — flowing to a second box labeled "Meridian-controlled peer, identified
-   by public key (optional, operator-configured)". Label this channel "RAG embeddings, transcription,
-   and TTS never use this channel — chat completion only."
-3. A third, visually separate box labeled "Public cloud AI providers" (OpenAI, Anthropic, etc.)
-   sitting completely outside both of the above, with NO arrow connecting to anything — make its
-   absence from the data flow the most visually obvious fact in the diagram.
-4. A small callout noting the peer channel is bidirectionally authenticated by public key (the
-   provider only serves consumers it explicitly allow-lists) and automatically falls back to local
-   inference if the peer is slow, unreachable, or goes down mid-session.
-
-The diagram should let a security reviewer answer "does any of our data reach a cloud AI vendor?"
-without reading a single line of prose.
--->
-
-![Meridian data boundary — what leaves the device](docs/assets/security-boundary.svg)
+![What leaves the device — everything stays local except optional chat-completion delegation to a Meridian-controlled peer; public cloud AI has no connection](docs/assets/security-boundary.svg)
 
 | Data | Leaves the device? |
 |---|---|
@@ -303,6 +289,8 @@ npm run dev:client                        # frontend on :5173, in a second termi
 First run needs internet once, to download model weights into `.qvac-cache/` (gitignored, cached for every run after). See [`apps/backend/README.md`](apps/backend/README.md) for the full command reference, including P2P delegated-inference setup.
 
 ## Judge this project in 60 seconds
+
+![Judge this project in 60 seconds — install, fetch models, ingest corpus, serve, go offline, ask, verify citations](docs/assets/judge-60-seconds.svg)
 
 This is exactly the path the grading harness (`qvac-eval.json`) drives:
 

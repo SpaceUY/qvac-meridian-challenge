@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 410" width="900" height="410">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="1.8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <style>
+      text {
+        font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+    </style>
+  </defs>
+
+  <text x="450" y="32"
+        text-anchor="middle"
+        fill="#94a3b8"
+        font-size="13"
+        letter-spacing="3">
+    ONE PRODUCT · THREE HARDWARE TIERS
+  </text>
+
+  <!-- connectors -->
+  <line x1="265" y1="175" x2="332" y2="175" stroke="#334155"/>
+  <path d="M322 169 L332 175 L322 181" fill="none" stroke="#334155"/>
+
+  <line x1="568" y1="175" x2="635" y2="175" stroke="#334155"/>
+  <path d="M625 169 L635 175 L625 181" fill="none" stroke="#334155"/>
+
+  <!-- LOW -->
+  <rect x="30" y="70" width="235" height="245" rx="8"
+        fill="none" stroke="#334155"/>
+
+  <text x="147.5" y="102"
+        text-anchor="middle"
+        fill="#18b480"
+        font-size="18"
+        filter="url(#glow)">
+    LOW
+  </text>
+
+  <text x="147.5" y="130"
+        text-anchor="middle"
+        fill="#64748b"
+        font-size="10">
+    8 GB DESIGN TARGET
+  </text>
+
+  <text x="55" y="165" fill="#64748b" font-size="9">CHAT / VISION</text>
+  <text x="55" y="184" fill="#94a3b8" font-size="11">Qwen3-VL 2B · Q4_K</text>
+
+  <text x="55" y="214" fill="#64748b" font-size="9">SPEECH TO TEXT</text>
+  <text x="55" y="233" fill="#94a3b8" font-size="11">Whisper Tiny · Q8_0</text>
+
+  <text x="55" y="263" fill="#64748b" font-size="9">TEXT TO SPEECH</text>
+  <text x="55" y="282" fill="#94a3b8" font-size="11">Supertonic 2 · Q4_0</text>
+
+  <text x="147.5" y="302"
+        text-anchor="middle"
+        fill="#64748b"
+        font-size="9">
+    sequential inference
+  </text>
+
+  <!-- MEDIUM -->
+  <rect x="332.5" y="70" width="235" height="245" rx="8"
+        fill="none" stroke="#334155"/>
+
+  <text x="450" y="102"
+        text-anchor="middle"
+        fill="#18b480"
+        font-size="18"
+        filter="url(#glow)">
+    MEDIUM
+  </text>
+
+  <text x="450" y="130"
+        text-anchor="middle"
+        fill="#64748b"
+        font-size="10">
+    ≥16 GB · ≥8 CORES
+  </text>
+
+  <text x="357" y="165" fill="#64748b" font-size="9">CHAT / VISION</text>
+  <text x="357" y="184" fill="#94a3b8" font-size="11">Qwen3.5 9B · Q4_K_M</text>
+
+  <text x="357" y="214" fill="#64748b" font-size="9">SPEECH TO TEXT</text>
+  <text x="357" y="233" fill="#94a3b8" font-size="11">Whisper Small · Q8_0</text>
+
+  <text x="357" y="263" fill="#64748b" font-size="9">TEXT TO SPEECH</text>
+  <text x="357" y="282" fill="#94a3b8" font-size="11">Supertonic 3 · Q4_0</text>
+
+  <text x="450" y="302"
+        text-anchor="middle"
+        fill="#64748b"
+        font-size="9">
+    sequential inference
+  </text>
+
+  <!-- HIGH -->
+  <rect x="635" y="70" width="235" height="245" rx="8"
+        fill="none" stroke="#334155"/>
+
+  <text x="752.5" y="102"
+        text-anchor="middle"
+        fill="#18b480"
+        font-size="18"
+        filter="url(#glow)">
+    HIGH
+  </text>
+
+  <text x="752.5" y="130"
+        text-anchor="middle"
+        fill="#64748b"
+        font-size="10">
+    ≥64 GB · ≥16 CORES
+  </text>
+
+  <text x="660" y="165" fill="#64748b" font-size="9">CHAT / VISION</text>
+  <text x="660" y="184" fill="#94a3b8" font-size="11">Qwen3.6 35B-A3B</text>
+  <text x="660" y="199" fill="#64748b" font-size="9">MoE · Q4_K_M</text>
+
+  <text x="660" y="226" fill="#64748b" font-size="9">SPEECH TO TEXT</text>
+  <text x="660" y="245" fill="#94a3b8" font-size="11">Whisper Large v3 Turbo</text>
+
+  <text x="660" y="273" fill="#64748b" font-size="9">TEXT TO SPEECH</text>
+  <text x="660" y="292" fill="#94a3b8" font-size="11">Supertonic 3 · Q4_0</text>
+
+  <text x="752.5" y="307"
+        text-anchor="middle"
+        fill="#18b480"
+        font-size="9">
+    2 concurrent completions
+  </text>
+
+  <!-- shared models -->
+  <rect x="145" y="340" width="610" height="46" rx="7"
+        fill="none" stroke="#334155"/>
+
+  <text x="180" y="359"
+        fill="#64748b"
+        font-size="9">
+    SHARED ACROSS ALL TIERS
+  </text>
+
+  <text x="450" y="370"
+        text-anchor="middle"
+        fill="#94a3b8"
+        font-size="11">
+    BGE-M3 · Q4_K_M · 1024-dim embeddings
+  </text>
+
+  <text x="720" y="370"
+        text-anchor="end"
+        fill="#94a3b8"
+        font-size="11">
+    Silero VAD 5.1.2
+  </text>
+
+  <text x="450" y="405"
+        text-anchor="middle"
+        fill="#64748b"
+        font-size="9">
+    model selection adapts at runtime · same API and product surface across tiers
+  </text>
+</svg>

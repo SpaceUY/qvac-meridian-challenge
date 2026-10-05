@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 275" width="900" height="275" role="img" aria-labelledby="engineering-decisions-title">
+  <title id="engineering-decisions-title">Engineering decisions overview — native embeddings, hardware aware, batching, P2P resilience</title>
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="1.8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <style>
+      text {
+        font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+    </style>
+  </defs>
+
+  <text x="450" y="30" text-anchor="middle"
+        fill="#94a3b8" font-size="13" letter-spacing="3">
+    ENGINEERING DECISIONS
+  </text>
+
+  <!-- card 1 -->
+  <rect x="25" y="70" width="200" height="150" rx="8"
+        fill="none" stroke="#334155"/>
+
+  <text x="125" y="105" text-anchor="middle"
+        fill="#2dd4bf" font-size="13"
+        filter="url(#glow)">NATIVE EMBEDDINGS</text>
+
+  <text x="125" y="145" text-anchor="middle"
+        fill="#94a3b8" font-size="11">measure first</text>
+  <text x="125" y="166" text-anchor="middle"
+        fill="#94a3b8" font-size="11">optimize second</text>
+
+  <!-- card 2 -->
+  <rect x="242" y="70" width="200" height="150" rx="8"
+        fill="none" stroke="#334155"/>
+
+  <text x="342" y="105" text-anchor="middle"
+        fill="#2dd4bf" font-size="13"
+        filter="url(#glow)">HARDWARE AWARE</text>
+
+  <text x="342" y="145" text-anchor="middle"
+        fill="#94a3b8" font-size="11">adapt the model</text>
+  <text x="342" y="166" text-anchor="middle"
+        fill="#94a3b8" font-size="11">to the machine</text>
+
+  <!-- card 3 -->
+  <rect x="459" y="70" width="200" height="150" rx="8"
+        fill="none" stroke="#334155"/>
+
+  <text x="559" y="105" text-anchor="middle"
+        fill="#2dd4bf" font-size="13"
+        filter="url(#glow)">BATCHING</text>
+
+  <text x="559" y="145" text-anchor="middle"
+        fill="#94a3b8" font-size="11">ship it only</text>
+  <text x="559" y="166" text-anchor="middle"
+        fill="#94a3b8" font-size="11">where it wins</text>
+
+  <!-- card 4 -->
+  <rect x="676" y="70" width="200" height="150" rx="8"
+        fill="none" stroke="#334155"/>
+
+  <text x="776" y="105" text-anchor="middle"
+        fill="#2dd4bf" font-size="13"
+        filter="url(#glow)">P2P RESILIENCE</text>
+
+  <text x="776" y="145" text-anchor="middle"
+        fill="#94a3b8" font-size="11">peer disappears</text>
+  <text x="776" y="166" text-anchor="middle"
+        fill="#94a3b8" font-size="11">local keeps running</text>
+
+  <text x="450" y="252" text-anchor="middle"
+        fill="#64748b" font-size="10">
+    decisions driven by measured behavior, not framework defaults
+  </text>
+</svg>
