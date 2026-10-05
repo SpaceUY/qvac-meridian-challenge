@@ -320,21 +320,22 @@ First run needs internet once, to download model weights into `.qvac-cache/` (gi
 This is exactly the path the grading harness (`qvac-eval.json`) drives:
 
 1. `npm ci`
-2. `npm run models:fetch` — pre-caches every model asset; no network needed after this
-3. `npm run corpus:ingest` — builds `.lancedb` from `corpus/`
-4. `npm run serve` — starts the backend detached; see `.run/server.log`
-5. `curl http://127.0.0.1:3001/v1/models` — poll until it returns `200` (not `503`)
-6. **Disconnect outbound network**
-7. Send a chat completion:
+2. `npm run build:server` — generates the plugin-scoped QVAC worker in `apps/backend/qvac/`, which every later step uses
+3. `npm run models:fetch` — pre-caches every model asset; no network needed after this
+4. `npm run corpus:ingest` — builds `.lancedb` from `corpus/`
+5. `npm run serve` — starts the backend detached; see `.run/server.log`
+6. `curl http://127.0.0.1:3001/v1/models` — poll until it returns `200` (not `503`)
+7. **Disconnect outbound network**
+8. Send a chat completion:
    ```bash
    curl -X POST http://127.0.0.1:3001/v1/chat/completions \
      -H "Content-Type: application/json" \
      -d '{"messages":[{"role":"user","content":"What was Q2 2026 total revenue?"}]}'
    ```
-8. Verify the response's `citations[]` array, and that the answer matches `corpus/reports/q2-2026-sales-performance-report.md`
-9. `npm run serve:stop`
+9. Verify the response's `citations[]` array, and that the answer matches `corpus/reports/q2-2026-sales-performance-report.md`
+10. `npm run serve:stop`
 
-`qvac-eval.json`'s `readyPath` (`/v1/models`) is the same endpoint step 5 polls — it returns `503` until both the chat and embedding models have finished warming up, `200` once ready.
+`qvac-eval.json`'s `readyPath` (`/v1/models`) is the same endpoint step 6 polls — it returns `503` until both the chat and embedding models have finished warming up, `200` once ready.
 
 ## Challenge requirements coverage
 
