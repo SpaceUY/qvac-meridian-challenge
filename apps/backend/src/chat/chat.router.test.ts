@@ -564,3 +564,81 @@ describe("POST /v1/chat/completions - context usage", () => {
     expect(await streamBody(FAKE_INVOKE_RESULT)).not.toContain('"context"');
   });
 });
+
+describe("POST /v1/chat/voice-completions - client disconnect", () => {
+  let server: http.Server | undefined;
+
+  afterEach(() => {
+    server?.close();
+    server = undefined;
+  });
+
+  /** A voice agent whose turn only ends when its signal aborts - records the signal each call received. */
+  function hangingVoiceAgent() {
+    const signals: (AbortSignal | undefined)[] = [];
+    const untilAborted = (signal?: AbortSignal) =>
+      new Promise<never>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    const voiceAgent: VoiceAgent = {
+      invoke: async (_history, _audio, options) => {
+        signals.push(options?.signal);
+        return untilAborted(options?.signal);
+      },
+      invokeStreaming: async (_history, _audio, _onChunk, options) => {
+        signals.push(options?.signal);
+        return untilAborted(options?.signal);
+      },
+    };
+    return { voiceAgent, signals };
+  }
+
+  async function startServer(voiceAgent: VoiceAgent): Promise<string> {
+    const app = express();
+    app.use(express.json());
+    app.use("/v1/chat", createVoiceCompletionsRouter(fakeAgent, voiceAgent));
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+    return `http://127.0.0.1:${port}/v1/chat/voice-completions`;
+  }
+
+  it.each([true, false])("stops the turn when the client hangs up (stream: %s)", async (stream) => {
+    const { voiceAgent, signals } = hangingVoiceAgent();
+    const url = await startServer(voiceAgent);
+    const controller = new AbortController();
+
+    const request = fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [], audioBase64: Buffer.from([1, 2, 3]).toString("base64"), stream }),
+      signal: controller.signal,
+    }).catch(() => undefined);
+    await expect.poll(() => signals.length, { timeout: 2000 }).toBe(1);
+    controller.abort();
+    await request;
+
+    await expect.poll(() => signals[0]?.aborted, { timeout: 2000 }).toBe(true);
+  });
+
+  it("never stops a turn that completes normally", async () => {
+    const signals: (AbortSignal | undefined)[] = [];
+    const url = await startServer({
+      invoke: fakeVoiceAgent.invoke,
+      invokeStreaming: async (_history, _audio, onChunk, options) => {
+        signals.push(options?.signal);
+        await onChunk({ text: "Done." });
+        return { transcript: "hi", answer: "Done.", chunks: [], toolsUsed: [], citations: [] };
+      },
+    });
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [], audioBase64: Buffer.from([1, 2, 3]).toString("base64"), stream: true }),
+    });
+    await response.text();
+
+    expect(signals[0]?.aborted).toBe(false);
+  });
+});
