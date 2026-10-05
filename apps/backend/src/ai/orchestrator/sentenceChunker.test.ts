@@ -21,12 +21,31 @@ describe("SentenceChunker", () => {
 
   it("emits multiple sentences from a single push when more than one boundary qualifies", () => {
     const chunker = new SentenceChunker(1);
-    expect(chunker.push("One. Two. Three.")).toEqual(["One.", "Two.", "Three."]);
+    expect(chunker.push("One. Two. Three.")).toEqual(["One.", " Two.", " Three."]);
   });
 
   it("treats '!' and '?' as sentence boundaries too", () => {
     const chunker = new SentenceChunker(1);
-    expect(chunker.push("Really?! Yes.")).toEqual(["Really?!", "Yes."]);
+    expect(chunker.push("Really?! Yes.")).toEqual(["Really?!", " Yes."]);
+  });
+
+  it("keeps the line breaks after a sentence end at the start of the next chunk", () => {
+    const chunker = new SentenceChunker(1);
+    expect(chunker.push("One.\n\n## Two.")).toEqual(["One.", "\n\n## Two."]);
+  });
+
+  it("reproduces the streamed text exactly when every chunk is joined back together", () => {
+    const answer =
+      "Gloves make typing impractical. The system uses local packs.\n\n" +
+      "## Key Rules\n\n1. **Docked Refresh** - Refreshes weekly.\n2. **Stale Warning** - Warns after 10 days.";
+    const chunker = new SentenceChunker(40);
+    const chunks: string[] = [];
+    for (let i = 0; i < answer.length; i += 3) {
+      chunks.push(...chunker.push(answer.slice(i, i + 3)));
+    }
+    chunks.push(chunker.flush() ?? "");
+
+    expect(chunks.join("")).toBe(answer);
   });
 
   it("keeps accumulating when the threshold is reached but no sentence boundary has arrived yet", () => {
@@ -41,6 +60,13 @@ describe("SentenceChunker", () => {
 
       expect(chunker.flush()).toBe("an unfinished answer with no terminal punctuation");
       expect(chunker.flush()).toBeUndefined();
+    });
+
+    it("returns a whitespace-only remainder as-is instead of dropping it", () => {
+      const chunker = new SentenceChunker(1);
+      chunker.push("Done.\n");
+
+      expect(chunker.flush()).toBe("\n");
     });
 
     it("returns undefined when nothing is buffered", () => {

@@ -112,6 +112,9 @@ export class VoiceAgentService {
    * `onChunk` strictly in order - one TTS call at a time, since the
    * underlying model isn't safe for concurrent use. A chunk whose synthesis
    * fails still goes out with its text, `audio`/`sampleRate` undefined.
+   * Each chunk's `text` is the sentence verbatim, surrounding whitespace
+   * included, so the chunks joined back together are the exact answer;
+   * only the copy sent to TTS is trimmed.
    */
   async invokeStreaming(
     history: ConversationMessage[],
@@ -163,11 +166,17 @@ export class VoiceAgentService {
     sentence: string,
     onChunk: (chunk: VoiceStreamChunk) => void | Promise<void>,
   ): Promise<void> {
+    // The chunk goes out verbatim (its line breaks lay out the Markdown on
+    // screen), but TTS only needs the words - and the SDK rejects
+    // whitespace-only text outright, so such a chunk goes out as text only.
+    const speech = sentence.trim();
     let synthesis: { audio: Buffer; sampleRate: number } | undefined;
-    try {
-      synthesis = await this.ttsService.synthesizeSync(sentence);
-    } catch (err) {
-      console.error("[voice:tts]", err);
+    if (speech) {
+      try {
+        synthesis = await this.ttsService.synthesizeSync(speech);
+      } catch (err) {
+        console.error("[voice:tts]", err);
+      }
     }
     await onChunk({ text: sentence, ...synthesis });
   }
