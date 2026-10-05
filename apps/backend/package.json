@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "node scripts/bundle.mjs",
+    "compile": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "dev": "tsx watch src/server.ts",

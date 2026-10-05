@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 260" width="900" height="260" role="img" aria-labelledby="metrics-title">
+  <title id="metrics-title">Measured, not assumed — bundle size, embedding latency/throughput/load time, test count</title>
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <style>
+      text {
+        font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+    </style>
+  </defs>
+
+  <text x="450" y="32" text-anchor="middle"
+        fill="#94a3b8" font-size="13" letter-spacing="3">
+    MEASURED, NOT ASSUMED
+  </text>
+
+  <!-- separators -->
+  <line x1="180" y1="70" x2="180" y2="215" stroke="#334155"/>
+  <line x1="360" y1="70" x2="360" y2="215" stroke="#334155"/>
+  <line x1="540" y1="70" x2="540" y2="215" stroke="#334155"/>
+  <line x1="720" y1="70" x2="720" y2="215" stroke="#334155"/>
+
+  <!-- metric 1 -->
+  <text x="90" y="125" text-anchor="middle"
+        fill="#18b480" font-size="30" font-weight="700"
+        filter="url(#glow)">18%</text>
+  <text x="90" y="155" text-anchor="middle"
+        fill="#94a3b8" font-size="11">SMALLER</text>
+  <text x="90" y="172" text-anchor="middle"
+        fill="#94a3b8" font-size="11">BUNDLE</text>
+
+  <!-- metric 2 -->
+  <text x="270" y="125" text-anchor="middle"
+        fill="#18b480" font-size="30" font-weight="700"
+        filter="url(#glow)">~13%</text>
+  <text x="270" y="155" text-anchor="middle"
+        fill="#94a3b8" font-size="11">LOWER EMBEDDING</text>
+  <text x="270" y="172" text-anchor="middle"
+        fill="#94a3b8" font-size="11">LATENCY</text>
+
+  <!-- metric 3 -->
+  <text x="450" y="125" text-anchor="middle"
+        fill="#18b480" font-size="30" font-weight="700"
+        filter="url(#glow)">~16%</text>
+  <text x="450" y="155" text-anchor="middle"
+        fill="#94a3b8" font-size="11">HIGHER</text>
+  <text x="450" y="172" text-anchor="middle"
+        fill="#94a3b8" font-size="11">THROUGHPUT</text>
+
+  <!-- metric 4 -->
+  <text x="630" y="125" text-anchor="middle"
+        fill="#18b480" font-size="30" font-weight="700"
+        filter="url(#glow)">~4&#215;</text>
+  <text x="630" y="155" text-anchor="middle"
+        fill="#94a3b8" font-size="11">FASTER MODEL</text>
+  <text x="630" y="172" text-anchor="middle"
+        fill="#94a3b8" font-size="11">LOAD</text>
+
+  <!-- metric 5 -->
+  <text x="810" y="125" text-anchor="middle"
+        fill="#18b480" font-size="30" font-weight="700"
+        filter="url(#glow)">296</text>
+  <text x="810" y="155" text-anchor="middle"
+        fill="#94a3b8" font-size="11">BACKEND TESTS</text>
+  <text x="810" y="172" text-anchor="middle"
+        fill="#94a3b8" font-size="11">PASSED</text>
+
+  <text x="450" y="235" text-anchor="middle"
+        fill="#64748b" font-size="10">
+    benchmark results are documented in /docs
+  </text>
+</svg>

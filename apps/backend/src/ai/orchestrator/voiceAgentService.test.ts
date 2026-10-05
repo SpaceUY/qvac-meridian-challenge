@@ -346,7 +346,7 @@ describe("VoiceAgentService.invokeStreaming", () => {
 
     expect(chunks).toEqual([
       { text: "First sentence here.", audio: Buffer.from("First sentence here."), sampleRate: 16000 },
-      { text: "Second one follows.", audio: Buffer.from("Second one follows."), sampleRate: 16000 },
+      { text: " Second one follows.", audio: Buffer.from("Second one follows."), sampleRate: 16000 },
     ]);
     expect((ttsPort as ImmediateTtsPort).synthesizeCalls.map((call) => call.text)).toEqual([
       "First sentence here.",
@@ -371,6 +371,27 @@ describe("VoiceAgentService.invokeStreaming", () => {
     });
 
     expect(chunks.map((chunk) => chunk.text)).toEqual(["Just one fragment without a period"]);
+  });
+
+  it("emits a whitespace-only chunk as text only, without sending it to TTS", async () => {
+    const { voiceAgentService, ttsPort } = await setupStreaming(
+      [
+        { text: "", toolCalls: [{ id: "call_1", name: "list_documents", arguments: {} }] },
+        { text: "Done.\n", toolCalls: [] },
+      ],
+      "hi",
+    );
+
+    const chunks: { text: string; audio?: Buffer; sampleRate?: number }[] = [];
+    await voiceAgentService.invokeStreaming([], Buffer.from([1]), (chunk) => {
+      chunks.push(chunk);
+    });
+
+    expect(chunks).toEqual([
+      { text: "Done.", audio: Buffer.from("Done."), sampleRate: 16000 },
+      { text: "\n" },
+    ]);
+    expect((ttsPort as ImmediateTtsPort).synthesizeCalls.map((call) => call.text)).toEqual(["Done."]);
   });
 
   it("degrades a single chunk to text-only when its synthesis fails, without failing the rest of the turn", async () => {

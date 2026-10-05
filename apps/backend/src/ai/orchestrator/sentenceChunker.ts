@@ -1,6 +1,6 @@
 const SENTENCE_END_RE = /[.!?]+(?=\s|$)/;
 
-/** Buffers streamed deltas and emits complete sentences once the buffer reaches `minChunkChars`, batching short leading sentences into one TTS call. Punctuation-regex detection, not NLP — doesn't handle abbreviations ("Mr. Smith") perfectly. */
+/** Buffers streamed deltas and emits complete sentences verbatim (whitespace included) once the buffer reaches `minChunkChars`, batching short leading sentences into one TTS call - joined back together, chunks reproduce the streamed text exactly (the line breaks lay out Markdown on screen); a consumer that only needs the words (TTS) trims its own copy. Punctuation-regex detection, not NLP - doesn't handle abbreviations ("Mr. Smith") perfectly. */
 export class SentenceChunker {
   private buffer = "";
 
@@ -17,16 +17,16 @@ export class SentenceChunker {
       if (!match) break;
 
       const cutIndex = searchStart + match.index + match[0].length;
-      sentences.push(this.buffer.slice(0, cutIndex).trim());
+      sentences.push(this.buffer.slice(0, cutIndex));
       this.buffer = this.buffer.slice(cutIndex);
     }
 
     return sentences;
   }
 
-  /** Returns whatever text is left buffered (trimmed), clearing it - `undefined` if nothing remains. */
+  /** Returns whatever text is left buffered, verbatim, clearing it - `undefined` if nothing remains. */
   flush(): string | undefined {
-    const remainder = this.buffer.trim();
+    const remainder = this.buffer;
     this.buffer = "";
     return remainder.length > 0 ? remainder : undefined;
   }

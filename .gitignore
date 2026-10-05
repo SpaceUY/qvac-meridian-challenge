@@ -11,4 +11,4 @@ coverage/
 *.tsbuildinfo
 .lancedb/
 .claude/*
-/qvac/
+/apps/backend/qvac/

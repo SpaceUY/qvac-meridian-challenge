@@ -246,6 +246,16 @@ export const TTS_MODEL_NAMES_BY_TIER: Record<ResourceTier, string> = mapTiers(
 /** textToSpeech() doesn't return this - same for all Supertonic versions per @qvac/tts-ggml. */
 export const SUPERTONIC_SAMPLE_RATE = 44100;
 
+/**
+ * Longest text (in characters) sent to Supertonic in one synthesis job -
+ * QvacTtsAdapter has the SDK split longer text. A single job yields at
+ * most ~28 s of audio: past that the engine squeezes, drops and truncates
+ * words (measured 2026-10-02: 300 chars already lost words, 600 was
+ * unintelligible). 200 chars ≈ 22 s of number-dense text. Measured on
+ * Supertonic3 Q4_0, voice F1, English, speed 1.0.
+ */
+export const SUPERTONIC_MAX_CHUNK_CHARS = 200;
+
 /** voice: 'F1' matches @qvac/sdk's own TTS examples. */
 export const DEFAULT_SUPERTONIC_ENGINE_CONFIG = {
   ttsEngine: "supertonic",
