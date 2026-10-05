@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ModelManagementService } from '../../models/service/models.service.js';
 import type { ModelProvisioningPort, ModelRuntimePort } from '../../models/domain/ports.js';
 import type {
@@ -12,7 +12,7 @@ import type {
   RegistrySearchQuery
 } from '../../models/domain/types.js';
 import type { TextToSpeechPort } from '../domain/ports.js';
-import type { SynthesisResult } from '../domain/types.js';
+import type { SynthesisOptions, SynthesisResult } from '../domain/types.js';
 import { SynthesisInProgressError } from '../domain/errors.js';
 import { DEFAULT_SUPERTONIC_ENGINE_CONFIG, TTS_MODELS_BY_TIER } from '../../config/models.config.js';
 import { RESOURCE_TIER, type ResourceTier } from '../../config/resourceTier.js';
@@ -62,13 +62,13 @@ class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
 
 /** Controllable fake: synthesize() only settles when the test calls resolveNext()/rejectNext(). */
 class FakeTtsPort implements TextToSpeechPort {
-  synthesizeCalls: { modelId: string; text: string }[] = [];
+  synthesizeCalls: { modelId: string; text: string; options?: SynthesisOptions }[] = [];
   cancelCalls: string[] = [];
   private pendingResolve?: (result: SynthesisResult) => void;
   private pendingReject?: (err: unknown) => void;
 
-  synthesize(modelId: string, text: string): Promise<SynthesisResult> {
-    this.synthesizeCalls.push({ modelId, text });
+  synthesize(modelId: string, text: string, options?: SynthesisOptions): Promise<SynthesisResult> {
+    this.synthesizeCalls.push({ modelId, text, options });
     return new Promise((resolve, reject) => {
       this.pendingResolve = resolve;
       this.pendingReject = reject;
@@ -231,5 +231,68 @@ describe('TtsService', () => {
 
     await expect(promise).rejects.toThrow('boom');
     expect(service.getStatus()).toBe('idle');
+  });
+});
+
+describe('TtsService.synthesizeSync', () => {
+  const AUDIO = { audio: Buffer.from([1]), sampleRate: 44100 };
+
+  it('runs one synthesis at a time: the second waits until the first is done', async () => {
+    const { service, port } = setup();
+
+    const first = service.synthesizeSync('first');
+    const second = service.synthesizeSync('second');
+    await vi.waitFor(() => expect(port.synthesizeCalls).toHaveLength(1));
+    await flushMicrotasks();
+    expect(port.synthesizeCalls).toHaveLength(1);
+
+    port.resolveNext(AUDIO);
+    await expect(first).resolves.toEqual(AUDIO);
+    await vi.waitFor(() => expect(port.synthesizeCalls.map((call) => call.text)).toEqual(['first', 'second']));
+    port.resolveNext(AUDIO);
+    await expect(second).resolves.toEqual(AUDIO);
+  });
+
+  it('drops a call still waiting in line when its signal aborts, without ever reaching the engine', async () => {
+    const { service, port } = setup();
+    const controller = new AbortController();
+
+    const first = service.synthesizeSync('first');
+    const second = service.synthesizeSync('second', { signal: controller.signal });
+    await vi.waitFor(() => expect(port.synthesizeCalls).toHaveLength(1));
+    controller.abort();
+
+    await expect(second).rejects.toMatchObject({ name: 'AbortError' });
+    port.resolveNext(AUDIO);
+    await first;
+    await flushMicrotasks();
+    expect(port.synthesizeCalls.map((call) => call.text)).toEqual(['first']);
+  });
+
+  it('passes the signal on to the port, so a running synthesis can stop between engine jobs', async () => {
+    const { service, port } = setup();
+    const controller = new AbortController();
+
+    const pending = service.synthesizeSync('hello', { signal: controller.signal });
+    await vi.waitFor(() => expect(port.synthesizeCalls).toHaveLength(1));
+    expect(port.synthesizeCalls[0]?.options?.signal).toBe(controller.signal);
+
+    controller.abort();
+    port.rejectNext(controller.signal.reason);
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('frees the engine for the next call after a synthesis fails', async () => {
+    const { service, port } = setup();
+
+    const failing = service.synthesizeSync('boom');
+    await vi.waitFor(() => expect(port.synthesizeCalls).toHaveLength(1));
+    port.rejectNext(new Error('engine failed'));
+    await expect(failing).rejects.toThrow('engine failed');
+
+    const next = service.synthesizeSync('next');
+    await vi.waitFor(() => expect(port.synthesizeCalls).toHaveLength(2));
+    port.resolveNext(AUDIO);
+    await expect(next).resolves.toEqual(AUDIO);
   });
 });

@@ -1,8 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { toModelManagementError } from '../../models/domain/errors.js';
+import { ConcurrencyLimiter } from '../../models/service/concurrencyLimiter.js';
 import type { ModelManagementService } from '../../models/service/models.service.js';
 import type { TextToSpeechPort } from '../domain/ports.js';
 import { SynthesisInProgressError } from '../domain/errors.js';
-import type { SynthesisResult, SynthesisState } from '../domain/types.js';
+import type { SynthesisOptions, SynthesisResult, SynthesisState } from '../domain/types.js';
 import { DEFAULT_SUPERTONIC_ENGINE_CONFIG, TTS_MODELS_BY_TIER } from '../../config/models.config.js';
 import { RESOURCE_TIER, type ResourceTier } from '../../config/resourceTier.js';
 
@@ -22,6 +24,8 @@ interface SynthesisSlot {
 export class TtsService {
   private modelIdPromise?: Promise<string>;
   private slot: SynthesisSlot = { state: 'idle' };
+  /** One synthesizeSync() in the engine at a time - the one loaded Supertonic model isn't safe for concurrent use, and a stopped turn's last job may still be running when the next turn starts. */
+  private readonly engine = new ConcurrencyLimiter(1);
 
   /** `tier` defaults to the process-wide `RESOURCE_TIER`, overridable for tests. */
   constructor(
@@ -53,13 +57,37 @@ export class TtsService {
     this.runInBackground(modelId, text);
   }
 
-  /** Synchronous flow for callers that need the finished audio in the same call (VoiceAgentService) — bypasses the pending/cancel slot the async synthesize()/getAudio() flow uses. Still respects that slot: throws if an async synthesis is mid-flight, instead of calling the port concurrently against the one loaded Supertonic model. */
-  async synthesizeSync(text: string): Promise<SynthesisResult> {
+  /**
+   * Synchronous flow for callers that need the finished audio in the same
+   * call (VoiceAgentService) - bypasses the pending/cancel slot the async
+   * synthesize()/getAudio() flow uses, but still throws if an async
+   * synthesis is mid-flight. Calls queue for the engine in arrival order.
+   * Aborting `signal` drops a call still waiting in line, and makes one
+   * already running stop between engine jobs; either way it rejects with
+   * the signal's reason.
+   */
+  async synthesizeSync(text: string, options: SynthesisOptions = {}): Promise<SynthesisResult> {
     if (this.slot.state === 'pending') {
       throw new SynthesisInProgressError();
     }
     const modelId = await this.ensureModel();
-    return this.port.synthesize(modelId, text);
+    const key = randomUUID();
+    const leaveQueue = () => this.engine.cancel(key);
+    options.signal?.addEventListener('abort', leaveQueue, { once: true });
+    try {
+      options.signal?.throwIfAborted();
+      const release = await this.engine.acquire(key);
+      try {
+        return await this.port.synthesize(modelId, text, options);
+      } finally {
+        release();
+      }
+    } catch (err) {
+      options.signal?.throwIfAborted(); // a stopped call reports the stop, not the queue's own cancellation error
+      throw err;
+    } finally {
+      options.signal?.removeEventListener('abort', leaveQueue);
+    }
   }
 
   private runInBackground(modelId: string, text: string): void {
