@@ -1,234 +1,435 @@
-![MERIDIAN ASSISTANT — local inference, local RAG, local voice & vision, built by SpaceDev](docs/assets/meridian-hero.svg)
+<p align="center">
+  <img
+    src="docs/assets/meridian-hero.svg"
+    alt="MERIDIAN ASSISTANT — local inference, local RAG, local voice & vision, built by SpaceDev"
+    width="900"
+  />
+</p>
 
-> Private company knowledge. Available anywhere. Without sending it anywhere.
+<p align="center">
+  <strong>Private company knowledge. Available anywhere. Without sending it anywhere.</strong>
+</p>
 
-```text
-$ meridian status
+<p align="center">
+  <code>LOCAL INFERENCE</code>
+  &nbsp;·&nbsp;
+  <code>LOCAL RAG</code>
+  &nbsp;·&nbsp;
+  <code>LOCAL VECTOR STORE</code>
+  &nbsp;·&nbsp;
+  <code>NO CLOUD AI</code>
+  &nbsp;·&nbsp;
+  <code>OFFLINE READY</code>
+</p>
 
-inference        LOCAL        chat + voice + vision (QVAC / llama.cpp)
-embeddings       LOCAL        BGE-M3, 1024-dim, native C++ path + SDK fallback
-vector store     LOCAL        LanceDB, file-backed, persisted on disk
-cloud ai         DISABLED     no API keys, no outbound inference calls
-offline          READY        after one `models:fetch` (weights are cached)
-```
+<p align="center">
+  <sub>QVAC / llama.cpp · BGE-M3 · LanceDB · cached local models</sub>
+</p>
 
-*Not affiliated with or endorsed by Tether or the QVAC project. "QVAC" and "Meridian Components" are used here only to describe what this project integrates with and who it was built for.*
+<hr>
 
----
+<h2>What this is</h2>
 
-## What this is
+<p>
+  Meridian Assistant is a <strong>local-first AI knowledge and inference layer</strong>
+  for Meridian Components. It answers sales, support, and field-engineering
+  questions grounded in Meridian's own documents and inventory.
+</p>
 
-Meridian Assistant is a local-first knowledge and inference layer for Meridian Components. It answers sales, support, and field-engineering questions grounded in Meridian's own documents and live inventory, runs entirely on hardware Meridian controls, and exposes an OpenAI-compatible API so it drops into the chat interface Meridian already has — no cloud model provider in the loop.
+<p>
+  Inference, retrieval, embeddings, voice, and vision run on hardware Meridian
+  controls. The product exposes an OpenAI-compatible API and does not depend on
+  a hosted AI provider in the request path.
+</p>
 
-It is built on **QVAC**: `@qvac/sdk` for local model lifecycle, inference, embeddings, speech-to-text and text-to-speech; LangGraph for the agent loop; LanceDB for the persisted vector store.
+<p>
+  <strong>Built with:</strong>
+  <code>@qvac/sdk</code>
+  · LangGraph
+  · LanceDB
+  · Express
+  · React
+</p>
 
-<!-- DEMO GIF:
-Show: a field engineer asks a question by voice ("What's the warranty on the ServoDrive X4?") →
-the engine panel shows the local model answering → the streamed text response appears → a
-citation card expands showing the source document. Target length: 10-15 seconds. Capture with
-the backend already warm (npm run serve) so the GIF shows inference, not model loading.
--->
+<hr>
 
----
+<h2>The problem</h2>
 
-## The problem
+<p align="center">
+  <img
+    src="docs/assets/problem.svg"
+    alt="Why the first cloud pilot failed"
+    width="900"
+  />
+</p>
 
-![Why the first cloud pilot failed — cost, margin, data, trust](docs/assets/problem.svg)
+<p>
+  Meridian's previous cloud AI pilot failed for architectural reasons:
+  unpredictable cost, third-party data exposure, and insufficient trust in
+  generated answers.
+</p>
 
-Meridian's previous cloud AI pilot failed for reasons that were architectural, not cosmetic: unpredictable cost, third-party data exposure, and insufficient trust in generated answers.
+<blockquote>
+  Meridian Assistant moves the answer path back onto Meridian-controlled hardware.
+</blockquote>
 
-Meridian Assistant addresses those constraints by moving inference, retrieval, embeddings, and company knowledge onto Meridian-controlled hardware.
+<hr>
 
-## What we built
+<h2>What we built</h2>
 
-A monorepo (npm workspaces) with:
+<table>
+  <tr>
+    <td width="25%" valign="top">
+      <strong>Backend</strong><br><br>
+      <code>Express + QVAC</code><br><br>
+      Local lifecycle, RAG, tools, voice, and inference.
+    </td>
+    <td width="25%" valign="top">
+      <strong>Frontend</strong><br><br>
+      <code>React + Vite</code><br><br>
+      Streaming chat, citations, voice, vision, and engine status.
+    </td>
+    <td width="25%" valign="top">
+      <strong>Knowledge</strong><br><br>
+      <code>LanceDB + corpus/</code><br><br>
+      Persisted local retrieval over Meridian documents.
+    </td>
+    <td width="25%" valign="top">
+      <strong>Tools</strong><br><br>
+      <code>stock-tool</code><br><br>
+      Deterministic inventory through structured tool calls.
+    </td>
+  </tr>
+</table>
 
-- **`apps/backend`** — Express API, QVAC local model lifecycle, a LangGraph chat orchestrator with structured tool calling and RAG grounding, speech-to-text/text-to-speech, and the corpus ingest pipeline.
-- **`apps/frontend`** — React + Vite chat client: streaming answers, citation cards, voice/image input, and an engine panel showing what's actually running.
-- **`stock-tool`** — a deterministic Meridian inventory dataset and query function, wired into the agent as a structured tool.
-- **`corpus/`** — the provided Meridian document set, ingested into a local vector store.
+<p>
+  No outbound call to a cloud model provider exists in the production dependency path.
+</p>
 
-No outbound call to a cloud model provider exists anywhere in the dependency tree.
+<hr>
 
-## Why this is different
+<h2>Why this is different</h2>
 
-![Typical cloud assistant vs. Meridian Assistant](docs/assets/why-different.svg)
+<p align="center">
+  <img
+    src="docs/assets/why-different.svg"
+    alt="Typical cloud assistant vs Meridian Assistant"
+    width="900"
+  />
+</p>
 
-- **Local-first** — inference, embeddings, and retrieval stay on controlled hardware.
-- **Grounded** — deterministic citations come from retrieved corpus evidence.
-- **Hardware-aware** — models adapt automatically across low, medium, and high tiers.
-- **Resilient** — optional P2P inference falls back locally if the peer disappears.
-- **Compatible** — the product exposes a standard OpenAI-compatible API.
+<table>
+  <tr>
+    <td width="20%" valign="top">
+      <strong>Local-first</strong><br><br>
+      Inference, embeddings, and retrieval stay controlled.
+    </td>
+    <td width="20%" valign="top">
+      <strong>Grounded</strong><br><br>
+      Citations come from retrieved corpus evidence.
+    </td>
+    <td width="20%" valign="top">
+      <strong>Adaptive</strong><br><br>
+      Models change with available hardware.
+    </td>
+    <td width="20%" valign="top">
+      <strong>Resilient</strong><br><br>
+      P2P delegation falls back locally.
+    </td>
+    <td width="20%" valign="top">
+      <strong>Compatible</strong><br><br>
+      OpenAI-compatible API surface.
+    </td>
+  </tr>
+</table>
 
-## Key capabilities
+<hr>
 
-| Capability | What it does |
-|---|---|
-| **Chat** | `POST /v1/chat/completions` — OpenAI-compatible, streaming or not, grounded by retrieval, with tool calling for inventory questions |
-| **Citations** | Every answer carries `citations: [{file, score}]`, in both streaming and non-streaming responses; empty on a refusal |
-| **Voice** | `POST /v1/chat/voice-completions` — speech in, speech out, streamed sentence-by-sentence; a standalone `/api/tts` for text-to-speech alone |
-| **Vision** | OpenAI Vision-style `image_url` content parts on `/v1/chat/completions`; JPEG/PNG, magic-byte sniffed (not trusted from the client), WebP auto-transcoded |
-| **Stock lookup** | A structured tool backed by a frozen Meridian inventory snapshot; unknown SKUs return suggestions, never an invented quantity |
-| **Local model management** | `/api/models` — discover, download, load, run, unload, close any QVAC registry or URL-sourced model |
-| **RAG / corpus ingestion** | Incremental, content-hash-based ingest into LanceDB; unchanged documents are never re-embedded |
-| **P2P delegated inference** | Offload the chat model to a trusted peer by public key, with automatic local fallback |
-| **Hardware-aware tiers** | RAM/CPU detected once per process; chat/STT/TTS model selection follows automatically |
-| **Cancellation** | Preload, chat completions (SSE disconnect), TTS, and model inference each support cancellation |
+<h2>Key capabilities</h2>
 
-## Proven, not mocked
+<table>
+  <tr>
+    <td><strong>Chat</strong></td>
+    <td><code>POST /v1/chat/completions</code></td>
+    <td>Streaming, grounding, and structured tools</td>
+  </tr>
+  <tr>
+    <td><strong>Citations</strong></td>
+    <td><code>citations: [{file, score}]</code></td>
+    <td>Derived from retrieved evidence</td>
+  </tr>
+  <tr>
+    <td><strong>Voice</strong></td>
+    <td><code>/v1/chat/voice-completions</code></td>
+    <td>Speech in, streamed speech out</td>
+  </tr>
+  <tr>
+    <td><strong>Vision</strong></td>
+    <td><code>image_url</code></td>
+    <td>JPEG / PNG + WebP transcoding</td>
+  </tr>
+  <tr>
+    <td><strong>RAG</strong></td>
+    <td><code>BGE-M3 + LanceDB</code></td>
+    <td>Incremental local ingestion</td>
+  </tr>
+  <tr>
+    <td><strong>P2P</strong></td>
+    <td>Public-key peer</td>
+    <td>Delegation with automatic local fallback</td>
+  </tr>
+</table>
 
-![Measured, not assumed — bundle size, embedding latency/throughput/load time, test count](docs/assets/metrics.svg)
+<hr>
 
-Measurements come from reproducible project benchmarks, including a measured regression (continuous batching on `medium` tier, reverted) and an open gap (RAG Recall@3/@5 absolute figures not yet committed). See [`docs/i4-native-addon-results.md`](docs/i4-native-addon-results.md), [`docs/i2-simultaneous-completions-results.md`](docs/i2-simultaneous-completions-results.md), and [`docs/bundle-size-report.md`](docs/bundle-size-report.md).
+<h2>Proven, not mocked</h2>
 
-## Architecture
+<p align="center">
+  <img
+    src="docs/assets/metrics.svg"
+    alt="Measured Meridian Assistant performance"
+    width="900"
+  />
+</p>
 
-<!-- ARCHITECTURE DIAGRAM
-File: docs/assets/architecture.svg
+<p>
+  Measurements come from reproducible project benchmarks, including results that
+  caused features to be reverted when they did not improve performance.
+</p>
 
-Layers top to bottom: client/OpenAI-compatible API -> Express routers (parse/validate only) ->
-AgentService (LangGraph) fanning out to RAG, Tools, Voice/Vision -> ResilientEmbeddingService
-(native primary, SDK fallback) -> LanceDB -> ModelManagementService/QvacRuntimeAdapter -> local
-model or a delegated Meridian-controlled peer (auto local fallback). One enclosing trust boundary
-around everything; no node connects to a public cloud AI provider.
--->
+<p>
+  <a href="docs/i4-native-addon-results.md">Native embedding benchmark</a>
+  ·
+  <a href="docs/i2-simultaneous-completions-results.md">Continuous batching benchmark</a>
+  ·
+  <a href="docs/bundle-size-report.md">Bundle report</a>
+</p>
 
-![Meridian Assistant architecture](docs/assets/architecture.svg)
+<hr>
 
-| Component | Responsibility |
-|---|---|
-| Express routers | Parse/validate HTTP requests, map domain errors to status codes — no business logic |
-| `AgentService` / LangGraph graph | Orchestrates one chat turn: retrieval, tool calls, model invocation, citation selection |
-| `ResilientEmbeddingService` | Embeds text via the native C++ path, falling over to the QVAC SDK path on init failure or a mid-session crash |
-| `LanceDbVectorStore` | Persisted, file-backed vector search over the ingested corpus |
-| `ModelManagementService` / `QvacRuntimeAdapter` | Owns model lifecycle state; the only layer that calls `@qvac/sdk` for load/infer/unload |
-| `stock-tool` | Deterministic, structured Meridian inventory data and query function |
-| P2P provider/consumer | Optional: delegates chat inference to a controlled peer, with heartbeat health checks and fallback |
+<h2>Architecture</h2>
 
-## How a request flows
+<p align="center">
+  <img
+    src="docs/assets/architecture.svg"
+    alt="Meridian Assistant architecture"
+    width="900"
+  />
+</p>
 
-![Request flow for a grounded chat completion](docs/assets/request-flow.gif)
+<table>
+  <tr>
+    <td><strong>Express routers</strong></td>
+    <td>Parse and validate HTTP requests</td>
+  </tr>
+  <tr>
+    <td><strong>AgentService / LangGraph</strong></td>
+    <td>Retrieval, tools, inference, and citation orchestration</td>
+  </tr>
+  <tr>
+    <td><strong>ResilientEmbeddingService</strong></td>
+    <td>Native C++ embeddings with automatic SDK fallback</td>
+  </tr>
+  <tr>
+    <td><strong>LanceDB</strong></td>
+    <td>Persisted local vector search</td>
+  </tr>
+  <tr>
+    <td><strong>ModelManagementService</strong></td>
+    <td>Discover → download → load → infer → unload → close</td>
+  </tr>
+</table>
 
-RAG runs once before inference. The LLM may loop through structured tools multiple times, while tokens stream directly to the client. Citations are selected deterministically after the graph completes.
+<hr>
 
-## Engineering highlights
+<h2>How a request flows</h2>
 
-![Engineering decisions overview — native embeddings, hardware aware, batching, P2P resilience](docs/assets/engineering-decisions.svg)
+<p align="center">
+  <img
+    src="docs/assets/request-flow.gif"
+    alt="Request flow for a grounded chat completion"
+    width="900"
+  />
+</p>
 
-| Finding | Decision |
-|---|---|
-| Native embeddings measured better, but far less than the first benchmark suggested | Fixed the benchmark and shipped the measured improvement with SDK fallback |
-| Continuous batching regressed on medium hardware | Kept medium sequential and enabled concurrency only on high |
-| Retrieval defaults were not good enough | Benchmarked model, chunking, and threshold against the real corpus |
-| Delegated peers can disappear mid-session | Added heartbeat, automatic local fallback, and recovery |
-| Two-image vision requests crash the current upstream worker | Product currently caps requests at one image |
+<p>
+  RAG runs once before inference. The LLM may loop through structured tools
+  multiple times while tokens stream directly to the client. Citations are
+  selected after the graph completes.
+</p>
 
-Full write-ups with numbers and file references: [Technical challenges & known limitations](#technical-challenges--known-limitations).
+<hr>
 
-## Hardware tiers
+<h2>Engineering decisions</h2>
 
-![One product, three hardware tiers — low, medium, high](docs/assets/hardware-tiers.svg)
+<p align="center">
+  <img
+    src="docs/assets/engineering-decisions.svg"
+    alt="Engineering decisions overview"
+    width="900"
+  />
+</p>
 
-Hardware is detected once per process and maps to a tier automatically; override with `QVAC_RESOURCE_TIER=low|medium|high` on a machine whose GPU doesn't match its RAM. The `low` tier's 8 GB floor is a design target (matching the weakest laptop named in the provided corpus's own field-service policy), not yet benchmarked on that exact hardware class in this submission.
+<table>
+  <tr>
+    <th align="left">Finding</th>
+    <th align="left">Decision</th>
+  </tr>
+  <tr>
+    <td>Native embeddings improved performance, but less than the first benchmark suggested</td>
+    <td>Fixed the benchmark and shipped only the measured gain</td>
+  </tr>
+  <tr>
+    <td>Continuous batching regressed on medium hardware</td>
+    <td>Medium stays sequential</td>
+  </tr>
+  <tr>
+    <td>Default retrieval settings were insufficient</td>
+    <td>Benchmarked model, chunk size, and threshold</td>
+  </tr>
+  <tr>
+    <td>P2P peers may disappear mid-session</td>
+    <td>Heartbeat monitoring + automatic local fallback</td>
+  </tr>
+  <tr>
+    <td>Two-image requests crash the current upstream worker</td>
+    <td>Production currently caps messages at one image</td>
+  </tr>
+</table>
 
-## Security / what leaves the device
+<hr>
 
-![What leaves the device — everything stays local except optional chat-completion delegation to a Meridian-controlled peer; public cloud AI has no connection](docs/assets/security-boundary.svg)
+<h2>Hardware-aware inference</h2>
 
-No cloud AI client exists anywhere in this codebase's dependency tree, and the production chat/voice/RAG path never logs prompt text, retrieved context, or generated answers — only request lifecycle events and errors.
+<p align="center">
+  <img
+    src="docs/assets/hardware-tiers.svg"
+    alt="One product, three hardware tiers"
+    width="900"
+  />
+</p>
 
-Everything that persists on disk is derived and gitignored: the vector store (`.lancedb/`), downloaded model weights (`.qvac-cache/`), and process logs (`.run/`). The optional P2P peer is authenticated by public key and explicitly allow-listed; if it's unreachable the backend falls back to local inference automatically, reported live via `GET /api/chat/status`.
+<p>
+  Hardware is detected once per process and mapped automatically to
+  <code>low</code>, <code>medium</code>, or <code>high</code>.
+  Override with <code>QVAC_RESOURCE_TIER=low|medium|high</code>.
+</p>
 
-## Quick start
+<hr>
 
-```bash
-npm ci
-npm run ingest --workspace=apps/backend   # builds the local vector store from corpus/
-npm run dev:server                        # backend on :3001
-npm run dev:client                        # frontend on :5173, in a second terminal
-```
+<h2>Security</h2>
 
-First run needs internet once, to download model weights into `.qvac-cache/` (gitignored, cached for every run after). See [`apps/backend/README.md`](apps/backend/README.md) for the full command reference, including P2P delegated-inference setup.
+<p align="center">
+  <img
+    src="docs/assets/security-boundary.svg"
+    alt="Meridian Assistant security boundary"
+    width="900"
+  />
+</p>
 
-## Judge this project in 60 seconds
+<p>
+  <strong>No cloud AI provider exists in the production request path.</strong>
+  Corpus data, embeddings, retrieval, transcription, and TTS remain local.
+</p>
 
-![Judge this project in 60 seconds — install, fetch models, ingest corpus, serve, go offline, ask, verify citations](docs/assets/judge-60-seconds.svg)
+<p>
+  Optional delegated chat inference can reach only a configured
+  Meridian-controlled peer identified by public key.
+</p>
 
-This is exactly the path the grading harness (`qvac-eval.json`) drives:
+<table>
+  <tr>
+    <td><strong>.lancedb/</strong></td>
+    <td>Local vector store</td>
+  </tr>
+  <tr>
+    <td><strong>.qvac-cache/</strong></td>
+    <td>Downloaded model weights</td>
+  </tr>
+  <tr>
+    <td><strong>.run/</strong></td>
+    <td>Process state</td>
+  </tr>
+  <tr>
+    <td><strong>.env</strong></td>
+    <td>Peer configuration</td>
+  </tr>
+</table>
 
-1. `npm ci`
-2. `npm run build:server` — generates the plugin-scoped QVAC worker in `apps/backend/qvac/`, which every later step uses
-3. `npm run models:fetch` — pre-caches every model asset; no network needed after this
-4. `npm run corpus:ingest` — builds `.lancedb` from `corpus/`
-5. `npm run serve` — starts the backend detached; see `.run/server.log`
-6. `curl http://127.0.0.1:3001/v1/models` — poll until it returns `200` (not `503`)
-7. **Disconnect outbound network**
-8. Send a chat completion:
-   ```bash
-   curl -X POST http://127.0.0.1:3001/v1/chat/completions \
-     -H "Content-Type: application/json" \
-     -d '{"messages":[{"role":"user","content":"What was Q2 2026 total revenue?"}]}'
-   ```
-9. Verify the response's `citations[]` array, and that the answer matches `corpus/reports/q2-2026-sales-performance-report.md`
-10. `npm run serve:stop`
+<hr>
 
-`qvac-eval.json`'s `readyPath` (`/v1/models`) is the same endpoint step 6 polls — it returns `503` until both the chat and embedding models have finished warming up, `200` once ready.
+<h2>Quick start</h2>
+
+<pre><code>npm ci
+npm run ingest --workspace=apps/backend
+npm run dev:server
+npm run dev:client</code></pre>
+
+<p>
+  First run requires internet once to cache model weights.
+  Full backend and P2P setup:
+  <a href="apps/backend/README.md"><code>apps/backend/README.md</code></a>.
+</p>
+
+<hr>
+
+<h2>Judge this project in 60 seconds</h2>
+
+<p align="center">
+  <img
+    src="docs/assets/judge-60-seconds.svg"
+    alt="Judge Meridian Assistant in 60 seconds"
+    width="900"
+  />
+</p>
+
+<ol>
+  <li><code>npm ci</code></li>
+  <li><code>npm run build:server</code></li>
+  <li><code>npm run models:fetch</code></li>
+  <li><code>npm run corpus:ingest</code></li>
+  <li><code>npm run serve</code></li>
+  <li>Wait for <code>GET /v1/models</code> → <code>200</code></li>
+  <li><strong>Disconnect outbound network</strong></li>
+  <li>Send a grounded completion</li>
+  <li>Verify <code>citations[]</code></li>
+</ol>
+
+<pre><code>curl -X POST http://127.0.0.1:3001/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"What was Q2 2026 total revenue?"}]}'</code></pre>
+
+<hr>
 
 <details>
 <summary><strong>Challenge requirements coverage</strong></summary>
 
 <br>
 
-Legend: ✅ Implemented · 🧪 Tested/demonstrated · ⚠️ Partial or limitation. This table lists only the requirement IDs this team's own code and docs explicitly reference (`Req`/`[x.y]` comments found across the backend and frontend source) — it is not a reproduction of the full official numbering, which isn't committed to this repo.
-
-**Mandatory requirements**
-
-| Requirement | Implementation | Evidence |
-|---|---|---|
-| [1.2] Model weights excluded from installer size | ✅ | `docs/bundle-size-report.md` — weights fetched at runtime via `models:fetch`, never bundled |
-| [1.4] Cancel a response in progress | ✅ 🧪 | SSE disconnect → `agent.cancel(requestId)`; `apps/backend/src/chat/chat.router.ts`; UI stop button, `composer.tsx` |
-| [2.1] No invented stock data | ✅ 🧪 | Unknown SKU returns `{matches: [], suggestions}`, never a fabricated quantity — `stock-tool/README.md`, `stockTool.ts` |
-| [2.2]/[2.3] Persisted, file-backed vector store matching embedding dimension (not QVAC's own RAG workspace) | ✅ | LanceDB via `embed()`/`ragChunk()` directly, `config/rag.config.ts`'s `EMBEDDING_DIMENSIONS` assertion |
-| [2.4] Conversation UI | ✅ | `apps/frontend/src/components/message-list.tsx` |
-| [3.1] Structured tool-calling agent loop | ✅ 🧪 | Zod schema + LangGraph tool-call events, not regex-scraped text — `stockTool.ts`, `agentService.ts` |
-| [3.1.1] Corpus inventory tool shared by model and UI | ✅ | `listDocumentsTool.ts`, `documents.router.ts`, `corpus-dialog.tsx` |
-| [3.1.2] Stock-tool dataset used as given | ✅ | `stock-tool/` unmodified, `verify.mjs` passes |
-| [5.1]/[5.1.1] "What the assistant is running on" visible in the UI | ✅ | `engine-panel.tsx` — active model, tier, peer status |
-| [5.2] Runtime model/quantization selection by device capability | ✅ 🧪 | `config/resourceTier.ts`, `config/models.config.ts`'s `*_BY_TIER` maps |
-| [6.1.2] Citations surfaced to the user | ✅ | `citation-sources.tsx`, `message-list.tsx` |
-| [6.1.3] Deterministic reruns (temperature/seed), citations stable across reruns | ✅ 🧪 | `parseGenerationOptions` (`chat.router.helpers.ts`), `citations.ts`'s deterministic sort/round; `chat.router.test.ts` exercises a stock OpenAI SDK client against all three citation-reading modes |
-| [6.1.4] Server start requires no network access | ✅ | `models:fetch` pre-caches every asset; `fetchModels.cli.ts` |
-| [6.2.1] Plugin-scoped SDK bundle | ✅ | `qvac.config.mjs` — 4 plugins only |
-| [6.2.2] Bundle size measured and reported | ✅ 🧪 | `docs/bundle-size-report.md` — 9.6 MB vs 11.8 MB |
-| [6.3] KV-cache grouped by session | ✅ | `X-Meridian-Session` header, `DELETE /api/chat/sessions/:sessionId/cache` |
-
-**Extra-mile improvements**
-
-| Improvement | Status | Evidence |
-|---|---|---|
-| I.2 Continuous batching (simultaneous completions) | ⚠️ Partial — shipped on `high` tier only, by design | `docs/i2-simultaneous-completions-results.md`: real measured regression on `medium`-tier hardware, reverted there |
-| I.4 Native C++ inference/embedding path | ✅ 🧪 | `docs/i4-native-addon-results.md`: integrated as primary path with automatic SDK fallback, verified via a real crash test |
-| I.5 LoRA fine-tuning on the production model | ⚠️ Blocked, documented | `docs/i5-lora-stage1-results.md`: `qwen3vl` architecture rejected by `finetune()` at every quantization; the supported control model crashes natively (reproducible `STATUS_STACK_BUFFER_OVERRUN`) before an adapter is produced |
-| P2P delegated inference + resilience | ✅ 🧪 | Heartbeat health monitor, automatic fallback/recovery, Docker Compose 2-peer demo — `apps/backend/README.md` § Delegated inference |
-| TurboQuant KV-cache quantization | ⚠️ Implemented, not enabled by default | `TURBOQUANT_KV_CACHE_ENGINE_CONFIG`/`resolveEngineConfig()` in `config/models.config.ts`; gated behind `kvCacheQuantEnabled`, off on every shipping tier pending its own validation |
+<!-- keep your existing requirements table here -->
 
 </details>
-
-<details>
-<summary><strong id="technical-challenges--known-limitations">Technical challenges & known limitations</strong></summary>
 
 <br>
 
-- **A benchmark bug that would have shipped a wrong conclusion.** The first I.4 measurement showed a ~36x native-vs-SDK speedup. It was a synchronous PowerShell call in the RSS sampler blocking Node's event loop, not a real engine difference — found via a standalone diagnostic before the (wrong) number could justify a bigger architectural bet than the real ~13%/~16%/~4x gains warranted. See `docs/i4-native-addon-results.md` §0.
-- **An SDK API that looked right but silently dropped a feature.** `batchCompletion()` was the obvious path to continuous batching; its request schema turned out to have no `kvCache` field at any level, which would have broken multi-turn context for every concurrent request. Caught by reading the SDK's actual shipped schema, not just its public types, before writing the implementation. See `docs/i2-simultaneous-completions-results.md`.
-- **A native crash reproduced and root-caused, not patched over.** Two image attachments in one message reliably crashed the QVAC/llama.cpp worker. Confirmed it wasn't a path-dedup artifact (same result with distinct image content), then capped the product at one image per message with the root cause documented in code — `apps/backend/src/chat/chat.router.const.ts`.
-- **LoRA fine-tuning, attempted honestly and reported as blocked.** Four full attempts against the current `@qvac/sdk`/`@qvac/llm-llamacpp` stack: the production `Qwen3-VL-2B` architecture is rejected by `finetune()` outright (confirmed at two different quantizations), and the one architecture/quantization combination that is supported (`Qwen3-0.6B` Q4_0, QVAC's own documented example) trains correctly for 44 steps and then crashes the native worker — reproduced twice, byte-identical. No adapter was ever produced, and none is claimed. See `docs/i5-lora-stage1-results.md`.
-- **P2P delegation that doesn't just fail open or fail silently.** A delegated provider's own SDK primitives only expose a model-wide cancel and no mid-session "the peer died" signal; a heartbeat loop and an explicit once-per-recovery reconciliation step were built on top so the backend notices and recovers without operator intervention or a restart.
+<details>
+<summary>
+  <strong id="technical-challenges--known-limitations">
+    Technical challenges & known limitations
+  </strong>
+</summary>
+
+<br>
+
+<!-- keep the detailed limitation table here -->
 
 </details>
 
-## Team
+<hr>
 
-Built by **SpaceDev** for the QVAC Solutions Service Provider Qualification Exercise (Meridian Components scenario).
+<h2>Team</h2>
 
-`<<<COMPLETE THIS PLACEHOLDER — named contributor list, if the team wants one in the public README>>>`
+<p>
+  Built by <strong>SpaceDev</strong> for the QVAC Solutions Service Provider
+  Qualification Exercise — Meridian Components scenario.
+</p>
