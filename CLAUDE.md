@@ -24,7 +24,7 @@ Run from the repo root (npm workspaces: `apps/*`, `stock-tool`).
 - `npm run lint --workspace=apps/frontend` — run Oxlint on the frontend
 
 `qvac-eval.json` (repo root) declares the commands the grading harness uses to stand up and exercise
-the backend — see its `setup`/`start`/`shutdown` entries and the root README's "Grading harness" section.
+the backend — see its `setup`/`start`/`shutdown` entries and the root README's "Judge this project in 60 seconds" section.
 
 ## Architecture
 

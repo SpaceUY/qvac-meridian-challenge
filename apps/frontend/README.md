@@ -1,32 +1,54 @@
-# React + TypeScript + Vite
+# Meridian Assistant — frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + Vite chat client for the Meridian Assistant backend (`apps/backend`). Talks to the
+backend's OpenAI-compatible API over a same-origin dev proxy — no separate frontend API, no CORS
+configuration to maintain.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+TypeScript (strict) · React 19 · Vite · Tailwind CSS · shadcn/ui components · Oxlint · Vitest.
 
-## React Compiler
+## Run it
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Needs the backend running first (`npm run dev:server` from the repo root — see the root
+[README](../../README.md) and [`apps/backend/README.md`](../backend/README.md)).
 
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm run dev       # Vite dev server, default :5173
+npm run build     # tsc -b && vite build
+npm run test      # Vitest
+npm run lint      # Oxlint
+npm run preview   # serve the production build locally
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## How it talks to the backend
+
+`vite.config.ts` proxies `/v1` and `/api` to `http://127.0.0.1:3001` in dev, so the browser only
+ever sees one origin. `src/lib/config.ts` holds the handful of `VITE_`-prefixed overrides (see
+`.env.example`) — the completions endpoint, the public model alias, and the session header the
+backend uses to group KV-cache by conversation (`X-Meridian-Session`).
+
+## What's here
+
+- **Chat** (`components/chat-panel.tsx`, `message-list.tsx`, `composer.tsx`) — streaming
+  responses over SSE, markdown rendering, a "new chat" reset.
+- **Citations** (`citation-sources.tsx`) — hover cards over each cited source document.
+- **Voice** (`mic-button.tsx`, `recording-bar.tsx`, `audio-playback.tsx`,
+  `hooks/use-voice-turn.ts`, `lib/mic-recorder.ts`, `lib/audio-chunk-queue.ts`) — record a
+  question, stream the transcribed reply back as audio.
+- **Vision** (`attach-button.tsx`, `image-thumbnail-row.tsx`, `image-lightbox.tsx`,
+  `lib/image-attachments.ts`) — attach an image to a chat message.
+- **Engine panel** (`engine-panel.tsx`, `hooks/use-model-status.ts`,
+  `hooks/use-delegation-notifications.ts`, `lib/engine-status.ts`, `lib/peers.ts`) — which model
+  is loaded, the resolved hardware tier, and whether chat is currently running locally or
+  delegated to a P2P peer.
+- **Corpus browser** (`corpus-dialog.tsx`, `document-grid.tsx`, `hooks/use-documents.ts`) — the
+  same document inventory the backend's `list_documents` tool sees.
+- **Tool badges** (`tool-badges.tsx`, `lib/tool-label.ts`) — which structured tools (e.g.
+  `lookup_stock`) a given reply used.
+
+## Tests
+
+`npm run test` runs the Vitest suite under `src/lib/*.test.ts` — parsing (SSE frames, thinking
+blocks, citation labels), the chat store, prompt length limits, and the peer/delegation status
+formatting. No component/DOM tests yet; these are all pure-logic unit tests.

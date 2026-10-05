@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 275" width="900" height="275" role="img" aria-labelledby="qvac-langgraph-title">
+  <title id="qvac-langgraph-title">@space-uy/qvac-langgraph — a LangGraph ↔ QVAC adapter published on npm</title>
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <style>
+      text {
+        font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+    </style>
+  </defs>
+
+  <text x="450" y="30" text-anchor="middle" fill="#94a3b8"
+        font-size="13" letter-spacing="3">
+    OUR CONTRIBUTION BACK TO QVAC
+  </text>
+
+  <text x="450" y="92" text-anchor="middle" fill="#18b480"
+        font-size="28" font-weight="700" filter="url(#glow)">
+    @space-uy/qvac-langgraph
+  </text>
+
+  <text x="450" y="118" text-anchor="middle" fill="#94a3b8" font-size="13">
+    the ChatQVAC adapter this entire orchestrator runs on
+  </text>
+
+  <line x1="225" y1="148" x2="225" y2="228" stroke="#334155"/>
+  <line x1="450" y1="148" x2="450" y2="228" stroke="#334155"/>
+  <line x1="675" y1="148" x2="675" y2="228" stroke="#334155"/>
+
+  <text x="112.5" y="178" text-anchor="middle"
+        fill="#18b480" font-size="14" filter="url(#glow)">PUBLISHED</text>
+  <text x="112.5" y="198" text-anchor="middle"
+        fill="#94a3b8" font-size="11">real npm package</text>
+  <text x="112.5" y="216" text-anchor="middle"
+        fill="#64748b" font-size="10">not a prototype</text>
+
+  <text x="337.5" y="178" text-anchor="middle"
+        fill="#18b480" font-size="14" filter="url(#glow)">REUSABLE</text>
+  <text x="337.5" y="198" text-anchor="middle"
+        fill="#94a3b8" font-size="11">any LangGraph app</text>
+  <text x="337.5" y="216" text-anchor="middle"
+        fill="#64748b" font-size="10">can drive QVAC directly</text>
+
+  <text x="562.5" y="178" text-anchor="middle"
+        fill="#18b480" font-size="14" filter="url(#glow)">FOUNDATIONAL</text>
+  <text x="562.5" y="198" text-anchor="middle"
+        fill="#94a3b8" font-size="11">powers every tool call,</text>
+  <text x="562.5" y="216" text-anchor="middle"
+        fill="#64748b" font-size="10">RAG turn, and voice reply here</text>
+
+  <text x="787.5" y="178" text-anchor="middle"
+        fill="#18b480" font-size="14" filter="url(#glow)">GIVEN BACK</text>
+  <text x="787.5" y="198" text-anchor="middle"
+        fill="#94a3b8" font-size="11">nobody asked for it</text>
+  <text x="787.5" y="216" text-anchor="middle"
+        fill="#64748b" font-size="10">built for the ecosystem</text>
+
+  <text x="450" y="256" text-anchor="middle" fill="#94a3b8" font-size="11">
+    not scoped by the challenge — built so the next QVAC integration doesn't start from zero
+  </text>
+</svg>

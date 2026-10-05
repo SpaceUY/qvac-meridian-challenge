@@ -49,7 +49,6 @@
   · React
 </p>
 
-
 <h2>The problem</h2>
 
 <p align="center">
@@ -99,6 +98,33 @@
 
 <p>
   No outbound call to a cloud model provider exists in the production dependency path.
+</p>
+
+<h2>Our contribution back to QVAC</h2>
+
+<p align="center">
+  <img
+    src="docs/assets/qvac-langgraph.svg"
+    alt="@space-uy/qvac-langgraph — a LangGraph ↔ QVAC adapter published on npm"
+    width="900"
+  />
+</p>
+
+<p>
+  This product's entire orchestrator — tool calling, RAG grounding, streaming, voice —
+  runs on <code>ChatQVAC</code>, a LangGraph-compatible chat model we built and
+  <strong>published as <code>@space-uy/qvac-langgraph</code> on npm</strong>. It wasn't
+  asked for by the exercise: nothing in the brief requires LangGraph specifically, and we
+  could have wired QVAC's completion API directly into our own graph code and stopped there.
+</p>
+
+<p>
+  Instead we packaged the adapter layer itself — the part that makes
+  <code>loadModel()</code>/<code>completion()</code> look like any other LangChain chat
+  model — as a standalone, versioned dependency (currently <code>1.2.0</code>, resolved
+  from the public npm registry, not vendored). Any team building a LangGraph-based agent
+  on top of QVAC can install it and skip writing this bridge themselves. It's the one
+  piece of this submission that's useful outside this submission.
 </p>
 
 <h2>Why this is different</h2>
@@ -252,33 +278,6 @@
     width="900"
   />
 </p>
-
-<table>
-  <tr>
-    <th align="left">Finding</th>
-    <th align="left">Decision</th>
-  </tr>
-  <tr>
-    <td>Native embeddings improved performance, but less than the first benchmark suggested</td>
-    <td>Fixed the benchmark and shipped only the measured gain</td>
-  </tr>
-  <tr>
-    <td>Continuous batching regressed on medium hardware</td>
-    <td>Medium stays sequential</td>
-  </tr>
-  <tr>
-    <td>Default retrieval settings were insufficient</td>
-    <td>Benchmarked model, chunk size, and threshold</td>
-  </tr>
-  <tr>
-    <td>P2P peers may disappear mid-session</td>
-    <td>Heartbeat monitoring + automatic local fallback</td>
-  </tr>
-  <tr>
-    <td>Two-image requests crash the current upstream worker</td>
-    <td>Production currently caps messages at one image</td>
-  </tr>
-</table>
 
 <h2>Hardware-aware inference</h2>
 
@@ -516,6 +515,11 @@ docker compose up --build</code></pre>
   <tr>
     <th>Improvement</th>
     <th>Status</th>
+  </tr>
+
+  <tr>
+    <td>LangGraph ↔ QVAC integration</td>
+    <td>✅ 🧪 Published as <code>@space-uy/qvac-langgraph</code> on npm — see <a href="#our-contribution-back-to-qvac">above</a></td>
   </tr>
 
   <tr>
