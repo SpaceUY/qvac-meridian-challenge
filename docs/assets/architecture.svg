@@ -1,9 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 680" width="900" height="680" role="img" aria-labelledby="title desc">
-  <title id="title">Meridian Assistant — real runtime architecture</title>
-  <desc id="desc">
-    Architecture from Express through AgentService, LangGraph, ChatQVAC,
-    QvacChatSession, ModelManagementService, QvacRuntimeAdapter and QVAC SDK,
-    including RAG, voice, P2P delegation, concurrency, KV-cache and cancellation.
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 724" width="900" height="724" role="img" aria-labelledby="repo-arch-title repo-arch-desc">
+  <title id="repo-arch-title">Meridian Assistant — repository architecture</title>
+  <desc id="repo-arch-desc">
+    How the monorepo is built: the React frontend talks over HTTP and SSE to the Express backend.
+    The backend has HTTP routers, an AI orchestrator (AgentService, LangGraph, ChatQVAC, QvacChatSession,
+    VoiceAgentService, tools) and domain modules (rag, models, speech and tts, config). They run on a QVAC SDK
+    Bare worker and a native embedder, store vectors in LanceDB, read the corpus, call the stock-tool workspace
+    in-process, and can optionally delegate chat to a Meridian peer.
   </desc>
 
   <defs>
@@ -29,407 +31,196 @@
                      Menlo, Consolas, "Liberation Mono", monospace;
       }
 
-      .label {
-        fill: #64748b;
-        font-size: 9px;
-        letter-spacing: 1.2px;
-      }
+      .label  { fill: #64748b; font-size: 9px; letter-spacing: 1.2px; }
+      .name   { fill: #94a3b8; font-size: 10.5px; }
+      .body   { fill: #94a3b8; font-size: 10px; }
+      .small  { fill: #64748b; font-size: 9.5px; }
+      .title  { fill: #18b480; font-size: 14px; font-weight: 700; }
+      .group  { fill: #18b480; font-size: 9px; letter-spacing: 1.2px; }
 
-      .body {
-        fill: #94a3b8;
-        font-size: 11px;
-      }
+      .box        { fill: none; stroke: #334155; stroke-width: 1.2; }
+      .accentBox  { fill: none; stroke: #18b480; stroke-width: 1.35; }
+      .boundary   { fill: none; stroke: #18b480; stroke-width: 1.5; stroke-dasharray: 6 6; }
+      .subBox     { fill: none; stroke: #334155; stroke-width: 1; stroke-dasharray: 3 4; }
 
-      .small {
-        fill: #64748b;
-        font-size: 9.5px;
-      }
-
-      .title {
-        fill: #18b480;
-        font-size: 14px;
-        font-weight: 700;
-      }
-
-      .box {
-        fill: none;
-        stroke: #334155;
-        stroke-width: 1.2;
-      }
-
-      .accentBox {
-        fill: none;
-        stroke: #18b480;
-        stroke-width: 1.35;
-      }
-
-      .line {
-        fill: none;
-        stroke: #475569;
-        stroke-width: 1.15;
-      }
-
-      .accentLine {
-        fill: none;
-        stroke: #18b480;
-        stroke-width: 1.35;
-      }
-
-      .dash {
-        stroke-dasharray: 5 5;
-      }
+      .line       { fill: none; stroke: #475569; stroke-width: 1.15; }
+      .accentLine { fill: none; stroke: #18b480; stroke-width: 1.35; }
+      .dash       { stroke-dasharray: 5 5; }
     </style>
   </defs>
 
   <!-- Header -->
-  <text
-    x="450"
-    y="28"
-    text-anchor="middle"
-    fill="#94a3b8"
-    font-size="13"
-    letter-spacing="3"
-  >
-    REAL RUNTIME ARCHITECTURE
+  <text x="450" y="28" text-anchor="middle" fill="#94a3b8" font-size="13" letter-spacing="3">
+    REPOSITORY ARCHITECTURE
+  </text>
+  <text x="450" y="50" text-anchor="middle" fill="#64748b" font-size="9.5">
+    npm workspaces monorepo · how the pieces are built and connect
   </text>
 
-  <text
-    x="450"
-    y="50"
-    text-anchor="middle"
-    fill="#64748b"
-    font-size="9.5"
-  >
-    one AgentService · one LangGraph · one QVAC session shared by text and voice
+  <!-- ============ FRONTEND ============ -->
+  <rect x="40" y="70" width="820" height="100" rx="8" class="box"/>
+  <text x="60" y="92" class="title" filter="url(#glow)">apps/frontend</text>
+  <text x="840" y="92" text-anchor="end" class="small">React 19 · Vite · Tailwind · TanStack Query · Zustand · :5173</text>
+
+  <rect x="60" y="108" width="148" height="46" rx="6" class="box"/>
+  <text x="134" y="127" text-anchor="middle" class="label">CHAT</text>
+  <text x="134" y="143" text-anchor="middle" class="body">SSE · citations</text>
+
+  <rect x="218" y="108" width="148" height="46" rx="6" class="box"/>
+  <text x="292" y="127" text-anchor="middle" class="label">VOICE</text>
+  <text x="292" y="143" text-anchor="middle" class="body">push-to-talk · WAV</text>
+
+  <rect x="376" y="108" width="148" height="46" rx="6" class="box"/>
+  <text x="450" y="127" text-anchor="middle" class="label">IMAGES</text>
+  <text x="450" y="143" text-anchor="middle" class="body">attach · lightbox</text>
+
+  <rect x="534" y="108" width="148" height="46" rx="6" class="box"/>
+  <text x="608" y="127" text-anchor="middle" class="label">CORPUS</text>
+  <text x="608" y="143" text-anchor="middle" class="body">document browser</text>
+
+  <rect x="692" y="108" width="148" height="46" rx="6" class="box"/>
+  <text x="766" y="127" text-anchor="middle" class="label">ENGINE</text>
+  <text x="766" y="143" text-anchor="middle" class="body">tier · P2P status</text>
+
+  <!-- Frontend -> backend -->
+  <path d="M215 170 V250" class="accentLine" marker-end="url(#arrowAccent)"/>
+  <text x="227" y="186" class="small">HTTP · SSE · JSON</text>
+  <text x="227" y="199" class="small">Vite proxy: /v1 · /api</text>
+
+  <!-- ============ BACKEND ============ -->
+  <rect x="40" y="210" width="650" height="360" rx="10" class="boundary"/>
+  <text x="60" y="234" class="title" filter="url(#glow)">apps/backend</text>
+  <text x="670" y="234" text-anchor="end" class="small">Express 5 · :3001 · ESM · TypeScript strict</text>
+
+  <!-- HTTP routers -->
+  <rect x="60" y="250" width="190" height="68" rx="6" class="box"/>
+  <text x="155" y="267" text-anchor="middle" class="label">chat/</text>
+  <text x="155" y="283" text-anchor="middle" class="body">/v1/chat/completions</text>
+  <text x="155" y="297" text-anchor="middle" class="body">/v1/chat/voice-completions</text>
+  <text x="155" y="310" text-anchor="middle" class="small">/api/chat/status · preload</text>
+
+  <rect x="270" y="250" width="190" height="68" rx="6" class="box"/>
+  <text x="365" y="267" text-anchor="middle" class="label">health/</text>
+  <text x="365" y="283" text-anchor="middle" class="body">GET /health</text>
+  <text x="365" y="297" text-anchor="middle" class="body">GET /v1/models</text>
+  <text x="365" y="310" text-anchor="middle" class="small">readiness gate</text>
+
+  <rect x="480" y="250" width="190" height="68" rx="6" class="box"/>
+  <text x="575" y="267" text-anchor="middle" class="label">document/</text>
+  <text x="575" y="287" text-anchor="middle" class="body">GET /api/documents</text>
+  <text x="575" y="303" text-anchor="middle" class="small">corpus inventory</text>
+
+  <!-- Routers -> orchestrator -->
+  <path d="M140 318 V362" class="line" marker-end="url(#arrow)"/>
+
+  <!-- AI orchestrator -->
+  <rect x="60" y="334" width="610" height="136" rx="8" class="subBox"/>
+  <text x="658" y="352" text-anchor="end" class="group">AI ORCHESTRATOR</text>
+
+  <rect x="72" y="362" width="180" height="36" rx="6" class="accentBox"/>
+  <text x="162" y="377" text-anchor="middle" class="name">AgentService</text>
+  <text x="162" y="391" text-anchor="middle" class="small">one singleton · text + voice</text>
+
+  <rect x="275" y="362" width="180" height="36" rx="6" class="accentBox"/>
+  <text x="365" y="377" text-anchor="middle" class="name">LangGraph graph</text>
+  <text x="365" y="391" text-anchor="middle" class="small">rag → llm ⇄ tools → end</text>
+
+  <rect x="478" y="362" width="180" height="36" rx="6" class="box"/>
+  <text x="568" y="377" text-anchor="middle" class="name">VoiceAgentService</text>
+  <text x="568" y="391" text-anchor="middle" class="small">ASR → agent → sentence TTS</text>
+
+  <path d="M252 380 H275" class="line" marker-end="url(#arrow)"/>
+
+  <!-- LangGraph fan-out -->
+  <path d="M365 398 V411 H162 V424" class="line" marker-end="url(#arrow)"/>
+  <path d="M365 411 H568 V424" class="line" marker-end="url(#arrow)"/>
+
+  <rect x="72" y="424" width="180" height="36" rx="6" class="box"/>
+  <text x="162" y="439" text-anchor="middle" class="name">ChatQVAC</text>
+  <text x="162" y="453" text-anchor="middle" class="small">@space-uy/qvac-langgraph</text>
+
+  <rect x="275" y="424" width="180" height="36" rx="6" class="box"/>
+  <text x="365" y="439" text-anchor="middle" class="name">QvacChatSession</text>
+  <text x="365" y="453" text-anchor="middle" class="small">FIFO · KV-cache · delegate</text>
+
+  <rect x="478" y="424" width="180" height="36" rx="6" class="box"/>
+  <text x="568" y="439" text-anchor="middle" class="name">tools</text>
+  <text x="568" y="453" text-anchor="middle" class="small">lookup_stock · list_documents</text>
+
+  <path d="M252 442 H275" class="line" marker-end="url(#arrow)"/>
+
+  <!-- Orchestrator -> domain modules -->
+  <path d="M110 470 V500" class="line" marker-end="url(#arrow)"/>
+  <path d="M300 470 V500" class="line" marker-end="url(#arrow)"/>
+  <path d="M500 470 V500" class="line" marker-end="url(#arrow)"/>
+  <text x="670" y="490" text-anchor="end" class="label">DOMAIN MODULES</text>
+
+  <rect x="60" y="500" width="142" height="54" rx="6" class="box"/>
+  <text x="131" y="517" text-anchor="middle" class="label">rag/</text>
+  <text x="131" y="533" text-anchor="middle" class="body">ingest · retrieval</text>
+  <text x="131" y="546" text-anchor="middle" class="small">native → SDK embed</text>
+
+  <rect x="216" y="500" width="142" height="54" rx="6" class="box"/>
+  <text x="287" y="517" text-anchor="middle" class="label">models/</text>
+  <text x="287" y="533" text-anchor="middle" class="body">model lifecycle</text>
+  <text x="287" y="546" text-anchor="middle" class="small">QvacRuntimeAdapter</text>
+
+  <rect x="372" y="500" width="142" height="54" rx="6" class="box"/>
+  <text x="443" y="517" text-anchor="middle" class="label">speech/ · tts/</text>
+  <text x="443" y="533" text-anchor="middle" class="body">Whisper STT</text>
+  <text x="443" y="546" text-anchor="middle" class="small">Supertonic TTS</text>
+
+  <rect x="528" y="500" width="142" height="54" rx="6" class="box"/>
+  <text x="599" y="517" text-anchor="middle" class="label">config/</text>
+  <text x="599" y="533" text-anchor="middle" class="body">tiers · models · RAG</text>
+  <text x="599" y="546" text-anchor="middle" class="small">delegate · context</text>
+
+  <!-- ============ WORKSPACE & DATA (right column) ============ -->
+  <text x="710" y="234" class="label">WORKSPACE · DATA</text>
+
+  <rect x="710" y="250" width="150" height="68" rx="6" class="box"/>
+  <text x="785" y="270" text-anchor="middle" class="name">corpus/</text>
+  <text x="785" y="288" text-anchor="middle" class="body" style="font-size:9.5px">emails · FAQs · policies</text>
+  <text x="785" y="302" text-anchor="middle" class="small">reports · CSV/JSON data</text>
+  <path d="M670 284 H710" class="line" marker-end="url(#arrow)"/>
+
+  <rect x="710" y="424" width="150" height="36" rx="6" class="accentBox"/>
+  <text x="785" y="439" text-anchor="middle" class="name">stock-tool</text>
+  <text x="785" y="453" text-anchor="middle" class="small">workspace · in-process</text>
+  <path d="M658 442 H710" class="line" marker-end="url(#arrow)"/>
+
+  <!-- ============ RUNTIME & STORAGE (bottom row) ============ -->
+  <path d="M100 554 V602" class="line" marker-end="url(#arrow)"/>
+  <path d="M190 554 V602" class="line" marker-end="url(#arrow)"/>
+  <path d="M345 554 V602" class="line" marker-end="url(#arrow)"/>
+  <path d="M450 554 V602" class="line" marker-end="url(#arrow)"/>
+
+  <rect x="40" y="602" width="130" height="50" rx="6" class="box"/>
+  <text x="105" y="621" text-anchor="middle" class="name">Native embedder</text>
+  <text x="105" y="637" text-anchor="middle" class="small">Bare · BGE-M3</text>
+
+  <rect x="178" y="602" width="136" height="50" rx="6" class="box"/>
+  <text x="246" y="621" text-anchor="middle" class="name">LanceDB</text>
+  <text x="246" y="637" text-anchor="middle" class="small">.lancedb/ vectors</text>
+
+  <rect x="320" y="602" width="270" height="50" rx="6" class="accentBox"/>
+  <text x="455" y="621" text-anchor="middle" class="name">@qvac/sdk · Bare worker</text>
+  <text x="455" y="637" text-anchor="middle" class="small">llama.cpp · whisper.cpp · tts</text>
+
+  <path d="M590 627 H710" class="line dash" marker-end="url(#arrow)"/>
+  <text x="650" y="619" text-anchor="middle" class="small">chat · VLM only</text>
+
+  <rect x="710" y="602" width="150" height="50" rx="6" class="box dash"/>
+  <text x="785" y="621" text-anchor="middle" class="name">Meridian peer</text>
+  <text x="785" y="637" text-anchor="middle" class="small">optional · P2P</text>
+
+  <!-- Footer -->
+  <text x="450" y="684" text-anchor="middle" class="small">
+    all AI runs on-device through @qvac/sdk · stock-tool is imported in-process · the P2P peer is optional
   </text>
 
-  <!-- Clients -->
-  <rect x="88" y="78" width="170" height="54" rx="7" class="box"/>
-  <text x="173" y="99" text-anchor="middle" class="label">TEXT CLIENT</text>
-  <text x="173" y="119" text-anchor="middle" class="body">
-    /v1/chat/completions
-  </text>
-
-  <rect x="642" y="78" width="170" height="54" rx="7" class="box"/>
-  <text x="727" y="99" text-anchor="middle" class="label">VOICE CLIENT</text>
-  <text x="727" y="119" text-anchor="middle" class="body">
-    /v1/chat/voice-completions
-  </text>
-
-  <!-- Voice input -->
-  <rect x="650" y="153" width="154" height="48" rx="7" class="box"/>
-  <text x="727" y="173" text-anchor="middle" class="label">STT PRE-PROCESS</text>
-  <text x="727" y="191" text-anchor="middle" class="body">
-    Whisper · tier model
-  </text>
-
-  <!-- Express -->
-  <rect x="300" y="92" width="300" height="62" rx="8" class="accentBox"/>
-
-  <text
-    x="450"
-    y="116"
-    text-anchor="middle"
-    class="title"
-    filter="url(#glow)"
-  >
-    EXPRESS ROUTERS
-  </text>
-
-  <text x="450" y="138" text-anchor="middle" class="body">
-    parse · validate · SSE · disconnect cancellation
-  </text>
-
-  <!-- Client connections -->
-  <path d="M258 105 H300" class="line" marker-end="url(#arrow)"/>
-  <path d="M642 105 H600" class="line" marker-end="url(#arrow)"/>
-  <path d="M727 132 V153" class="line" marker-end="url(#arrow)"/>
-
-  <!-- AgentService -->
-  <rect x="300" y="184" width="300" height="68" rx="8" class="accentBox"/>
-
-  <text
-    x="450"
-    y="208"
-    text-anchor="middle"
-    class="title"
-    filter="url(#glow)"
-  >
-    AgentService
-  </text>
-
-  <text x="450" y="228" text-anchor="middle" class="body">
-    singleton · text + voice share this instance
-  </text>
-
-  <text x="450" y="244" text-anchor="middle" class="small">
-    requestId · temperature · seed · sessionId
-  </text>
-
-  <path
-    d="M450 154 V184"
-    class="accentLine"
-    marker-end="url(#arrowAccent)"
-  />
-
-  <path
-    d="M650 177 H620 Q600 177 600 197 H600"
-    class="line"
-    marker-end=""
-  />
-
-  <!-- LangGraph -->
-  <rect x="212" y="282" width="476" height="125" rx="9" class="accentBox"/>
-
-  <text
-    x="450"
-    y="305"
-    text-anchor="middle"
-    class="title"
-    filter="url(#glow)"
-  >
-    LANGGRAPH COMPILED GRAPH
-  </text>
-
-  <!-- START -->
-  <circle cx="262" cy="347" r="16" class="box"/>
-  <text x="262" y="351" text-anchor="middle" class="small">START</text>
-
-  <!-- RAG -->
-  <rect x="310" y="329" width="88" height="36" rx="6" class="box"/>
-  <text x="354" y="351" text-anchor="middle" class="body">RAG</text>
-
-  <!-- LLM -->
-  <rect x="440" y="329" width="92" height="36" rx="6" class="accentBox"/>
-  <text x="486" y="351" text-anchor="middle" class="body">LLM</text>
-
-  <!-- Tools -->
-  <rect x="574" y="329" width="82" height="36" rx="6" class="box"/>
-  <text x="615" y="351" text-anchor="middle" class="body">TOOLS</text>
-
-  <!-- Graph routing -->
-  <path d="M278 347 H310" class="line" marker-end="url(#arrow)"/>
-  <path d="M398 347 H440" class="line" marker-end="url(#arrow)"/>
-
-  <path
-    d="M532 340 H574"
-    class="accentLine"
-    marker-end="url(#arrowAccent)"
-  />
-
-  <path
-    d="M574 358 H532"
-    class="accentLine"
-    marker-end="url(#arrowAccent)"
-  />
-
-  <path
-    d="M486 365 V383 H532"
-    class="line"
-    marker-end="url(#arrow)"
-  />
-
-  <text x="540" y="387" class="small">END</text>
-
-  <text x="450" y="400" text-anchor="middle" class="small">
-    RAG once · LLM ⇄ tools · retry maxAttempts=2 · guarded no-evidence response
-  </text>
-
-  <path
-    d="M450 252 V282"
-    class="accentLine"
-    marker-end="url(#arrowAccent)"
-  />
-
-  <!-- RAG detail -->
-  <rect x="25" y="286" width="160" height="112" rx="8" class="box"/>
-
-  <text x="105" y="307" text-anchor="middle" class="label">RAG PATH</text>
-
-  <text x="105" y="329" text-anchor="middle" class="body">
-    embed(query)
-  </text>
-
-  <text x="105" y="348" text-anchor="middle" class="body">
-    LanceDB search
-  </text>
-
-  <text x="105" y="367" text-anchor="middle" class="body">
-    dedupe + rerank
-  </text>
-
-  <text x="105" y="386" text-anchor="middle" class="small">
-    → maxContextChunks
-  </text>
-
-  <path
-    d="M185 347 H212"
-    class="line"
-    marker-end="url(#arrow)"
-  />
-
-  <!-- Embeddings -->
-  <rect x="25" y="416" width="160" height="70" rx="8" class="box"/>
-
-  <text x="105" y="437" text-anchor="middle" class="label">
-    EMBEDDINGS
-  </text>
-
-  <text x="105" y="458" text-anchor="middle" class="body">
-    native C++ primary
-  </text>
-
-  <text x="105" y="476" text-anchor="middle" class="small">
-    QVAC SDK fallback · BGE-M3
-  </text>
-
-  <path
-    d="M105 416 V398"
-    class="line"
-    marker-end="url(#arrow)"
-  />
-
-  <!-- ChatQVAC -->
-  <rect x="250" y="430" width="400" height="60" rx="8" class="accentBox"/>
-
-  <text
-    x="450"
-    y="454"
-    text-anchor="middle"
-    class="title"
-    filter="url(#glow)"
-  >
-    ChatQVAC
-  </text>
-
-  <text x="450" y="475" text-anchor="middle" class="body">
-    LangChain chat-model adapter · bindTools · stream · invoke
-  </text>
-
-  <path
-    d="M450 405 V430"
-    class="accentLine"
-    marker-end="url(#arrowAccent)"
-  />
-
-  <!-- QvacChatSession -->
-  <rect x="260" y="520" width="380" height="80" rx="9" class="accentBox"/>
-
-  <text
-    x="450"
-    y="544"
-    text-anchor="middle"
-    class="title"
-    filter="url(#glow)"
-  >
-    QvacChatSession
-  </text>
-
-  <text x="450" y="565" text-anchor="middle" class="body">
-    model lifecycle · FIFO concurrency · delegation · recovery
-  </text>
-
-  <text x="450" y="584" text-anchor="middle" class="small">
-    KV-cache by sessionId · cancel by requestId · low/medium=1 · high=2
-  </text>
-
-  <path
-    d="M450 490 V520"
-    class="accentLine"
-    marker-end="url(#arrowAccent)"
-  />
-
-  <!-- Voice output -->
-  <rect x="682" y="430" width="190" height="130" rx="8" class="box"/>
-
-  <text x="777" y="452" text-anchor="middle" class="label">
-    VOICE WRAPPER
-  </text>
-
-  <text x="777" y="476" text-anchor="middle" class="body">
-    SentenceChunker
-  </text>
-
-  <text x="777" y="496" text-anchor="middle" class="body">
-    → ordered TTS queue
-  </text>
-
-  <text x="777" y="516" text-anchor="middle" class="body">
-    → Supertonic
-  </text>
-
-  <text x="777" y="540" text-anchor="middle" class="small">
-    same AgentService output
-  </text>
-
-  <path
-    d="M650 462 H682"
-    class="line"
-    marker-end="url(#arrow)"
-  />
-
-  <!-- Runtime chain -->
-  <rect x="90" y="628" width="185" height="34" rx="6" class="box"/>
-  <text x="182.5" y="649" text-anchor="middle" class="body">
-    ModelManagementService
-  </text>
-
-  <rect x="335" y="628" width="180" height="34" rx="6" class="box"/>
-  <text x="425" y="649" text-anchor="middle" class="body">
-    QvacRuntimeAdapter
-  </text>
-
-  <rect x="575" y="628" width="150" height="34" rx="6" class="accentBox"/>
-  <text x="650" y="649" text-anchor="middle" class="body">
-    @qvac/sdk
-  </text>
-
-  <path
-    d="M450 600 V613 H182.5 V628"
-    class="line"
-    marker-end="url(#arrow)"
-  />
-
-  <path
-    d="M275 645 H335"
-    class="line"
-    marker-end="url(#arrow)"
-  />
-
-  <path
-    d="M515 645 H575"
-    class="line"
-    marker-end="url(#arrow)"
-  />
-
-  <!-- Local / peer -->
-  <rect x="742" y="602" width="130" height="34" rx="6" class="accentBox"/>
-  <text x="807" y="623" text-anchor="middle" class="body">
-    LOCAL MODEL
-  </text>
-
-  <rect x="742" y="646" width="130" height="34" rx="6" class="box"/>
-  <text x="807" y="667" text-anchor="middle" class="body">
-    MERIDIAN PEER
-  </text>
-
-  <path
-    d="M725 645 H735 Q742 645 742 619"
-    class="accentLine"
-    marker-end="url(#arrowAccent)"
-  />
-
-  <path
-    d="M725 645 H742 V663"
-    class="line dash"
-    marker-end="url(#arrow)"
-  />
-
-  <text x="655" y="613" text-anchor="middle" class="small">
-    loadModel / completion
-  </text>
-
-  <text x="790" y="594" text-anchor="end" class="small">
-    optional delegated inference
-  </text>
+  <path d="M300 702 H330" class="line" marker-end="url(#arrow)"/>
+  <text x="340" y="706" class="small">call / data flow</text>
+  <path d="M500 702 H530" class="line dash" marker-end="url(#arrow)"/>
+  <text x="540" y="706" class="small">optional · delegated</text>
 </svg>
