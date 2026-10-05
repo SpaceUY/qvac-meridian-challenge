@@ -146,24 +146,6 @@ describe("parseMessages — images", () => {
     expect(result).toBeUndefined();
   });
 
-  // MAX_IMAGES_PER_MESSAGE is temporarily 1 (see chat.router.const.ts - a
-  // 2-image message crashes the QVAC worker), which makes this scenario
-  // unreachable through parseMessages: 2 images now fail the count check
-  // before ever reaching the total-bytes one. Re-enable once the count
-  // limit goes back to 2+.
-  it.skip("rejects when individually-valid images exceed MAX_TOTAL_IMAGE_BYTES together", () => {
-    // 7MB each: under MAX_IMAGE_BYTES (8MB) individually, but two of them
-    // (14MB) exceed MAX_TOTAL_IMAGE_BYTES (12MB).
-    const sevenMb = Buffer.concat([JPEG_BYTES, Buffer.alloc(7 * 1024 * 1024 - JPEG_BYTES.length)]);
-    const result = parseMessages({
-      messages: [
-        { role: "user", content: [imagePart("image/jpeg", sevenMb), imagePart("image/jpeg", sevenMb)] },
-      ],
-    });
-
-    expect(result).toBeUndefined();
-  });
-
   it("still accepts a plain string content (unchanged behavior)", async () => {
     const result = await parseMessages({ messages: [{ role: "user", content: "hi" }] });
     expect(result).toEqual([{ role: "user", message: "hi" }]);
@@ -190,18 +172,6 @@ describe("describeParseError", () => {
     const parts = Array.from({ length: MAX_IMAGES_PER_MESSAGE + 1 }, () => imagePart("image/jpeg", JPEG_BYTES));
     const reason = await describeParseError({ messages: [{ role: "user", content: parts }] });
     expect(reason).toBe(`You can attach up to ${MAX_IMAGES_PER_MESSAGE} images`);
-  });
-
-  // Same reason as the skipped test above - unreachable while
-  // MAX_IMAGES_PER_MESSAGE is 1.
-  it.skip("names the combined size limit", () => {
-    const sevenMb = Buffer.concat([JPEG_BYTES, Buffer.alloc(7 * 1024 * 1024 - JPEG_BYTES.length)]);
-    const reason = describeParseError({
-      messages: [
-        { role: "user", content: [imagePart("image/jpeg", sevenMb), imagePart("image/jpeg", sevenMb)] },
-      ],
-    });
-    expect(reason).toBe("These images are too large together");
   });
 
   it("names the role restriction on image_url parts", async () => {

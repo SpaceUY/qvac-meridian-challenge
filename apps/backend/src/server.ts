@@ -33,10 +33,6 @@ app.use(cors());
 // body - a few seconds of audio already exceeds it.
 app.use(express.json({ limit: "25mb" }));
 
-app.get("/api/ping", (_req, res) => {
-  res.json({ message: "pong from express" });
-});
-
 const qvacRuntimeAdapter = new QvacRuntimeAdapter();
 const modelManagementService = new ModelManagementService(qvacRuntimeAdapter, qvacRuntimeAdapter);
 app.use("/api/models", createModelsRouter(modelManagementService));

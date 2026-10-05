@@ -56,7 +56,7 @@ this script, not committed).
 ```
 src/
   server.ts                    Express app: wiring, graceful shutdown
-  ai/orchestrator/              Pre-existing LangGraph experiment (unrelated to models/)
+  ai/orchestrator/              LangGraph chat orchestrator: tool calling, RAG grounding, voice (unrelated to models/)
   models/
     domain/                    Types, ports (interfaces), centralized error type — no @qvac/sdk here
       types.ts

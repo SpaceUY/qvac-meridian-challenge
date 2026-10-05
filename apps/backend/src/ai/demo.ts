@@ -39,10 +39,7 @@ async function main(): Promise<void> {
     result = await agentService.invoke([
       {
         role: "user",
-        message:
-          //"Can you give me all the stock information about SKU: SD-X4-HT?",
-          // message: "Do we have an agreement with **Atlas Manufacturing** ? If this is the case when it started ?.",
-          "What is the enterprise P1 first-response SLA?",
+        message: "What is the enterprise P1 first-response SLA?",
       },
     ]);
   } catch (err) {

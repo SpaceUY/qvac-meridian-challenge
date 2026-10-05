@@ -116,7 +116,6 @@ export class ModelManagementService {
     return Object.assign(result, { requestId });
   }
 
-  // TODO: remove this endpoint ? leave chatComplete as the only infer option
   /**
    * Same `requestId`-decorated-promise and `getRequestStatus()` convention
    * as `loadModel()`. A cancelled inference rejects this promise but never

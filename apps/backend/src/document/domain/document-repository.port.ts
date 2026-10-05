@@ -7,7 +7,7 @@ import type {
 export const DOCUMENT_REPOSITORY = Symbol("DOCUMENT_REPOSITORY");
 
 export interface DocumentRepository {
-  findAll(): Promise<ArchitectureDocument[]>; // TODO: for list_documents tool
+  findAll(): Promise<ArchitectureDocument[]>;
   findById(id: string): Promise<ArchitectureDocument | null>;
   findByStatus(status: DocumentStatus): Promise<ArchitectureDocument[]>;
   findByType(type: DocumentType): Promise<ArchitectureDocument[]>;

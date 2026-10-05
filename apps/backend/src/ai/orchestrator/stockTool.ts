@@ -5,10 +5,7 @@ import { DATA_AS_OF, lookupStock } from "meridian-stock-tool";
 export const lookupStockTool = tool(
   // The first argument is the function implementation.
   // It takes an empty object argument because of the Zod schema definition.
-  (args) => {
-    console.log("checking stock ...");
-    return lookupStock(args);
-  },
+  (args) => lookupStock(args),
   {
     name: "lookup_stock",
     description:

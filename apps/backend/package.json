@@ -8,7 +8,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "dev": "tsx watch src/server.ts",
-    "basic-prompt": "OPENAI_API_KEY=\"aa\" tsx src/ai/demo.ts",
+    "basic-prompt": "OPENAI_API_KEY=\"unused-local-demo\" tsx src/ai/demo.ts",
     "rag-demo": "tsx src/ai/ragDemo.ts",
     "ingest": "tsx src/rag/ingest/ingest.cli.ts",
     "models:fetch": "tsx src/models/fetchModels.cli.ts",
