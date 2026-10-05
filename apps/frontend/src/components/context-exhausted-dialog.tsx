@@ -8,11 +8,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { useChatStore } from '@/lib/chat-store'
 
-/**
- * Shown once, when the backend reports this conversation's context window
- * full. It only informs: OK (or Escape) closes it, and the composer stays
- * disabled until New chat - see chat-store's contextExhausted.
- */
+/** Informational only; the composer stays disabled until New chat regardless (see chat-store's contextExhausted). */
 export function ContextExhaustedDialog() {
   const open = useChatStore((state) => state.contextNoticeOpen)
 

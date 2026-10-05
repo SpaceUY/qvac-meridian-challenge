@@ -1,8 +1,4 @@
-// How long one typed question may be. The backend embeds at most this many
-// characters of a message to search the corpus (MAX_RETRIEVAL_QUERY_CHARS in
-// apps/backend/src/config/rag.config.ts) - the same number on purpose: a
-// longer question would be searched by its first part only, silently.
-// Counted in UTF-16 units, exactly what a <textarea>'s maxLength counts.
+// Matches the backend's MAX_RETRIEVAL_QUERY_CHARS (apps/backend/src/config/rag.config.ts) exactly - a longer question would otherwise be searched by its first part only, silently. Counted in UTF-16 units, same as a <textarea>'s maxLength.
 export const MAX_PROMPT_CHARS = 700
 
 /** From this many characters left, the composer shows the counter. */

@@ -6,7 +6,7 @@ type Props = {
   onClose: () => void
 }
 
-/** Bigger view of an attached/sent image, shared by the composer's pending thumbnails and MessageList's sent images. Built on radix-ui's Dialog (already a dependency, via react-dialog) instead of a new one - focus trap, Escape-to-close and aria wiring come for free. */
+/** Built on radix-ui's Dialog (already a dependency) for its focus trap, Escape-to-close, and aria wiring. */
 export function ImageLightbox({ src, onClose }: Props) {
   return (
     <Dialog.Root open={src !== null} onOpenChange={(open) => !open && onClose()}>

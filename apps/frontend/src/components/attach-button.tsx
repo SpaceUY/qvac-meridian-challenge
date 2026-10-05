@@ -8,7 +8,7 @@ type Props = {
   onFilesSelected: (files: File[]) => void
 }
 
-/** The discreet `+` at the bottom-left of the composer - same icon-button pattern as MicButton. Opens a hidden file input instead of a traditional upload widget. */
+/** Opens a hidden file input instead of a traditional upload widget. */
 export function AttachButton({ disabled = false, onFilesSelected }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
 

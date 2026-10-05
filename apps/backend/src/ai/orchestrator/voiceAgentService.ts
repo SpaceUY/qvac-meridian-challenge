@@ -49,13 +49,7 @@ export interface VoiceStreamResult {
   context?: ContextUsage;
 }
 
-/**
- * Composes the existing text orchestrator with STT/TTS for a single voice
- * turn: transcribe the incoming audio, run it through AgentService's graph
- * with the caller's prior history plus the new transcript, then synthesize
- * the answer. Degrades to text-only (no `audio`/`sampleRate`) if synthesis
- * fails - the turn itself already succeeded by that point.
- */
+/** Composes AgentService (text) with STT/TTS for one voice turn: transcribe, run through the graph, then synthesize. Degrades to text-only if synthesis fails — the turn itself already succeeded. */
 export class VoiceAgentService {
   constructor(
     private readonly agentService: AgentService,
@@ -67,9 +61,7 @@ export class VoiceAgentService {
   async invoke(history: ConversationMessage[], audio: Buffer): Promise<VoiceInvokeResult> {
     const transcript = await this.transcriptionService.transcribeBuffer(audio);
     if (!transcript.trim()) {
-      // Feeding an empty string into the RAG embedding step throws deep
-      // inside the QVAC SDK ("Text cannot be empty") - catch it here, where
-      // it's an expected outcome (silence/noise-only audio), not a 500.
+      // An empty string reaching the RAG embedding step throws deep inside the QVAC SDK ("Text cannot be empty") - expected here, not a 500.
       throw new EmptyTranscriptError();
     }
 
@@ -81,9 +73,7 @@ export class VoiceAgentService {
         streamedAnswer += textDelta;
       },
     );
-    // Prefer the text built up from the streamed deltas - falls back to the
-    // graph's own resolved answer only if generation produced no stream
-    // event at all (see AgentService.runInvoke's matching safety net).
+    // Prefer the streamed text; falls back to result.answer only if no stream event fired (see AgentService.runInvoke's matching safety net).
     const answer = streamedAnswer || result.answer;
 
     let synthesis: { audio: Buffer; sampleRate: number } | undefined;
@@ -104,18 +94,7 @@ export class VoiceAgentService {
     };
   }
 
-  /**
-   * Same turn as `invoke()`, but synthesizes and emits audio sentence by
-   * sentence as the answer streams in, instead of waiting for the whole
-   * answer before running TTS once. Sentence boundaries come from
-   * `SentenceChunker`; each completed sentence is synthesized and passed to
-   * `onChunk` strictly in order - one TTS call at a time, since the
-   * underlying model isn't safe for concurrent use. A chunk whose synthesis
-   * fails still goes out with its text, `audio`/`sampleRate` undefined.
-   * Each chunk's `text` is the sentence verbatim, surrounding whitespace
-   * included, so the chunks joined back together are the exact answer;
-   * only the copy sent to TTS is trimmed.
-   */
+  /** Same turn as `invoke()`, but synthesizes/emits audio sentence-by-sentence as the answer streams (via `SentenceChunker`), one TTS call at a time since the model isn't safe for concurrent use. A chunk whose synthesis fails still goes out with its text. Each chunk's `text` is the sentence verbatim (whitespace included) - joined back together they reproduce the exact answer; only the copy sent to TTS is trimmed. */
   async invokeStreaming(
     history: ConversationMessage[],
     audio: Buffer,
@@ -128,9 +107,7 @@ export class VoiceAgentService {
 
     const chunker = new SentenceChunker(this.minSentenceChunkChars);
     let streamedAnswer = "";
-    // Chains sentence synthesis+emission one at a time, decoupled from the
-    // token stream that discovers them - onToken below can't itself be
-    // async (AgentService.invoke's callback is fire-and-forget per token).
+    // Chains synthesis one sentence at a time, decoupled from the token stream since AgentService.invoke's onToken callback can't be async.
     let processingChain: Promise<void> = Promise.resolve();
     const enqueueSentence = (sentence: string) => {
       processingChain = processingChain.then(() => this.synthesizeAndEmit(sentence, onChunk));

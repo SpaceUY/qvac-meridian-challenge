@@ -1,4 +1,3 @@
-// apps/frontend/src/components/recording-bar.tsx
 import { useEffect, useRef, useState } from 'react'
 import { Send, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -27,10 +26,7 @@ export function RecordingBar({ onCancel, onSend, registerLevelListener }: Props)
   }, [])
 
   useEffect(() => {
-    // Mutates the DOM directly on every level instead of going through
-    // useState: levels arrive several times a second from the audio
-    // thread, and a useState here would repaint the whole React tree on
-    // every single one.
+    // Mutates the DOM directly instead of useState: levels arrive several times/sec from the audio thread, and useState would repaint the whole tree on every one.
     registerLevelListener((level) => {
       const now = performance.now()
       if (now - lastPaintRef.current < LEVEL_PAINT_INTERVAL_MS) return

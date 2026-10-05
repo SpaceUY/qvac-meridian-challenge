@@ -13,40 +13,11 @@ export interface NativeEmbeddingLike extends EmbeddingPort {
 }
 
 /**
- * `EmbeddingPort` that prefers the native `@qvac/embed-llamacpp` path
- * (`NativeEmbeddingProvider`) and falls back to the existing `@qvac/sdk`
- * path (`QvacEmbeddingService`, unmodified) when the native worker can't be
- * used - I.4 integration decision, see `docs/i4-native-addon-results.md`.
- *
- *   NativeEmbeddingProvider (primary)
- *          |
- *          | init/load fails, OR the worker crashes mid-session
- *          v
- *   QvacEmbeddingService (fallback, unchanged)
- *
- * The provider is selected exactly ONCE, lazily, on the first `embed()`/
- * `embedBatch()` call (same cached-promise pattern
- * `QvacEmbeddingService.ensureModel()` already uses) - every later call
- * reuses that decision. There is no per-call re-evaluation and no switching
- * back to native once a session has fallen over to the SDK: a crash mid-
- * session is treated as a one-way, permanent transition for the rest of
- * this process's life, not a retry loop.
- *
- * The first four constructor arguments match `QvacEmbeddingService`'s
- * exactly, so `server.ts`/`ingest.cli.ts` only need to swap the class name
- * at their one construction call site - the SDK fallback is built from
- * those same arguments, lazily, only if/when it's actually needed. The last
- * two arguments are test-only overrides (a fake native provider / fake SDK
- * factory) - production call sites never pass them.
- *
- * `modelSource`/`expectedSize` are shared by both paths: the native
- * provider resolves `modelSource` to a cached GGUF via
- * `resolveNativeEmbeddingModelPath()` (see
- * `infra/nativeEmbedding/embeddingGemmaModel.ts`), and the SDK fallback
- * loads the same `modelSource` through `@qvac/sdk`'s own `loadModel()` - so
- * both paths always load the same model, whatever
- * `EMBEDDING_MODEL_SOURCE`/`EMBEDDING_MODEL_EXPECTED_SIZE`
- * (`config/models.config.ts`) is currently set to.
+ * `EmbeddingPort` that prefers the native `@qvac/embed-llamacpp` path and falls back to `@qvac/sdk`
+ * when the native worker can't be used (see `docs/i4-native-addon-results.md`). The provider is
+ * selected once, lazily, on first use; a mid-session native crash permanently fails over to the SDK
+ * for the rest of the process - never a per-call re-evaluation or a retry loop. The last two
+ * constructor args are test-only overrides (fake native provider / fake SDK factory).
  */
 export class ResilientEmbeddingService implements EmbeddingPort {
   private sdkFallback?: QvacEmbeddingService;
@@ -91,15 +62,7 @@ export class ResilientEmbeddingService implements EmbeddingPort {
     return this.activePromise;
   }
 
-  /**
-   * Runs `run` against whichever provider is currently active. If that's the
-   * native one and the call failed because its worker crashed, this
-   * permanently repoints `activePromise` at the SDK fallback and retries
-   * `run` once against it, so the caller sees a successful result instead of
-   * a spurious failure caused purely by an internal fallback transition.
-   * Any other error (a real embedding failure, not a crash) is not retried -
-   * it propagates exactly like it would from either provider alone.
-   */
+  /** On a native-worker crash, permanently repoints at the SDK fallback and retries `run` once. Any other error propagates as-is. */
   private async runWithFailover<T>(run: (port: EmbeddingPort) => Promise<T>): Promise<T> {
     const active = await this.ensureActive();
     try {

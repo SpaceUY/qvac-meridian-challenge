@@ -1,21 +1,7 @@
 /**
- * Locates a model's GGUF file in `@qvac/sdk`'s own file cache, and the
- * default config the native worker loads it with.
- *
- * Originally lived in the I.4 spike
- * (`experiments/native-embed-spike/nativeEmbedClient.ts`) and was imported
- * from there by `NativeEmbeddingProvider` - moved here because that made
- * real production code depend on a folder named for a throwaway spike. The
- * spike now imports this file instead (see its own `nativeEmbedClient.ts`),
- * not the other way around.
- *
- * Generalized from the original I.4 EmbeddingGemma-only resolver so
- * `NativeEmbeddingProvider` can be pointed at any `ModelSource`
- * (`resolveNativeEmbeddingModelPath`) instead of always resolving
- * EmbeddingGemma 300M Q4_0. `resolveEmbeddingGemmaModelPath()` below is kept
- * as a thin wrapper, unchanged in behavior, purely so the I.4 spike scripts
- * (`experiments/native-embed-spike/*`), which specifically benchmark
- * EmbeddingGemma, don't need to change.
+ * Locates a model's GGUF file in `@qvac/sdk`'s file cache, plus the default config the native
+ * worker loads it with. Moved out of `experiments/native-embed-spike/` so production code doesn't
+ * depend on a spike folder - the spike now imports from here instead.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -29,42 +15,21 @@ const backendDir = path.resolve(moduleDir, '..', '..', '..', '..');
 const repoRoot = path.resolve(backendDir, '..', '..');
 const QVAC_CACHE_DIR = path.join(repoRoot, '.qvac-cache');
 
-/**
- * Same defaults `@qvac/sdk`'s `EMBED_CONFIG_DEFAULTS` applies (neither
- * EmbeddingGemma nor BGE-M3's `ModelSource` in `config/models.config.ts`
- * sets an `engineConfig` override, so the SDK's own schema defaults -
- * `device: 'gpu', gpuLayers: 99, batchSize: 1024` - are what actually load
- * either model today), translated to the native addon's string-keyed config
- * contract the same way the SDK's `llamacpp-embedding/plugin.js`
- * (`transformEmbedConfig`) does.
- */
+/** Same defaults as `@qvac/sdk`'s `EMBED_CONFIG_DEFAULTS`, translated to the native addon's string-keyed config contract. */
 export const DEFAULT_NATIVE_EMBED_CONFIG: Record<string, string> = {
   device: 'gpu',
   gpu_layers: '99',
   batch_size: '1024'
 };
 
-/**
- * The filename `@qvac/sdk`'s cache matches against for a given source - the
- * basename of its `registryPath` (registry sources) or the basename of its
- * URL's path (url sources). `rawSrc` has no stable filename to key off, so
- * it isn't supported here (the native embedding path never uses it).
- */
+/** The filename `@qvac/sdk`'s cache matches against: basename of `registryPath` or the URL's path. `rawSrc` has no stable filename, so it's unsupported here. */
 function cacheFilenameFor(source: ModelSource): string {
   if (source.kind === 'registry') return path.basename(source.registryPath);
   if (source.kind === 'url') return path.basename(new URL(source.url).pathname);
   throw new Error(`native embedding path cannot resolve a cache filename for ModelSource kind="${source.kind}"`);
 }
 
-/**
- * Locates `source`'s GGUF file in `@qvac/sdk`'s file cache (populated by
- * `npm run models:fetch` / `npm run corpus:ingest`). Matches by the source's
- * own filename (`cacheFilenameFor`) + `expectedSize`, rather than
- * reimplementing the cache's content-hash filename prefix - the same check
- * `resolveEmbeddingGemmaModelPath()` below used to do inline for
- * EmbeddingGemma specifically, generalized to take the source and its
- * expected size as arguments instead of assuming both.
- */
+/** Locates `source`'s GGUF file in `@qvac/sdk`'s file cache (populated by `npm run models:fetch`/`corpus:ingest`), matching by filename + `expectedSize`. */
 export function resolveNativeEmbeddingModelPath(source: ModelSource, expectedSize: number): string {
   const filename = cacheFilenameFor(source);
   if (!fs.existsSync(QVAC_CACHE_DIR)) {
@@ -88,7 +53,7 @@ export function resolveNativeEmbeddingModelPath(source: ModelSource, expectedSiz
   return fullPath;
 }
 
-/** Back-compat wrapper for the I.4 spike scripts (`experiments/native-embed-spike/*`), which specifically benchmark EmbeddingGemma 300M Q4_0 and nothing else. */
+/** Back-compat wrapper for the I.4 spike scripts, which benchmark EmbeddingGemma 300M Q4_0 specifically. */
 export function resolveEmbeddingGemmaModelPath(): string {
   return resolveNativeEmbeddingModelPath(
     {

@@ -5,12 +5,7 @@ import type {
   DocumentType,
 } from "./document.model.js";
 
-/**
- * What the corpus inventory says about one document - everything but its
- * content. Shared by the list_documents tool (for the model) and
- * GET /api/documents (for the UI), so both always report the same
- * inventory (req. [3.1.1]).
- */
+/** Document metadata without content - shared by list_documents and GET /api/documents so both report the same inventory (req [3.1.1]). */
 export interface DocumentSummary {
   id: string;
   title: string;

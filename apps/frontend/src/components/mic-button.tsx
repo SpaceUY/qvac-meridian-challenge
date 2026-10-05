@@ -1,4 +1,3 @@
-// apps/frontend/src/components/mic-button.tsx
 import { LoaderCircle, Mic } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { VoicePhase } from '@/hooks/use-voice-turn'

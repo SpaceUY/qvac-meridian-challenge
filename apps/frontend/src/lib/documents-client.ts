@@ -22,8 +22,7 @@ export async function fetchDocuments(): Promise<CorpusDocument[]> {
   if (!res.ok) throw new Error(`documents request failed: ${res.status}`)
   const body: unknown = await res.json()
   const documents = isObject(body) && Array.isArray(body.documents) ? body.documents : []
-  // Keeps only well-formed entries (same policy as parseCitations), and only
-  // the fields the UI shows.
+  // Keeps only well-formed entries (same policy as parseCitations).
   return documents
     .filter(isCorpusDocument)
     .map(({ id, title, type, format, status, tags, updatedAt }) => ({ id, title, type, format, status, tags, updatedAt }))

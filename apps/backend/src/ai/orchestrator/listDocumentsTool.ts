@@ -47,11 +47,7 @@ export const listDocumentsOutputSchema = z.object({
 export type ListDocumentsInput = z.infer<typeof listDocumentsInputSchema>;
 export type ListDocumentsOutput = z.infer<typeof listDocumentsOutputSchema>;
 
-/**
- * Builds the `list_documents` tool around a `DocumentRepository`, so the
- * inventory it reports always reflects that repository's current state
- * instead of a value baked in at tool-construction time.
- */
+/** Builds `list_documents` around a `DocumentRepository` so it reports current state, not a snapshot baked in at construction. */
 export function createListDocumentsTool(repository: DocumentRepository) {
   return tool(
     async (args: ListDocumentsInput): Promise<ListDocumentsOutput> => {

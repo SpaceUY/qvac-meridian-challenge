@@ -1,8 +1,4 @@
-// Human-readable names for a citation. The API sends only the machine form,
-// { file: "reports/q2-2026-sales-performance-report.md", score } - its
-// OpenAI-compatible contract has no room for titles - so the UI derives the
-// readable form from the path itself. One source of truth: the `file` the
-// evaluator checks is the same string every label here comes from.
+// The OpenAI-compatible citations contract has no room for titles, so the UI derives a readable label from the `file` path itself.
 
 /** "reports/q2-2026-sales-performance-report.md" -> "Q2 2026 Sales Performance Report" */
 export function citationTitle(file: string): string {

@@ -1,6 +1,6 @@
 # Backend
 
-Express API (TypeScript, ESM, run via `tsx`) plus the **Local Model Management** feature: discover, download, load, run inference on, and unload QVAC models locally.
+Express API (TypeScript, ESM, run via `tsx`). **Local Model Management** is internal infrastructure — discover, download, load, run inference on, and unload QVAC models locally — shared by chat, RAG, speech, and TTS; it has no public HTTP API.
 
 ## Setup
 
@@ -17,7 +17,6 @@ Run from the repo root, or with `--workspace=apps/backend`:
 | Command | What it does |
 |---|---|
 | `npm run dev:server` | Starts the Express server on `:3001` (`tsx watch`) |
-| `npm run model-lifecycle-demo --workspace=apps/backend` | Runs the full lifecycle for real, both sources, no HTTP — see [Demo script](#demo-script) |
 | `npm run provider --workspace=apps/backend` | Starts a QVAC provider service for P2P delegated inference — see [Delegated inference (P2P)](#delegated-inference-p2p) |
 | `npm run seed:generate --workspace=apps/backend` | Generates a `QVAC_HYPERSWARM_SEED` and prints the public key it produces — see [Generating a seed](#generating-a-seed-fixed-identity--provider-firewall) |
 | `npm run ingest --workspace=apps/backend` | Builds or updates the vector store in `.lancedb/` from `corpus/` — see [RAG: corpus ingestion](#rag-corpus-ingestion) |
@@ -27,7 +26,7 @@ Run from the repo root, or with `--workspace=apps/backend`:
 | `npm run serve:stop --workspace=apps/backend` | Stops the process `serve` started (SIGTERM, then SIGKILL after a 5s grace period) — the grading harness's `shutdown` command |
 | `npm run build --workspace=apps/backend` | Produces a tree-shaken, plugin-scoped `@qvac/sdk` bundle and writes `docs/bundle-size-report.md` — see [Build](#build) |
 
-Only run **one** QVAC-backed process at a time per machine (`dev:server`, `serve`, a demo script, or `provider`) — the SDK locks its local storage to a single process; running more than one concurrently fails with `File descriptor could not be locked`.
+Only run **one** QVAC-backed process at a time per machine (`dev:server`, `serve`, or `provider`) — the SDK locks its local storage to a single process; running more than one concurrently fails with `File descriptor could not be locked`.
 
 ### Endpoints
 
@@ -59,7 +58,7 @@ command (`dev:server`, `serve`, `provider`, `models:fetch`, `corpus:ingest`) run
 ```
 src/
   server.ts                    Express app: wiring, graceful shutdown
-  ai/orchestrator/              Pre-existing LangGraph experiment (unrelated to models/)
+  ai/orchestrator/              LangGraph chat orchestrator: tool calling, RAG grounding, voice (unrelated to models/)
   models/
     domain/                    Types, ports (interfaces), centralized error type — no @qvac/sdk here
       types.ts
@@ -71,12 +70,6 @@ src/
     service/
       models.service.ts        Orchestrates the lifecycle, owns "what's loaded" state
       models.service.const.ts
-    router/
-      models.router.ts          HTTP layer: parse -> delegate -> respond, no business logic
-      models.router.const.ts
-      models.router.helpers.ts  Request parsers + error-to-HTTP mapping
-    demo.ts                     End-to-end proof script (see below)
-    demo.const.ts
     provider.ts                 Standalone script: starts a QVAC provider (see Delegated inference)
   rag/
     domain/                    Types and ports (EmbeddingPort, VectorStorePort, VectorStoreWriterPort, ChunkerPort)
@@ -98,7 +91,6 @@ src/
     rag.config.ts              Every RAG tuning knob in one place: CHUNK_OPTIONS, DEFAULT_RAG_CONFIG (topK/minScore/maxContextChunks), metadataRerank's weights
     models.config.ts           Model registry entries/sources, shared across pipelines
 qvac.config.mjs                  @qvac/sdk cache location, computed relative to the repo root
-postman/                         Postman collection for manual endpoint testing
 ```
 
 ## Local Model Management
@@ -106,11 +98,12 @@ postman/                         Postman collection for manual endpoint testing
 ### Architecture
 
 ```
-router/   HTTP concerns only: read req, validate/parse, call the service, map errors to status codes
 service/  Business logic: orchestrates the lifecycle, is the single source of truth for "is X loaded?"
 domain/   Types + interfaces (ports) — framework/SDK-agnostic
 infra/    QVAC-specific: the only layer that knows @qvac/sdk exists
 ```
+
+Internal only — no HTTP router. Callers (`AgentService`, `TtsService`, `TranscriptionService`, `ResilientEmbeddingService`) hold a `ModelManagementService` instance directly.
 
 The service depends on two narrow interfaces instead of one:
 
@@ -127,19 +120,6 @@ discover  ->  provision (setup)  ->  load  ->  infer  ->  unload  ->  close
 
 `provision` and `load` are deliberately separate calls. `provision` uses the SDK's `downloadAsset()` to fetch weights to local disk **without** loading them into memory — this is the "download during setup" step, never bundled with the app. A later `load` for the same source reuses the cached file instead of re-downloading.
 
-### Endpoints
-
-Base path: `/api/models`
-
-| Method | Path | Body / Query | Does |
-|---|---|---|---|
-| `GET` | `/registry` | `?filter=&engine=&quantization=` (all optional) | Lists or searches the QVAC registry |
-| `POST` | `/provision` | `{ source }` | Downloads weights to disk (setup step) |
-| `POST` | `/load` | `{ source }` | Loads the model into memory, returns `{ modelId }` |
-| `POST` | `/:modelId/infer` | `{ prompt }` | Runs inference, returns `{ text }` |
-| `POST` | `/:modelId/unload` | — | Unloads the model from memory |
-| `POST` | `/close` | — | Closes the underlying QVAC runtime connection |
-
 `source` is one of:
 ```jsonc
 { "kind": "registry", "registryPath": "...", "registrySource": "..." }
@@ -149,20 +129,7 @@ Base path: `/api/models`
 
 ### Error handling
 
-Every failure becomes a single `ModelManagementError` type tagged with the stage it happened in (`discovery`, `download`, `load`, `inference`, `unload`, `close`, `not-found`). The router (`models.router.helpers.ts`) maps that stage to an HTTP status — `not-found` (model isn't currently loaded) → `404`, everything else → `502` — and always returns a generic message to the client while logging the real error (with the original SDK error as `cause`) server-side.
-
-### Demo script
-
-`apps/backend/src/models/demo.ts` (`npm run model-lifecycle-demo --workspace=apps/backend`) exercises the real `ModelManagementService`/`QvacRuntimeAdapter` end to end, no HTTP involved:
-
-1. **Registry source** — searches for a specific known-small model (`Qwen3-1.7B-Q4_0`) and runs `provision -> load -> infer -> unload` on it.
-2. **URL source** — same lifecycle, loading directly from a HuggingFace file URL.
-
-`unload` runs in a `finally` block, so it happens even if inference fails. This is the closest thing to a real acceptance test this feature has — it downloads an actual model over the network, so it needs real disk space and connectivity to run.
-
-### Testing manually
-
-Import `apps/backend/postman/local-model-management.postman_collection.json` into Postman. It covers all 6 endpoints in order (discovery → provision → load → infer → unload → close), including the expected error cases (invalid body → 400, unknown/already-unloaded model → 404). `modelId` is captured automatically from the Load response into a collection variable.
+Every failure becomes a single `ModelManagementError` type tagged with the stage it happened in (`discovery`, `download`, `load`, `inference`, `unload`, `close`, `not-found`), with the original SDK error as `cause` — callers log it and surface a generic, user-safe message instead of the raw SDK error.
 
 ### Config
 
@@ -361,10 +328,9 @@ While the provider is down, `@qvac/sdk` itself logs every heartbeat interval: th
 
 ### Architecture
 
-Same layering as [Local Model Management](#local-model-management):
+Same layering as [Local Model Management](#local-model-management), also internal (no HTTP router):
 
 ```
-router/   HTTP concerns only: read req, validate/parse, call the service, map errors to status codes
 service/  Business logic: a single "current synthesis" slot (no queue), reuses ModelManagementService for the model lifecycle
 domain/   Types + interfaces (ports) — framework/SDK-agnostic
 infra/    QVAC-specific: the only layer that knows @qvac/sdk exists
@@ -381,37 +347,19 @@ resolved once per process by `resolveResourceTier()`
 match what its RAM alone would suggest). Unlike the models/speech features, there's no `requestId`-keyed
 map here: `@qvac/sdk`'s `textToSpeech()` doesn't expose a per-call
 `requestId` the way `loadModel()`/`completion()` do, so `TtsService` keeps a
-single synthesis slot instead — a second `POST /api/tts` while one is
-pending gets a `409`, and cancellation goes through the SDK's broad-cancel
-escape hatch (`cancel({ modelId, kind: 'tts' })`) rather than a
-per-request cancel.
+single synthesis slot instead — a second `synthesize()` call while one is
+pending throws `SynthesisInProgressError`, and cancellation goes through the
+SDK's broad-cancel escape hatch (`cancel({ modelId, kind: 'tts' })`) rather
+than a per-request cancel. The real voice path (`VoiceAgentService`, behind
+`POST /v1/chat/voice-completions`) bypasses this slot entirely via
+`synthesizeSync()`; the queued `synthesize()`/`cancel()`/`getStatus()`/`getAudio()`
+flow is covered by `tts.service.test.ts` but has no production caller today.
 
 Long text is split before it reaches the engine: a single Supertonic job
 yields at most ~28 s of audio and squeezes/drops words past that, so
 `QvacTtsAdapter` uses the SDK's `sentenceStream` mode (chunks of at most
 `SUPERTONIC_MAX_CHUNK_CHARS`, see `src/config/models.config.ts`) and joins
 the chunks back into one WAV. Callers still get a single audio buffer.
-
-### Endpoints
-
-Base path: `/api/tts`
-
-| Method | Path | Body | Does |
-|---|---|---|---|
-| `POST` | `/` | `{ text }` | Starts synthesizing `text` in the background; `202` once the model is loaded and synthesis has started |
-| `POST` | `/cancel` | — | Cancels the in-flight synthesis, if any (no-op otherwise) |
-| `GET` | `/status` | — | `{ state: 'idle' \| 'pending' \| 'succeeded' \| 'failed' \| 'cancelled' }` |
-| `GET` | `/audio` | — | The synthesized WAV bytes (`audio/wav`), once `state` is `'succeeded'`; `404` otherwise |
-
-### Demo script
-
-`apps/backend/src/tts/demo.ts` (`npm run tts-demo --workspace=apps/backend`)
-exercises the real `TtsService`/`QvacTtsAdapter` end to end, no HTTP
-involved: synthesizes a short sentence, writes + plays the resulting WAV
-locally, then starts a longer synthesis and cancels it mid-flight to prove
-the stop control actually interrupts local synthesis — no cloud service
-involved anywhere in the path. Same "only one QVAC-backed process at a
-time" constraint as the other demo scripts applies.
 
 ## RAG: corpus ingestion
 
@@ -476,7 +424,6 @@ needs to be rebuilt — this is not automatic.
   nothing that answers a business question, so nothing answerable is lost
   today — checked by eye, not by OCR. A corpus with scanned documents or
   photographed text would need OCR to be searchable.
-- `ai/demo.ts` and `speech/demo.ts` still use the in-memory fixture store.
 
 ## Citations
 

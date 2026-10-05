@@ -1,18 +1,6 @@
 const SENTENCE_END_RE = /[.!?]+(?=\s|$)/;
 
-/**
- * Buffers streamed text deltas and emits complete sentences once the
- * buffer has grown to at least `minChunkChars` - short leading sentences
- * are bundled together into one chunk rather than each becoming its own
- * (expensive) TTS call. Sentence detection is a simple punctuation regex,
- * not NLP - it won't handle abbreviations ("Mr. Smith") perfectly, which
- * is an acceptable trade-off for grounded assistant prose.
- *
- * Chunks come out verbatim: joined back together they reproduce the
- * streamed text exactly, whitespace included - the line breaks are what
- * separate Markdown paragraphs, headings and list items on screen. A
- * consumer that only needs the words (TTS) trims its own copy.
- */
+/** Buffers streamed deltas and emits complete sentences verbatim (whitespace included) once the buffer reaches `minChunkChars`, batching short leading sentences into one TTS call - joined back together, chunks reproduce the streamed text exactly (the line breaks lay out Markdown on screen); a consumer that only needs the words (TTS) trims its own copy. Punctuation-regex detection, not NLP - doesn't handle abbreviations ("Mr. Smith") perfectly. */
 export class SentenceChunker {
   private buffer = "";
 

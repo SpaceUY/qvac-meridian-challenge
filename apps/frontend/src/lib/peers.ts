@@ -11,13 +11,7 @@ export function countAvailablePeers(delegation: DelegationInfo | undefined): num
   return delegation?.isDelegated ? 1 : 0
 }
 
-/**
- * Compares two `DelegationSnapshot`s and says which single transition (if
- * any) just happened. `previous` is `undefined` on the very first snapshot
- * (nothing to compare against yet) - this deliberately reports `null`
- * rather than `'connected'` in that case, so reloading the page while
- * already delegated doesn't fire a false "just connected" notification.
- */
+/** Compares two `DelegationSnapshot`s and reports which transition (if any) just happened. `previous` is `undefined` on the first snapshot - deliberately reports `null` rather than `'connected'` then, so reloading while already delegated doesn't fire a false notification. */
 export function classifyDelegationTransition(
   previous: DelegationSnapshot | undefined,
   current: DelegationSnapshot,

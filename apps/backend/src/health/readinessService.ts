@@ -14,13 +14,7 @@ export interface ReadinessSnapshot {
   embeddingReady: boolean;
 }
 
-/**
- * The one place that decides whether this backend is ready to serve
- * grounded answers. `GET /health` and `GET /v1/models` both call `check()`
- * so they can never disagree - and per-endpoint self-healing (retrying a
- * stuck preload, retrying a failed embedding warm-up) only has to be
- * written once.
- */
+/** Single source of truth for readiness - `GET /health` and `GET /v1/models` both call `check()` so they can never disagree. */
 export class ReadinessService {
   private embeddingReady = false;
   private embeddingWarmupPromise: Promise<void> | undefined;
@@ -49,8 +43,7 @@ export class ReadinessService {
         })
         .catch((err: unknown) => {
           console.error("[readiness] embedding model warm-up failed", err);
-          // Clear so the next check() starts a fresh attempt instead of
-          // being stuck on this rejected promise forever.
+          // Clear so the next check() retries instead of reusing this rejected promise forever.
           this.embeddingWarmupPromise = undefined;
           throw err;
         });
@@ -58,19 +51,12 @@ export class ReadinessService {
     return this.embeddingWarmupPromise;
   }
 
-  /**
-   * Re-checks status, retrying a previously-failed chat preload and
-   * kicking off the embedding warm-up if it hasn't succeeded yet. Has
-   * side effects on purpose - this is what makes both endpoints
-   * self-healing across polls instead of latching on one transient
-   * failure forever.
-   */
+  /** Has side effects on purpose: retries a failed chat preload / embedding warm-up so both endpoints self-heal across polls. */
   check(): ReadinessSnapshot {
     let chatStatus = this.chatService.getStatus().status;
     if (chatStatus === "error") {
-      // preload() sets status to "loading" synchronously before its first
-      // await, so re-reading getStatus() right after this call reflects
-      // the freshly-kicked attempt instead of the stale "error".
+      // preload() sets status to "loading" synchronously before its first await,
+      // so re-reading getStatus() right after reflects the fresh attempt, not the stale "error".
       this.chatService.preload().catch((err: unknown) => {
         console.error("[readiness] chat model preload retry failed", err);
       });

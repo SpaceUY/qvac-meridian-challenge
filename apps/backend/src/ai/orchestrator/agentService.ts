@@ -38,17 +38,17 @@ export interface AgentStatusPayload {
   status: AgentStatus;
   error?: string;
   model: { name: string; quantization: string };
-  /** The resource tier this process resolved at startup (`resourceTier.ts`) - the same value every tiered consumer (chat, TTS, STT) is using right now. */
+  /** Resource tier resolved at startup; shared by every tiered consumer (chat, TTS, STT). */
   hardwareTier: ResourceTier;
-  /** Display name of the Whisper model resolved for this tier - not necessarily loaded into memory yet (STT loads lazily, on first use), just which one this process would load. */
+  /** Whisper model resolved for this tier; may not be loaded yet (STT loads lazily). */
   sttModel: string;
-  /** Display name of the TTS model resolved for this tier - same "resolved, not necessarily loaded yet" caveat as sttModel. */
+  /** TTS model resolved for this tier; same lazy-load caveat as sttModel. */
   ttsModel: string;
-  /** Present once known (after a successful `preload()`) - whether the chat model is running on a remote provider or locally. Absent while idle/loading/error, or if delegation status couldn't be confirmed. */
+  /** Known once preload() succeeds; absent while idle/loading/error or if unconfirmed. */
   delegation?: LoadedModelDelegationInfo;
-  /** Whether a delegation-recovery reload is in flight right now (see `QvacChatSession.isRecovering()`). Always present (never `undefined`) - simpler for the frontend to read than a third "unknown" state, and it's meaningfully `false` even when no delegate is configured at all. */
+  /** Whether a delegation-recovery reload is in flight; always present, never undefined. */
   recovering: boolean;
-  /** Present only when a delegate is configured and the provider health monitor has started (after a successful `preload()`): whether the provider is answering heartbeats. */
+  /** Present only once a delegate is configured and health monitoring has started. */
   providerHealth?: ProviderHealth;
 }
 
@@ -86,24 +86,19 @@ function toLangChainMessage({
 
 export interface InvokeResult {
   answer: string;
-  /** The model's raw reasoning/thinking trace for this reply, when the runtime captured one. */
+  /** Raw reasoning trace, when the runtime captured one. */
   thinkingText?: string;
   /** RAG chunks retrieved for this turn and passed to the model as grounding context. */
   chunks: RetrievedChunk[];
-  /** Names of the tools (e.g. "lookup_stock", "list_documents") the agent actually invoked and got a result from during this turn, deduplicated, in no particular order. Empty when the answer used only RAG/the model's own reasoning. */
+  /** Tools invoked successfully this turn, deduplicated, unordered; empty if none were called. */
   toolsUsed: string[];
-  /** Source documents for `answer`, in the evaluator's `{ file, score }` shape. Empty when the answer wasn't grounded - see `selectCitations`. */
+  /** Source documents for `answer`, in the evaluator's `{ file, score }` shape; empty if ungrounded - see `selectCitations`. */
   citations: Citation[];
-  /** How full this conversation's context window is after this turn (`measureContextUsage`). Absent when the runtime reported no token stats. */
+  /** Context-window usage after this turn; absent if the runtime reported no token stats. */
   context?: ContextUsage;
 }
 
-/**
- * Preloads a QVAC chat model and compiles the stock-assistant graph around
- * it once, so repeated `invoke()` calls reuse both instead of rebuilding
- * them per request. Also tracks its own load status so an HTTP layer has
- * something real to report (see `chat.router.ts`).
- */
+/** Preloads a QVAC chat model and compiled graph once, reusing both across `invoke()` calls; tracks load status for `chat.router.ts`. */
 export class AgentService {
   private readonly chatModel: ChatQVAC;
   private readonly chatSession: QvacChatSession;
@@ -113,12 +108,11 @@ export class AgentService {
   private readonly ttsModel: string;
   private status: AgentStatus = "idle";
   private statusError: string | undefined;
-  //private readonly corpusContext: Promise<string>;
-  /** `requestId`s of `invoke()` calls still in flight - lets `cancel()` reject an unknown/already-settled `requestId` as a safe no-op. */
+  /** In-flight `invoke()` requestIds; lets `cancel()` no-op safely for an unknown/settled id. */
   private readonly pendingRequests = new Set<string>();
-  /** Only set when a delegate is configured, once `preload()` has succeeded; see `startHealthMonitor()`. */
+  /** Set once `preload()` succeeds, if a delegate is configured. */
   private healthMonitor?: ProviderHealthMonitor;
-  /** Set once a proactive switch back to the provider has been attempted. Cleared when the provider's health calls for local again, and whenever a check observes the model running on the provider - so a provider that answers heartbeats but cannot serve the model gets one attempt per down->up transition instead of a reload every tick, while a model that later drifts off the provider still gets a fresh attempt. */
+  /** Caps re-delegation to one attempt per down->up transition; cleared on each observed divergence. */
   private redelegationAttempted = false;
 
   /** `tier` defaults to the process-wide `RESOURCE_TIER`, overridable for tests. */
@@ -150,15 +144,7 @@ export class AgentService {
     this.graph = createGraph(this.chatModel, ragService, documentRepository);
   }
 
-  /**
-   * The current load status — polled by `GET /api/chat/status` (Task 2).
-   * Also carries a model snapshot for the engine panel. `delegation` is
-   * read live off `chatSession.getCachedDelegationInfo()` rather than a
-   * snapshot taken once at `preload()` time, so it reflects a mid-session
-   * recovery (the chat model falling back to local after its delegated
-   * provider died) instead of staying stuck on stale "still delegated"
-   * status forever.
-   */
+  /** Polled by `GET /api/chat/status`. `delegation` is read live, not a `preload()`-time snapshot, so it reflects a mid-session fallback to local. */
   getStatus(): AgentStatusPayload {
     const delegation = this.chatSession.getCachedDelegationInfo();
     return {
@@ -187,8 +173,7 @@ export class AgentService {
       this.status = "ready";
       this.startHealthMonitor();
     } catch (err) {
-      // A cancelled load isn't a genuine failure - go back to "idle" so a
-      // caller can start loading again, rather than getting stuck on "error".
+      // Cancelled isn't a failure: reset to "idle" so a caller can retry, instead of "error".
       if (isCancellationError(err)) {
         this.status = "idle";
       } else {
@@ -199,15 +184,7 @@ export class AgentService {
     }
   }
 
-  /**
-   * Starts polling the delegated provider's heartbeat once the chat model
-   * has loaded - no-op without a configured delegate, and idempotent. A
-   * model that fell back to local at preload starts as `down`, so the
-   * monitor notices the provider coming back and re-delegates. Ticks are
-   * skipped while a chat is in flight (any pending `invoke()`, streaming
-   * included), so a heartbeat never probes the connection a completion is
-   * using.
-   */
+  /** Starts heartbeat polling once the chat model loads; no-op without a delegate, idempotent. Ticks skip while a chat is in flight. */
   private startHealthMonitor(): void {
     if (!DELEGATE_CONFIG || this.healthMonitor) return;
     const { providerPublicKey } = DELEGATE_CONFIG;
@@ -229,7 +206,7 @@ export class AgentService {
     this.healthMonitor.start();
   }
 
-  /** `reconcileProviderMode()` against the chat model, deciding from the model's live mode (see `readLiveDelegationInfo()`), with at most one `switchTo("delegated")` per attempt budget (see `redelegationAttempted`). */
+  /** Reconciles against the model's live mode, with at most one `switchTo("delegated")` per attempt budget (`redelegationAttempted`). */
   private reconcileProviderMode(desired: DesiredProviderMode): Promise<void> {
     if (desired === "local") this.redelegationAttempted = false;
     return reconcileProviderMode(
@@ -250,13 +227,7 @@ export class AgentService {
     );
   }
 
-  /**
-   * Re-reads the chat model's real mode from the SDK. If it differs from
-   * what `QvacChatSession` last reported, something changed the model outside a
-   * tracked switch - logged, since nothing else reveals it (never logs the
-   * provider's key). A model observed on the provider restores the
-   * re-delegation budget, so the next divergence gets a fresh attempt.
-   */
+  /** Re-reads live delegation mode from the SDK; logs if it diverges from the last tracked state (never logs the provider key). */
   private async readLiveDelegationInfo(): Promise<
     LoadedModelDelegationInfo | undefined
   > {
@@ -271,15 +242,7 @@ export class AgentService {
     return live;
   }
 
-  /**
-   * One switch back to the provider, logged at both ends: the attempt can
-   * silently end up on a local model (the provider answers heartbeats but
-   * cannot serve the load), and since it is not retried until the provider
-   * recovers again, the log is the only place that outcome is visible.
-   * A successful attempt restores the attempt budget right away, so a drift
-   * before the next check has observed the model is still corrected.
-   * Never logs the provider's key.
-   */
+  /** One attempt to switch back to the provider; the log is the only trace of the outcome since a failed attempt isn't retried until the provider recovers again. */
   private async redelegate(): Promise<void> {
     console.info(
       "[provider-health] re-delegation attempt started: provider is answering heartbeats again",
@@ -305,26 +268,12 @@ export class AgentService {
     );
   }
 
-  /**
-   * Cancels the model load started by `preload()`, if one is currently in
-   * flight. Safe to call when nothing is loading - a no-op, same
-   * convention as `ModelManagementService.cancel()`.
-   */
+  /** Cancels an in-flight `preload()` load; a no-op if nothing is loading. */
   async cancelPreload(): Promise<void> {
     await this.chatSession.cancelLoad();
   }
 
-  /**
-   * Sends a conversation history through the graph, returns the assistant's
-   * reply text and thinking trace. `options` overrides this turn's
-   * `temperature`/`seed` (Req 6.1.3), falling back to `ChatQVAC`'s own
-   * constructor default when omitted. Pass `onToken` to receive the final
-   * reply's text as it's generated, rather than only once this resolves.
-   *
-   * Not `async`: the returned promise carries `requestId` synchronously so
-   * a caller can pass it to `cancel()` while the invoke is still running -
-   * same convention as `ModelManagementService.loadModel()`/`infer()`.
-   */
+  /** Streams a reply through the graph; `options` overrides this turn's temperature/seed. Not async: `requestId` is attached synchronously so `cancel()` can target this call before it settles. */
   invoke(
     messages: ConversationMessage[],
     options?: GenerationOptions,
@@ -339,20 +288,7 @@ export class AgentService {
     return Object.assign(result, { requestId });
   }
 
-  /**
-   * Cancels the chat completion currently in flight (or still queued behind
-   * the tier's concurrency limit) for `requestId`, if it's still pending -
-   * rejecting the `invoke()` promise it belongs to, without disturbing any
-   * other concurrently in-flight or queued `invoke()`. Safe to call with an
-   * unknown or already-settled `requestId`, same no-op convention as
-   * `ModelManagementService.cancel()`.
-   *
-   * `requestId` is threaded through the graph's state down to whatever
-   * `QvacChatSession.complete()` call this `invoke()` is currently making
-   * (see `runInvoke()`/`graph.ts`'s `generateReply()`), so `cancelActive()`
-   * can target exactly that call even while other tiers' concurrency allows
-   * several to run at once.
-   */
+  /** Cancels the in-flight (or queued) completion for `requestId`, without disturbing other concurrent `invoke()` calls; safe no-op for an unknown/settled id. */
   async cancel(requestId: string): Promise<void> {
     if (!this.pendingRequests.has(requestId)) return;
     await this.chatSession.cancelActive(requestId);
@@ -401,10 +337,7 @@ export class AgentService {
       .find((message): message is AIMessage => AIMessage.isInstance(message));
 
     const answer = lastAIMessage?.text ?? "";
-    // Safety net only: "messages" mode also emits the messages a node returns
-    // (not just model tokens), so the insufficient-context fallback and any
-    // hidden reply (see graph.ts's buildLlmNode) already reached onToken
-    // above. This covers a reply that somehow produced no stream event.
+    // Safety net: covers a reply that produced no stream event (normal replies already reached onToken above).
     if (!streamedAnyToken && answer) onToken?.(answer);
 
     const thinkingText = lastAIMessage?.additional_kwargs.thinkingText;

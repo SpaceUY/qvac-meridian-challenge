@@ -23,8 +23,7 @@ export function ImageThumbnailRow({ images, onRemove, onPreview }: Props) {
           >
             <img src={image.previewUrl} alt="" className="size-full object-cover" />
           </button>
-          {/* Inside the corner (not hanging off the edge), always visible enough to
-              tap on touch, reinforced on hover/focus for desktop. */}
+          {/* Visible enough to tap on touch; reinforced on hover/focus for desktop. */}
           <button
             type="button"
             className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-foreground text-background opacity-80 shadow-sm outline-none transition-opacity group-hover/thumb:opacity-100 hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50"

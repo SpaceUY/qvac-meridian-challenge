@@ -14,8 +14,6 @@ describe('toSdkModelConfig', () => {
   });
 
   it('omits ctx_size/tools entirely when unset, instead of including them as undefined', () => {
-    // Some engines' modelConfig schemas (e.g. whisper's) reject unrecognized
-    // keys even when their value is undefined - see loadModelConfig.ts.
     const config = toSdkModelConfig({ engineConfig: { detect_language: true } });
 
     expect(config).toEqual({ detect_language: true });

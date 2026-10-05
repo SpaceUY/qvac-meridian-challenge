@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { chunkPcm, EXPECTED_WAV_FORMAT, parseWavPcm, warnIfUnexpectedFormat } from './wavPcm.js';
 
-/** Builds one RIFF chunk: 4-byte id + 4-byte little-endian size + payload (+ 1 pad byte if the payload is odd-length, per the RIFF spec). */
+/** One RIFF chunk: id + little-endian size + payload (+1 pad byte if odd-length, per the RIFF spec). */
 function chunk(id: string, payload: Buffer): Buffer {
   const header = Buffer.alloc(8);
   header.write(id, 0, 'ascii');
@@ -23,7 +23,7 @@ function fmtChunkPayload(format: { sampleRate: number; channels: number; bitsPer
   return payload;
 }
 
-/** Builds a minimal valid RIFF/WAVE buffer (one `fmt ` chunk, one `data` chunk), optionally surrounded by extra chunks, for testing `parseWavPcm` without a real audio file. */
+/** Minimal valid RIFF/WAVE buffer (`fmt `+`data` chunks), optionally surrounded by extra chunks. */
 function buildWavBuffer(
   format: { sampleRate: number; channels: number; bitsPerSample: number },
   pcmData: Buffer,

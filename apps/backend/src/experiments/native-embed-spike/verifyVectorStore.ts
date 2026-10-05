@@ -1,17 +1,7 @@
 /**
- * I.4 spike - verifies that vectors produced by the native embedding path
- * are usable with the EXISTING RAG vector store (built by `npm run
- * corpus:ingest`, which embeds through `@qvac/sdk`). Read-only: never writes
- * to `.lancedb`.
- *
- * For each query this:
- *   1. embeds it via the native path (`nativeEmbedClient.ts`)
- *   2. embeds it via `@qvac/sdk` (the path the table was actually built with)
- *   3. checks both vectors are 768-dim and near-identical (cosine similarity)
- *   4. runs both vectors against the real `chunks` table and compares results
- *
- * Run with: npm run native-embed-verify --workspace=apps/backend
- * (requires `npm run corpus:ingest` to have populated `.lancedb` already)
+ * I.4 spike - verifies native-path vectors are usable with the existing RAG vector store (built via `@qvac/sdk` embeddings). Read-only, never writes to `.lancedb`.
+ * Per query: embeds via both paths, checks both vectors are the same dimension and near-identical (cosine), and compares real `chunks`-table search results.
+ * Run with: npm run native-embed-verify --workspace=apps/backend (requires `npm run corpus:ingest` first)
  */
 import { close as closeSdk, embed, loadModel, unloadModel } from "@qvac/sdk";
 import { LanceDbVectorStore } from "../../rag/infra/lanceDbVectorStore.js";

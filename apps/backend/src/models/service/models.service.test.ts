@@ -21,16 +21,8 @@ interface PendingCall {
 }
 
 /**
- * Stands in for `QvacRuntimeAdapter` without touching `@qvac/sdk`. Mirrors
- * the real SDK's requestId-keyed cancel registry (see
- * `infra/qvacRuntimeAdapter.ts` and `cancelHandler.js` in the installed
- * SDK): every `load()`/`infer()` call is held open on a requestId until the
- * test explicitly settles or cancels it, and `cancel()` on an unknown or
- * already-settled requestId is a safe no-op - it never throws. Rejects with
- * `OperationCancelledError` on cancel, exactly like `QvacRuntimeAdapter`
- * does when it catches the SDK's `InferenceCancelledError`, so
- * `ModelManagementService.getRequestStatus()` can tell "cancelled" apart
- * from "failed" in tests the same way it does against the real adapter.
+ * Stands in for `QvacRuntimeAdapter` without touching `@qvac/sdk`. Mirrors its requestId-keyed cancel registry: `load()`/`infer()` stay open until the test settles/cancels them, and `cancel()` on an unknown/settled id is a safe no-op.
+ * Rejects with `OperationCancelledError` on cancel, exactly like the real adapter, so `getRequestStatus()` tells "cancelled" from "failed" the same way it would for real.
  */
 class FakeModelRuntime implements ModelProvisioningPort, ModelRuntimePort {
   private nextRequestId = 0;

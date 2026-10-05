@@ -30,11 +30,7 @@ function defaultResources(): MachineResources {
   return { totalMemBytes: os.totalmem(), cpuCores: os.cpus().length };
 }
 
-/**
- * `resources`/`env` are parameters, not a direct `os`/`process.env` read,
- * so this is testable without module-reset tricks. `QVAC_RESOURCE_TIER`
- * overrides the RAM/CPU heuristic since it can't see actual GPU VRAM.
- */
+/** `resources`/`env` are parameters (not a direct `os`/`process.env` read) so this is testable without module-reset tricks; `QVAC_RESOURCE_TIER` overrides the heuristic since it can't see GPU VRAM. */
 export function resolveResourceTier(
   resources: MachineResources = defaultResources(),
   env: NodeJS.ProcessEnv = process.env,

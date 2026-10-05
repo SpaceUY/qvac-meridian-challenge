@@ -4,7 +4,7 @@ export type ResourceTier = 'low' | 'medium' | 'high'
 /** Present once known (after the model has loaded) - whether the chat model is running on a remote provider or locally. */
 export type DelegationInfo = { isDelegated: boolean; providerPublicKey?: string }
 export type ProviderHealthState = 'up' | 'down'
-/** Heartbeat state of the configured delegate, as tracked by the backend's hysteresis-based health monitor. Present only once a delegate is configured and its health monitor has started. */
+/** Present only once a delegate is configured and its health monitor has started. */
 export type ProviderHealth = {
   state: ProviderHealthState
   consecutiveFailures: number

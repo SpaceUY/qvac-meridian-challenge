@@ -22,20 +22,10 @@ export interface CorpusIngestOptions {
 }
 
 /**
- * Incremental corpus ingestion: read -> diff by content hash -> chunk ->
- * embed -> write. The whole point is the diff: a document whose SHA-256 is
- * unchanged is never chunked and never embedded, which is what
- * "already-ingested unchanged documents are not unnecessarily re-embedded"
- * means in practice.
- *
- * There is no separate state file: the table itself says what was ingested
- * (`listDocumentHashes()`), so the state can never disagree with the data.
- * Each document is committed by its own write - a run that dies halfway keeps
- * everything it finished, and a document caught between delete and add just
- * has no rows, so the next run sees it as new.
- *
- * Depends only on ports, so it runs in tests with a line-splitting chunker
- * and a fake embedder - no QVAC worker, no model download, no LanceDB.
+ * Incremental corpus ingestion: diff by content hash -> chunk -> embed ->
+ * write; unchanged documents are never re-embedded. No separate state file -
+ * the table itself (`listDocumentHashes()`) is the state, so a run that dies
+ * halfway just leaves the next run seeing unfinished documents as new.
  */
 export class CorpusIngestService {
   private readonly dimensions: number;

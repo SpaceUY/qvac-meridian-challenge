@@ -1,14 +1,7 @@
 /**
- * I.4 spike - benchmarks the existing `@qvac/sdk` embedding path against the
- * native `@qvac/embed-llamacpp` path added by this spike, same
- * EmbeddingGemma 300M Q4_0 model, same default config, same input texts.
- *
+ * I.4 spike - benchmarks the existing `@qvac/sdk` embedding path against the native `@qvac/embed-llamacpp` path, same model/config/inputs.
  * Run with: npm run native-embed-benchmark --workspace=apps/backend
- *
- * Measures, per path: model load time, average per-call embedding latency,
- * throughput (embeddings/sec), and peak `bare.exe` working-set memory (see
- * `rssSampler.ts` for why that process, not the Node driver, is what
- * actually holds the model).
+ * Measures load time, avg latency, throughput, and peak `bare.exe` RSS (see `rssSampler.ts` for why that process, not the Node driver, holds the model).
  */
 import { close as closeSdk, embed, loadModel, unloadModel } from "@qvac/sdk";
 import { EMBEDDING_MODEL_SOURCE, EMBEDDING_MODEL_TYPE } from "../../config/models.config.js";
@@ -23,13 +16,7 @@ import { startBareRssSampler, waitForNoBareProcesses } from "./rssSampler.js";
 const WARMUP_TEXT =
   "This is a warmup call so the first timed call in each path is not skewed by cold-start effects.";
 
-/**
- * Short query-like + longer paragraph-like variants, roughly spanning the
- * 180-word chunk size `config/rag.config.ts` ingests at. Drawn from the same
- * domain as the real corpus (`corpus/faqs`, `corpus/policies` - Meridian
- * Components support/escalation content) for realism, though benchmark
- * timing does not depend on the text's subject matter.
- */
+/** Short+long text variants spanning the 180-word chunk size `rag.config.ts` ingests at, drawn from the real corpus domain for realism (timing doesn't depend on subject matter). */
 const BENCHMARK_TEXTS: string[] = [
   "What is the P1 first-response SLA for a production-down issue?",
   "How many hours does L1 have to escalate a P2 ticket to L2?",

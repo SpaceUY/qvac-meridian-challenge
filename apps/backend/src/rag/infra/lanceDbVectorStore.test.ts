@@ -6,16 +6,10 @@ import * as lancedb from '@lancedb/lancedb';
 import { LanceDbVectorStore, LanceDbVectorStoreWriter } from './lanceDbVectorStore.js';
 import type { ChunkRecord } from '../domain/types.js';
 
-/**
- * Runs against a real LanceDB directory in a temp folder, not a mock: the
- * whole point of this adapter is the on-disk behaviour (schema inference,
- * cosine distance, `_distance` semantics), and a mock would assert our
- * assumptions about LanceDB rather than LanceDB itself.
- */
+/** Real LanceDB directory in a temp folder, not a mock - the point is the on-disk behavior itself. */
 describe('LanceDbVectorStore', () => {
   let dbDir: string;
 
-  // Two-dimensional vectors: easy to reason about by hand.
   // Query [1, 0]: cosine similarity is 1.0 for [2,0], 0.8 for [4,3], 0 for [0,5].
   const ROWS = [
     { id: 'reports/a.md#0', vector: [2, 0], content: 'A', source: 'reports/a.md', chunkIndex: 0, title: 'A', documentType: 'reports', contentHash: 'h1' },

@@ -7,26 +7,9 @@ import { DEFAULT_NATIVE_EMBED_CONFIG, resolveNativeEmbeddingModelPath } from './
 export { NativeWorkerError } from './nativeEmbeddingClient.js';
 
 /**
- * `EmbeddingPort` backed by `@qvac/embed-llamacpp` run directly under the
- * Bare runtime - no `@qvac/sdk` anywhere in the call path. The persistent
- * worker protocol (`nativeEmbeddingClient.ts`/`bare/embedServer.js`)
- * generalizes the I.4 spike's one-shot worker
- * (`experiments/native-embed-spike/bare/embedWorker.js`, built for clean
- * benchmarking, not a long-lived server) into something suitable for
- * production.
- *
- * Loads whatever `modelSource` it's constructed with (resolved to a cached
- * GGUF path via `resolveNativeEmbeddingModelPath()`) - generalized from the
- * original I.4 integration, which always loaded EmbeddingGemma 300M Q4_0
- * regardless of what `ResilientEmbeddingService` was configured with.
- *
- * Lazy, cached load - mirrors `QvacEmbeddingService.ensureModel()`: the
- * worker spawns and the model loads on the first `embed()`/`embedBatch()`
- * call, once, and is reused for every call after. This class does not decide
- * whether the native path is even attempted, or what happens if it fails -
- * that policy lives in `ResilientEmbeddingService`. This class only knows
- * how to run the native path when asked, and to surface `NativeWorkerError`
- * (including `isCrashed`) when it can't.
+ * `EmbeddingPort` backed by `@qvac/embed-llamacpp` under the Bare runtime - no `@qvac/sdk` in the
+ * call path. Lazy, cached load (mirrors `QvacEmbeddingService.ensureModel()`). Doesn't decide
+ * whether the native path is attempted or what happens if it fails - that's `ResilientEmbeddingService`'s job.
  */
 export class NativeEmbeddingProvider implements EmbeddingPort {
   private readonly client = new NativeEmbeddingClient();
@@ -50,22 +33,7 @@ export class NativeEmbeddingProvider implements EmbeddingPort {
     return this.loadPromise;
   }
 
-  /**
-   * No client-side queue here, unlike `QvacEmbeddingService.enqueue()` -
-   * that one is load-bearing: the SDK's `llamacpp-embedding` worker handler
-   * (`embed.js`) calls `model.run()` directly per RPC request with no
-   * serialization of its own, so two concurrent `embed()` calls from Node
-   * really would race the addon's single-job constraint and one would throw
-   * "Cannot set new job" without a client-side queue forcing them one at a
-   * time. Our worker (`bare/embedServer.js`) already serializes every
-   * request it receives through its own `processing` promise chain before
-   * calling `model.run()`, and `NativeEmbeddingClient.embedMany()` matches
-   * responses to requests by id regardless of dispatch order - so sending
-   * two `embedMany()` calls concurrently from here is already safe. Verified
-   * directly: `NativeEmbeddingProvider.embedBatch()` and concurrent
-   * `embed()` calls both work correctly against the real worker with no
-   * queue at this layer.
-   */
+  /** No client-side queue needed (unlike `QvacEmbeddingService.enqueue()`): `embedServer.js` already serializes requests before calling `model.run()`, and responses are matched by id regardless of order. */
   async embed(text: string): Promise<number[]> {
     await this.ensureLoaded();
     const [result] = await this.client.embedMany([text]);

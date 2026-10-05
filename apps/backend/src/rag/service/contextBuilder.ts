@@ -17,12 +17,7 @@ function formatHeader(chunk: RetrievedChunk): string {
   return `[${parts.join(' | ')}]`;
 }
 
-/**
- * Formats retrieved chunks into the grounded context block injected into
- * the system prompt. The only place that knows this text format - kept
- * separate from `RagRetrievalService` so context/citation formatting can
- * evolve independently of retrieval.
- */
+/** Formats retrieved chunks into the grounded context block injected into the system prompt. */
 export function buildGroundedContext(chunks: RetrievedChunk[]): string {
   return chunks.map((chunk) => `${formatHeader(chunk)}\n${chunk.content}`).join('\n\n');
 }

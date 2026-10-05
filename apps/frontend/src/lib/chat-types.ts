@@ -1,7 +1,3 @@
-// The chat types. They live apart from the reducer and the hook so that a
-// component that only needs to know "what shape a Message has" does not have
-// to drag in the logic of how the state changes.
-
 import type { ImageAttachment } from '@/lib/image-attachments'
 
 export type Role = 'user' | 'assistant'
@@ -11,7 +7,7 @@ export type Citation = {
   score?: number
 }
 
-/** How full this conversation's context window is, as the backend measured it after a reply. Mirrors ContextUsage in apps/backend/src/ai/orchestrator/contextBudget.ts by hand (no shared package - same convention as model-status-client.ts). */
+/** Mirrors `ContextUsage` in apps/backend/src/ai/orchestrator/contextBudget.ts by hand (no shared package). */
 export type ContextUsage = {
   usedTokens: number
   maxTokens: number
@@ -19,12 +15,7 @@ export type ContextUsage = {
   exhausted: boolean
 }
 
-/**
- * Where a message is in its life. A discriminated union: `type` is the tag
- * TypeScript reads to know which of the three shapes it is holding, and only
- * the 'error' one carries a reason. That is the point — you cannot read
- * `reason` without first proving the message actually failed.
- */
+/** Discriminated union so `reason` is only reachable after narrowing to `'error'`. */
 export type MessageStatus =
   | { type: 'streaming' }
   | { type: 'done' }
@@ -44,12 +35,4 @@ export type Message = {
   images?: ImageAttachment[]
 }
 
-/**
- * The conversation: the list of messages, in order.
- *
- * It is the bare array, with no wrapper. It used to be { messages: Message[] },
- * but the wrapper held nothing else and forced `{ ...state, messages: ... }` in
- * every branch of the reducer. If some day something else needs to live next to
- * the conversation, we wrap it again.
- */
 export type History = Message[]

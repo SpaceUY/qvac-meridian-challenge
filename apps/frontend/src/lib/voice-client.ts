@@ -1,11 +1,4 @@
-// apps/frontend/src/lib/voice-client.ts
-//
-// Transport for a voice turn - the sibling of chat-client.ts but for
-// /v1/chat/voice-completions: one complete audio in, a stream of SSE events
-// out (one per synthesized sentence, then a final transcript+citations
-// event) - same opt-in `stream: true` convention chat-client.ts's
-// requestCompletion already uses for text. Only knows HTTP and the wire
-// shape; doesn't know what a microphone or the store are.
+// Transport for a voice turn - sibling of chat-client.ts but for /v1/chat/voice-completions: one audio in, a stream of SSE events out (one per sentence, then a final transcript+citations event), same opt-in stream:true convention as text. Only knows HTTP and the wire shape; doesn't know about the microphone or the store.
 
 import type { OpenAIMessage } from '@/lib/chat-client'
 import { EngineError, readErrorMessage, parseCitations, parseContextUsage, parseTools } from '@/lib/chat-client'

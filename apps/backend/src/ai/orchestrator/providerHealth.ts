@@ -31,12 +31,7 @@ export interface HealthTrackerOptions {
 export const DOWN_AFTER_FAILURES = 3;
 export const UP_AFTER_SUCCESSES = 2;
 
-/**
- * Pure hysteresis state machine: `downAfter` consecutive failures flip
- * `up` to `down`, `upAfter` consecutive successes flip `down` to `up`, and a
- * result of the opposite kind resets the streak - so one dropped heartbeat
- * (or a flapping provider) never triggers a model reload. No timers, no I/O.
- */
+/** Hysteresis state machine: `downAfter`/`upAfter` consecutive results flip state; an opposite-kind result resets the streak, so one dropped heartbeat never triggers a reload. */
 export function createHealthTracker({
   initialState,
   downAfter = DOWN_AFTER_FAILURES,

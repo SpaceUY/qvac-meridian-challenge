@@ -13,11 +13,7 @@ const KNOWN_GROUPS = [
 ]
 const KNOWN_TYPES = new Set(KNOWN_GROUPS.map((group) => group.type))
 
-/**
- * Filters by title or path (case-insensitive), groups by type in
- * KNOWN_GROUPS order, sorts each group by title, and drops empty groups.
- * A type the backend adds later still shows up, under "Other" at the end.
- */
+/** Groups by type in KNOWN_GROUPS order, sorts each group by title; a type the backend adds later falls under "Other". */
 export function groupDocuments(documents: CorpusDocument[], query: string): DocumentGroup[] {
   const needle = query.trim().toLowerCase()
   const matching = needle
@@ -40,7 +36,7 @@ export function formatLabel(format: string): string {
   return FORMAT_LABEL[format] ?? format
 }
 
-/** "2026-01-15T00:00:00.000Z" -> "Jan 15, 2026". Fixed "en-US"/UTC formatting (not the viewer's locale or timezone) so this reads the same for every reviewer of this demo, same reasoning citation-label.ts's comparePaths gives for avoiding locale-dependent output. */
+/** "2026-01-15T00:00:00.000Z" -> "Jan 15, 2026". Fixed en-US/UTC on purpose, not the viewer's locale/timezone. */
 export function formatUpdatedAt(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
 }

@@ -4,15 +4,9 @@ import type { Citation, RetrievedChunk } from '../domain/types.js';
 const SCORE_DECIMALS = 4;
 
 /**
- * Chunks -> citations: one entry per source DOCUMENT, not per chunk. Three
- * chunks of the same file are one citation carrying that file's best
- * score. Sorted best-first, ties broken by path, so the same retrieval
- * always yields the same array (deterministic runs, req. [6.1.3]).
- * Chunks without a `source` are skipped: a citation needs a file.
- *
- * Deciding WHETHER to cite at all (e.g. the model answered "not enough
- * information") is not this function's job - see `selectCitations` in
- * `ai/orchestrator/citationPolicy.ts`.
+ * Chunks -> citations: one entry per source document (not per chunk), carrying its best score. Sorted
+ * best-first, ties broken by path, for deterministic runs (req. [6.1.3]). Whether to cite at all is
+ * `selectCitations` in `ai/orchestrator/citationPolicy.ts`, not here.
  */
 export function toCitations(chunks: RetrievedChunk[]): Citation[] {
   const bestScoreByFile = new Map<string, number>();
