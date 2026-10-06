@@ -455,14 +455,6 @@ docker compose up --build</code></pre>
 
 <h2>Local verification</h2>
 
-<p align="center">
-  <img
-    src="docs/assets/judge-60-seconds.svg"
-    alt="Local verification: install, fetch models, ingest corpus, serve, go offline, ask, verify citations"
-    width="900"
-  />
-</p>
-
 <ol>
   <li><code>npm ci</code></li>
   <li><code>npm run build:server</code></li>
