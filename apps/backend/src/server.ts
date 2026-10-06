@@ -1,5 +1,7 @@
 import express from "express";
 import cors from "cors";
+import { mountProfiler } from "./profiling/mountProfiler.js";
+import { resolveProfilerOptions } from "./config/profiling.config.js";
 import { ModelManagementService } from "./models/service/models.service.js";
 import { QvacRuntimeAdapter } from "./models/infra/qvacRuntimeAdapter.js";
 import { AgentService } from "./ai/orchestrator/agentService.js";
@@ -29,6 +31,9 @@ const app = express();
 app.use(cors());
 // 25mb: the default 100kb is too small for /v1/chat/voice-completions' base64 audio body.
 app.use(express.json({ limit: "25mb" }));
+
+// Req. I.6, opt-in via QVAC_PROFILER (off by default). Before any model work below, so startup loads are profiled too.
+mountProfiler(app, resolveProfilerOptions());
 
 const qvacRuntimeAdapter = new QvacRuntimeAdapter();
 const modelManagementService = new ModelManagementService(qvacRuntimeAdapter, qvacRuntimeAdapter);

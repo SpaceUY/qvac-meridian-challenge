@@ -14,6 +14,7 @@
     "build:server": "npm run build --workspace=apps/backend",
     "models:fetch": "npm run models:fetch --workspace=apps/backend",
     "corpus:ingest": "npm run corpus:ingest --workspace=apps/backend",
+    "perf:profile": "npm run perf:profile --workspace=apps/backend --",
     "serve": "npm run serve --workspace=apps/backend",
     "serve:stop": "npm run serve:stop --workspace=apps/backend",
     "provider": "npm run provider --workspace=apps/backend"

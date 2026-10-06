@@ -12,6 +12,7 @@
     "ingest": "tsx src/rag/ingest/ingest.cli.ts",
     "models:fetch": "tsx src/models/fetchModels.cli.ts",
     "corpus:ingest": "tsx src/rag/ingest/ingest.cli.ts",
+    "perf:profile": "tsx src/profiling/bench/profileBench.cli.ts",
     "serve": "node scripts/serve.mjs",
     "serve:stop": "node scripts/serve-stop.mjs",
     "provider": "tsx src/models/provider.ts",
