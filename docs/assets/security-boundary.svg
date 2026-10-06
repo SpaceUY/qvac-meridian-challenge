@@ -15,11 +15,6 @@
     </style>
   </defs>
 
-  <text x="450" y="30" text-anchor="middle"
-        fill="#94a3b8" font-size="13" letter-spacing="3">
-    WHAT LEAVES THE DEVICE?
-  </text>
-
   <!-- local boundary -->
   <rect x="30" y="60" width="520" height="270" rx="10"
         fill="none" stroke="#18b480" stroke-width="1.5"

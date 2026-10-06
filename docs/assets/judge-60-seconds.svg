@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 230" width="900" height="230" role="img" aria-labelledby="judge-60-title">
-  <title id="judge-60-title">Judge this project in 60 seconds — install, fetch models, ingest corpus, serve, go offline, ask, verify citations</title>
+  <title id="judge-60-title">Local verification — install, fetch models, ingest corpus, serve, go offline, ask, verify citations</title>
   <defs>
     <filter id="glow">
       <feGaussianBlur stdDeviation="1.8" result="blur"/>
@@ -14,11 +14,6 @@
       }
     </style>
   </defs>
-
-  <text x="450" y="30" text-anchor="middle"
-        fill="#94a3b8" font-size="13" letter-spacing="3">
-    JUDGE THIS PROJECT IN 60 SECONDS
-  </text>
 
   <line x1="80" y1="115" x2="820" y2="115"
         stroke="#334155"/>

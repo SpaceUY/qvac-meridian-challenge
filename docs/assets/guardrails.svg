@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 260" width="900" height="260" role="img" aria-labelledby="guardrails-title">
-  <title id="guardrails-title">Guardrails, not guesses — 700-character prompt cap, 700-character retrieval cap, an 80% context-budget hard stop, and a controlled refusal when evidence is insufficient</title>
+  <title id="guardrails-title">Runtime limits — 700-character prompt cap, 700-character retrieval cap, an 80% context-budget hard stop, and a controlled refusal when evidence is insufficient</title>
   <defs>
     <filter id="glow">
       <feGaussianBlur stdDeviation="2" result="blur"/>
@@ -14,11 +14,6 @@
       }
     </style>
   </defs>
-
-  <text x="450" y="32" text-anchor="middle"
-        fill="#94a3b8" font-size="13" letter-spacing="3">
-    GUARDRAILS, NOT GUESSES
-  </text>
 
   <!-- separators -->
   <line x1="225" y1="70" x2="225" y2="215" stroke="#334155"/>
@@ -57,12 +52,8 @@
         fill="#18b480" font-size="26" font-weight="700"
         filter="url(#glow)">REFUSE</text>
   <text x="787.5" y="155" text-anchor="middle"
-        fill="#94a3b8" font-size="11">INSTEAD OF</text>
+        fill="#94a3b8" font-size="11">ON MISSING</text>
   <text x="787.5" y="172" text-anchor="middle"
-        fill="#94a3b8" font-size="11">GUESSING</text>
+        fill="#94a3b8" font-size="11">EVIDENCE</text>
 
-  <text x="450" y="235" text-anchor="middle"
-        fill="#64748b" font-size="10">
-    enforced in code on every text and voice turn — not a prompt instruction
-  </text>
 </svg>

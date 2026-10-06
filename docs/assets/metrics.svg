@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 260" width="900" height="260" role="img" aria-labelledby="metrics-title">
-  <title id="metrics-title">Measured, not assumed — bundle size, embedding latency/throughput/load time, test count</title>
+  <title id="metrics-title">Benchmark results — bundle size, embedding latency/throughput/load time, test count</title>
   <defs>
     <filter id="glow">
       <feGaussianBlur stdDeviation="2" result="blur"/>
@@ -14,11 +14,6 @@
       }
     </style>
   </defs>
-
-  <text x="450" y="32" text-anchor="middle"
-        fill="#94a3b8" font-size="13" letter-spacing="3">
-    MEASURED, NOT ASSUMED
-  </text>
 
   <!-- separators -->
   <line x1="180" y1="70" x2="180" y2="215" stroke="#334155"/>
@@ -71,8 +66,4 @@
   <text x="810" y="172" text-anchor="middle"
         fill="#94a3b8" font-size="11">PASSED</text>
 
-  <text x="450" y="235" text-anchor="middle"
-        fill="#64748b" font-size="10">
-    benchmark results are documented in /docs
-  </text>
 </svg>

@@ -15,11 +15,6 @@
     </style>
   </defs>
 
-  <text x="450" y="30" text-anchor="middle" fill="#94a3b8"
-        font-size="13" letter-spacing="3">
-    OUR CONTRIBUTION BACK TO QVAC
-  </text>
-
   <text x="450" y="92" text-anchor="middle" fill="#18b480"
         font-size="28" font-weight="700" filter="url(#glow)">
     @space-uy/qvac-langgraph
@@ -36,9 +31,9 @@
   <text x="112.5" y="178" text-anchor="middle"
         fill="#18b480" font-size="14" filter="url(#glow)">PUBLISHED</text>
   <text x="112.5" y="198" text-anchor="middle"
-        fill="#94a3b8" font-size="11">real npm package</text>
+        fill="#94a3b8" font-size="11">versioned npm package</text>
   <text x="112.5" y="216" text-anchor="middle"
-        fill="#64748b" font-size="10">not a prototype</text>
+        fill="#64748b" font-size="10">published under @space-uy</text>
 
   <text x="337.5" y="178" text-anchor="middle"
         fill="#18b480" font-size="14" filter="url(#glow)">REUSABLE</text>
@@ -48,7 +43,7 @@
         fill="#64748b" font-size="10">can drive QVAC directly</text>
 
   <text x="562.5" y="178" text-anchor="middle"
-        fill="#18b480" font-size="14" filter="url(#glow)">FOUNDATIONAL</text>
+        fill="#18b480" font-size="14" filter="url(#glow)">CORE DEPENDENCY</text>
   <text x="562.5" y="198" text-anchor="middle"
         fill="#94a3b8" font-size="11">powers every tool call,</text>
   <text x="562.5" y="216" text-anchor="middle"
@@ -57,11 +52,8 @@
   <text x="787.5" y="178" text-anchor="middle"
         fill="#18b480" font-size="14" filter="url(#glow)">GIVEN BACK</text>
   <text x="787.5" y="198" text-anchor="middle"
-        fill="#94a3b8" font-size="11">nobody asked for it</text>
+        fill="#94a3b8" font-size="11">outside challenge scope</text>
   <text x="787.5" y="216" text-anchor="middle"
-        fill="#64748b" font-size="10">built for the ecosystem</text>
+        fill="#64748b" font-size="10">open-sourced on GitHub</text>
 
-  <text x="450" y="256" text-anchor="middle" fill="#94a3b8" font-size="11">
-    not scoped by the challenge — built so the next QVAC integration doesn't start from zero
-  </text>
 </svg>

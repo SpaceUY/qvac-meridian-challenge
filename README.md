@@ -29,21 +29,21 @@
 <p align="center">
   <a href="https://youtu.be/WKsw_oYwkUI"><strong>▶ Watch the demo video</strong></a>
   <br>
-  <sub>Chat, voice, vision, cancellation, and P2P delegation with local fallback — presented as to Meridian.</sub>
+  <sub>Chat, voice, vision, cancellation, and P2P delegation with local fallback, presented as to Meridian.</sub>
 </p>
 
 <h2>What this is</h2>
 
 <p>
-  Meridian Assistant is a <strong>local-first AI knowledge and inference layer</strong>
-  for Meridian Components. It answers sales, support, and field-engineering
-  questions grounded in Meridian's own documents and inventory.
+  Meridian Assistant runs <strong>AI inference and knowledge retrieval locally</strong>
+  for Meridian Components. It answers questions from sales, support, and field
+  engineering using Meridian's documents and inventory as context.
 </p>
 
 <p>
-  Inference, retrieval, embeddings, voice, and vision run on hardware Meridian
-  controls. The product exposes an OpenAI-compatible API and does not depend on
-  a hosted AI provider in the request path.
+  Inference, document retrieval, embeddings, voice, and vision run on
+  Meridian-controlled hardware. The API is OpenAI-compatible, but requests do
+  not rely on a hosted AI provider.
 </p>
 
 <p>
@@ -66,13 +66,14 @@
 </p>
 
 <p>
-  Meridian's previous cloud AI pilot failed for architectural reasons:
-  unpredictable cost, third-party data exposure, and insufficient trust in
-  generated answers.
+  Meridian had previously tested a cloud-based AI solution. That approach
+  introduced three main issues: variable cost, customer data leaving Meridian
+  hardware, and answers that were not reliable enough for business use.
 </p>
 
 <blockquote>
-  Meridian Assistant moves the answer path back onto Meridian-controlled hardware.
+  Meridian Assistant was built around those constraints and keeps the main
+  request path on local infrastructure.
 </blockquote>
 
 <h2>What we built</h2>
@@ -130,19 +131,14 @@
   <code>invoke()</code>, <code>stream()</code>, and <code>bindTools()</code>.
 </p>
 
-<blockquote>
-  <strong>We did not just build a LangGraph application on QVAC — we made QVAC usable as a first-class LangGraph chat model.</strong>
-</blockquote>
-
 <p>
   This lets developers use LangGraph for orchestration, tools, routing, state, and streaming,
-  while QVAC provides local or delegated inference underneath — enabling advanced agentic
-  workflows without cloud AI dependencies or per-token fees.
+  while QVAC handles local or delegated inference underneath, without cloud AI dependencies
+  or per-token fees.
 </p>
 
 <p>
-  This is not a demo-only abstraction:
-  <strong>Meridian Assistant itself uses the published package in its production orchestration path</strong>
+  Meridian Assistant uses the published package in its production orchestration path
   for RAG, tool calling, streaming, text, and voice.
 </p>
 
@@ -153,7 +149,7 @@
   </a>
 </p>
 
-<h2>Why this is different</h2>
+<h2>Deployment comparison</h2>
 
 <p align="center">
   <img
@@ -223,19 +219,20 @@
   </tr>
 </table>
 
-<h2>Proven, not mocked</h2>
+<h2>Benchmark results</h2>
 
 <p align="center">
   <img
     src="docs/assets/metrics.svg"
-    alt="Measured Meridian Assistant performance"
+    alt="Benchmark results: bundle size, embedding latency, throughput, model load time, test count"
     width="900"
   />
 </p>
 
 <p>
-  Measurements come from reproducible project benchmarks, including results that
-  caused features to be reverted when they did not improve performance.
+  The numbers reported in this repository come from project benchmarks. We also
+  kept the results of experiments that performed worse, since some of those
+  tests changed which features were enabled in the final implementation.
 </p>
 
 <p>
@@ -259,8 +256,8 @@
 </p>
 
 <p>
-  One <code>AgentService</code>, one compiled LangGraph graph, one QVAC model session —
-  text and voice both run through the exact same pipeline, not two parallel ones.
+  One <code>AgentService</code>, one compiled LangGraph graph, and one QVAC model session
+  handle both text and voice through the same pipeline.
 </p>
 
 <table>
@@ -278,7 +275,7 @@
   </tr>
   <tr>
     <td><strong>ChatQVAC</strong></td>
-    <td>Our own <code>@space-uy/qvac-langgraph</code> adapter — makes QVAC look like any LangChain chat model</td>
+    <td>Our own <code>@space-uy/qvac-langgraph</code> adapter, makes QVAC look like any LangChain chat model</td>
   </tr>
   <tr>
     <td><strong>QvacChatSession</strong></td>
@@ -343,9 +340,10 @@
 </p>
 
 <p>
-  Hardware is detected once per process and mapped automatically to
-  <code>low</code>, <code>medium</code>, or <code>high</code>.
-  Override with <code>QVAC_RESOURCE_TIER=low|medium|high</code>.
+  The application selects a hardware tier when the backend starts. Available
+  resources determine whether it uses the <code>low</code>, <code>medium</code>,
+  or <code>high</code> configuration. The tier can also be set manually with
+  <code>QVAC_RESOURCE_TIER=low|medium|high</code>.
 </p>
 
 <h2>Security</h2>
@@ -359,8 +357,9 @@
 </p>
 
 <p>
-  <strong>No cloud AI provider exists in the production request path.</strong>
-  Corpus data, embeddings, retrieval, transcription, and TTS remain local.
+  No cloud AI provider exists in the production request path.
+  Documents, embeddings, retrieval, transcription, and text-to-speech
+  processing remain local.
 </p>
 
 <p>
@@ -387,35 +386,37 @@
   </tr>
   <tr>
     <td><strong>~/.qvac/kv-cache</strong></td>
-    <td>Session KV-cache — deleted when a new conversation starts</td>
+    <td>Session KV-cache, deleted when a new conversation starts</td>
   </tr>
 </table>
 
-<h2>Reliability guardrails</h2>
+<h2>Runtime limits</h2>
 
 <p align="center">
   <img
     src="docs/assets/guardrails.svg"
-    alt="Guardrails, not guesses — 700-character prompt cap, 700-character retrieval cap, 80% context-budget hard stop, and a controlled refusal when evidence is insufficient"
+    alt="Runtime limits: 700-character prompt cap, 700-character retrieval cap, 80% context-budget hard stop, and a controlled refusal when evidence is insufficient"
     width="900"
   />
 </p>
 
 <p>
-  Small local models fail quietly if you let them. This product doesn't:
-  a 700-character cap keeps a pasted prompt or long transcription from
-  blowing out the embedding model's context, conversations hard-stop at
-  <strong>80% of the 16,384-token context window</strong> instead of silently
-  degrading, and when there's no retrieved evidence, image evidence, or tool
-  result, the model is not asked to improvise — it returns a controlled
-  <code>INSUFFICIENT_CONTEXT</code> refusal with no citations attached.
+  The runtime enforces several limits for local inference. User prompts and
+  retrieval queries are capped at 700 characters. This prevents long pasted
+  inputs or transcriptions from exceeding the embedding input budget. A
+  conversation is stopped when it reaches 80% of the 16,384-token context
+  window. This leaves enough context available for the remaining generation.
+  If a request has no retrieved document evidence, image evidence, or tool
+  result, the backend returns <code>INSUFFICIENT_CONTEXT</code> without
+  citations. In that case the model is not asked to generate an unsupported
+  answer.
 </p>
 
 <p>
-  Every one of these is a config constant with a test next to it, not a
-  prompt instruction the model could ignore —
-  <code>MAX_PROMPT_CHARS</code>, <code>MAX_RETRIEVAL_QUERY_CHARS</code>,
-  <code>CONTEXT_BUDGET_THRESHOLD</code>.
+  The values are defined in <code>MAX_PROMPT_CHARS</code>,
+  <code>MAX_RETRIEVAL_QUERY_CHARS</code>, and
+  <code>CONTEXT_BUDGET_THRESHOLD</code>. Each one is covered by tests and
+  enforced by the application rather than through prompt instructions.
 </p>
 
 <h2>Quick start</h2>
@@ -432,7 +433,7 @@ npm run dev:client</code></pre>
 </p>
 
 <p>
-  <strong>Or with Docker</strong> — a production-compiled image (no dev tooling in the final
+  <strong>Or with Docker:</strong> a production-compiled image (no dev tooling in the final
   container) running the P2P provider/server demo on a private network:
 </p>
 
@@ -443,7 +444,7 @@ docker compose up --build</code></pre>
 
 <p>
   <code>.qvac-cache/</code> and <code>.lancedb/</code> are host volumes, not baked into the
-  image, so both commands above have to run on the host first — the <code>server</code>
+  image, so both commands above have to run on the host first. The <code>server</code>
   container refuses to start without an ingested vector store. Once up, the
   <code>server</code> container exposes the same OpenAI-compatible API on <code>:3001</code>,
   delegating chat inference to the <code>provider</code> container by public key, with
@@ -452,12 +453,12 @@ docker compose up --build</code></pre>
   <code>npm run seed:generate --workspace=apps/backend</code>.
 </p>
 
-<h2>Judge this project in 60 seconds</h2>
+<h2>Local verification</h2>
 
 <p align="center">
   <img
     src="docs/assets/judge-60-seconds.svg"
-    alt="Judge Meridian Assistant in 60 seconds"
+    alt="Local verification: install, fetch models, ingest corpus, serve, go offline, ask, verify citations"
     width="900"
   />
 </p>
@@ -644,7 +645,7 @@ docker compose up --build</code></pre>
 <details>
 <summary>
   <strong id="technical-challenges--known-limitations">
-    Technical challenges & known limitations
+    Known limitations
   </strong>
 </summary>
 
@@ -697,11 +698,11 @@ docker compose up --build</code></pre>
   <tr>
     <td valign="top"><strong>SDK version pin</strong></td>
     <td>
-      <code>@qvac/sdk</code> is pinned to exactly <code>0.18.2</code> — the version the
-      delegated-inference APIs this product depends on were built and tested against.
-      An upgrade is a controlled migration, not a drop-in bump: it needs a regression
-      pass across local inference, P2P delegation, lifecycle management, and the
-      OpenAI-compatible API before it ships.
+      The project currently uses <code>@qvac/sdk</code> 0.18.2. Development and
+      testing of the delegated inference path were done against this version,
+      so the dependency is pinned rather than automatically upgraded.
+      Moving to a newer SDK version requires regression testing of local
+      inference, P2P delegation, model lifecycle, and the OpenAI-compatible API.
     </td>
   </tr>
 </table>
@@ -712,5 +713,5 @@ docker compose up --build</code></pre>
 
 <p>
   Built by <strong>SpaceDev</strong> for the QVAC Solutions Service Provider
-  Qualification Exercise — Meridian Components scenario.
+  Qualification Exercise, Meridian Components scenario.
 </p>
