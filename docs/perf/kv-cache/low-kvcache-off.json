@@ -1,0 +1,1028 @@
+{
+  "label": "low-kvcache-off",
+  "startedAt": "2026-10-06T07:16:34.499Z",
+  "server": {
+    "hardwareTier": "low",
+    "model": {
+      "name": "QWEN3VL_2B_MULTIMODAL_Q4_K",
+      "quantization": "q4_k"
+    },
+    "sttModel": "WHISPER_TINY_Q8_0",
+    "ttsModel": "TTS_MULTILINGUAL_SUPERTONIC2_Q4_0"
+  },
+  "machine": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpuModel": "Apple M4",
+    "cpuCores": 10,
+    "totalMemGB": 16
+  },
+  "startup": {
+    "enabled": true,
+    "mode": "verbose",
+    "exportedAt": 4365.714875,
+    "operations": {
+      "rpc.connection": {
+        "unit": "ms",
+        "count": 1,
+        "min": 778.7408330000001,
+        "max": 778.7408330000001,
+        "avg": 778.7408330000001,
+        "total": 778.7408330000001,
+        "last": 778.7408330000001
+      },
+      "loadModel.request.zodValidation": {
+        "unit": "ms",
+        "count": 1,
+        "min": 1.25,
+        "max": 1.25,
+        "avg": 1.25,
+        "total": 1.25,
+        "last": 1.25
+      },
+      "loadModel.request.stringify": {
+        "unit": "ms",
+        "count": 1,
+        "min": 0.005583999999998923,
+        "max": 0.005583999999998923,
+        "avg": 0.005583999999998923,
+        "total": 0.005583999999998923,
+        "last": 0.005583999999998923
+      },
+      "loadModel.request.totalSerialization": {
+        "unit": "ms",
+        "count": 1,
+        "min": 1.255583999999999,
+        "max": 1.255583999999999,
+        "avg": 1.255583999999999,
+        "total": 1.255583999999999,
+        "last": 1.255583999999999
+      },
+      "loadModel.serverWait": {
+        "unit": "ms",
+        "count": 1,
+        "min": 1328.2118750000002,
+        "max": 1328.2118750000002,
+        "avg": 1328.2118750000002,
+        "total": 1328.2118750000002,
+        "last": 1328.2118750000002
+      },
+      "loadModel.response.jsonParse": {
+        "unit": "ms",
+        "count": 1,
+        "min": 0.20987500000001091,
+        "max": 0.20987500000001091,
+        "avg": 0.20987500000001091,
+        "total": 0.20987500000001091,
+        "last": 0.20987500000001091
+      },
+      "loadModel.response.zodValidation": {
+        "unit": "ms",
+        "count": 1,
+        "min": 1.174833000000035,
+        "max": 1.174833000000035,
+        "avg": 1.174833000000035,
+        "total": 1.174833000000035,
+        "last": 1.174833000000035
+      },
+      "loadModel.response.totalParsing": {
+        "unit": "ms",
+        "count": 1,
+        "min": 1.384708000000046,
+        "max": 1.384708000000046,
+        "avg": 1.384708000000046,
+        "total": 1.384708000000046,
+        "last": 1.384708000000046
+      },
+      "loadModel.totalClientTime": {
+        "unit": "ms",
+        "count": 1,
+        "min": 1331.016917,
+        "max": 1331.016917,
+        "avg": 1331.016917,
+        "total": 1331.016917,
+        "last": 1331.016917
+      },
+      "loadModel.server.request.jsonParse": {
+        "unit": "ms",
+        "count": 1,
+        "min": 0,
+        "max": 0,
+        "avg": 0,
+        "total": 0,
+        "last": 0
+      },
+      "loadModel.server.request.zodValidation": {
+        "unit": "ms",
+        "count": 1,
+        "min": 1,
+        "max": 1,
+        "avg": 1,
+        "total": 1,
+        "last": 1
+      },
+      "loadModel.server.handlerExecution": {
+        "unit": "ms",
+        "count": 1,
+        "min": 1325,
+        "max": 1325,
+        "avg": 1325,
+        "total": 1325,
+        "last": 1325
+      },
+      "loadModel.server.response.zodValidation": {
+        "unit": "ms",
+        "count": 1,
+        "min": 1,
+        "max": 1,
+        "avg": 1,
+        "total": 1,
+        "last": 1
+      },
+      "loadModel.server.response.stringify": {
+        "unit": "ms",
+        "count": 1,
+        "min": 0,
+        "max": 0,
+        "avg": 0,
+        "total": 0,
+        "last": 0
+      },
+      "loadModel.server.totalServerTime": {
+        "unit": "ms",
+        "count": 1,
+        "min": 1328,
+        "max": 1328,
+        "avg": 1328,
+        "total": 1328,
+        "last": 1328
+      },
+      "loadModel.clientOverhead": {
+        "unit": "ms",
+        "count": 1,
+        "min": 3.0169169999999212,
+        "max": 3.0169169999999212,
+        "avg": 3.0169169999999212,
+        "total": 3.0169169999999212,
+        "last": 3.0169169999999212
+      },
+      "loadModel": {
+        "unit": "ms",
+        "count": 1,
+        "min": 1324,
+        "max": 1324,
+        "avg": 1324,
+        "total": 1324,
+        "last": 1324
+      },
+      "loadModel.checksumValidationTime": {
+        "unit": "ms",
+        "count": 1,
+        "min": 1023,
+        "max": 1023,
+        "avg": 1023,
+        "total": 1023,
+        "last": 1023
+      },
+      "loadModel.totalLoadTime": {
+        "unit": "ms",
+        "count": 1,
+        "min": 1324,
+        "max": 1324,
+        "avg": 1324,
+        "total": 1324,
+        "last": 1324
+      },
+      "loadModel.modelInitializationTime": {
+        "unit": "ms",
+        "count": 1,
+        "min": 632,
+        "max": 632,
+        "avg": 632,
+        "total": 632,
+        "last": 632
+      }
+    },
+    "recentEvents": [
+      {
+        "ts": 1560.596542,
+        "op": "rpc",
+        "kind": "rpc",
+        "phase": "connection",
+        "ms": 778.7408330000001
+      },
+      {
+        "ts": 2891.796167,
+        "op": "loadModel",
+        "kind": "rpc",
+        "phase": "request.zodValidation",
+        "ms": 1.25
+      },
+      {
+        "ts": 2891.796167,
+        "op": "loadModel",
+        "kind": "rpc",
+        "phase": "request.stringify",
+        "ms": 0.005583999999998923
+      },
+      {
+        "ts": 2891.796167,
+        "op": "loadModel",
+        "kind": "rpc",
+        "phase": "request.totalSerialization",
+        "ms": 1.255583999999999
+      },
+      {
+        "ts": 2891.796167,
+        "op": "loadModel",
+        "kind": "rpc",
+        "phase": "serverWait",
+        "ms": 1328.2118750000002
+      },
+      {
+        "ts": 2891.796167,
+        "op": "loadModel",
+        "kind": "rpc",
+        "phase": "response.jsonParse",
+        "ms": 0.20987500000001091
+      },
+      {
+        "ts": 2891.796167,
+        "op": "loadModel",
+        "kind": "rpc",
+        "phase": "response.zodValidation",
+        "ms": 1.174833000000035
+      },
+      {
+        "ts": 2891.796167,
+        "op": "loadModel",
+        "kind": "rpc",
+        "phase": "response.totalParsing",
+        "ms": 1.384708000000046
+      },
+      {
+        "ts": 2891.796167,
+        "op": "loadModel",
+        "kind": "rpc",
+        "phase": "totalClientTime",
+        "ms": 1331.016917
+      },
+      {
+        "ts": 2891.796167,
+        "op": "loadModel",
+        "kind": "rpc",
+        "phase": "server.request.jsonParse",
+        "ms": 0
+      },
+      {
+        "ts": 2891.796167,
+        "op": "loadModel",
+        "kind": "rpc",
+        "phase": "server.request.zodValidation",
+        "ms": 1
+      },
+      {
+        "ts": 2891.796167,
+        "op": "loadModel",
+        "kind": "rpc",
+        "phase": "server.handlerExecution",
+        "ms": 1325
+      },
+      {
+        "ts": 2891.796167,
+        "op": "loadModel",
+        "kind": "rpc",
+        "phase": "server.response.zodValidation",
+        "ms": 1
+      },
+      {
+        "ts": 2891.796167,
+        "op": "loadModel",
+        "kind": "rpc",
+        "phase": "server.response.stringify",
+        "ms": 0
+      },
+      {
+        "ts": 2891.796167,
+        "op": "loadModel",
+        "kind": "rpc",
+        "phase": "server.totalServerTime",
+        "ms": 1328
+      },
+      {
+        "ts": 2891.796167,
+        "op": "loadModel",
+        "kind": "rpc",
+        "phase": "clientOverhead",
+        "ms": 3.0169169999999212
+      },
+      {
+        "ts": 2891.991334,
+        "op": "loadModel",
+        "kind": "handler",
+        "ms": 1324,
+        "gauges": {
+          "checksumValidationTime": 1023,
+          "totalLoadTime": 1324,
+          "modelInitializationTime": 632
+        },
+        "tags": {
+          "cacheHit": "true",
+          "sourceType": "registry",
+          "modelType": "llamacpp-completion"
+        }
+      }
+    ]
+  },
+  "steady": {
+    "enabled": true,
+    "mode": "verbose",
+    "exportedAt": 19395.653167,
+    "operations": {
+      "completionStream.request.zodValidation": {
+        "unit": "ms",
+        "count": 5,
+        "min": 0.20245799999975134,
+        "max": 3.153874999999971,
+        "avg": 0.8227999999999156,
+        "total": 4.113999999999578,
+        "last": 0.20245799999975134
+      },
+      "completionStream.request.stringify": {
+        "unit": "ms",
+        "count": 5,
+        "min": 0.021208000000115135,
+        "max": 0.027584000000388187,
+        "avg": 0.023716800000511285,
+        "total": 0.11858400000255642,
+        "last": 0.02345900000000256
+      },
+      "completionStream.request.totalSerialization": {
+        "unit": "ms",
+        "count": 5,
+        "min": 0.2259169999997539,
+        "max": 3.181459000000359,
+        "avg": 0.8465168000004268,
+        "total": 4.232584000002134,
+        "last": 0.2259169999997539
+      },
+      "completionStream.ttfb": {
+        "unit": "ms",
+        "count": 10,
+        "min": 2511,
+        "max": 2743.3895409999996,
+        "avg": 2599.0834081999997,
+        "total": 25990.834081999998,
+        "last": 2511
+      },
+      "completionStream.streamDuration": {
+        "unit": "ms",
+        "count": 5,
+        "min": 289.7939579999984,
+        "max": 394.2527920000002,
+        "avg": 363.3523252000001,
+        "total": 1816.7616260000004,
+        "last": 289.7939579999984
+      },
+      "completionStream.totalClientTime": {
+        "unit": "ms",
+        "count": 5,
+        "min": 2801.9045000000006,
+        "max": 3142.074375,
+        "avg": 2964.57435,
+        "total": 14822.87175,
+        "last": 2801.9045000000006
+      },
+      "completionStream.server.request.jsonParse": {
+        "unit": "ms",
+        "count": 5,
+        "min": 0,
+        "max": 0,
+        "avg": 0,
+        "total": 0,
+        "last": 0
+      },
+      "completionStream.server.request.zodValidation": {
+        "unit": "ms",
+        "count": 5,
+        "min": 0,
+        "max": 3,
+        "avg": 1.2,
+        "total": 6,
+        "last": 1
+      },
+      "completionStream.server.handlerExecution": {
+        "unit": "ms",
+        "count": 5,
+        "min": 2800,
+        "max": 3133,
+        "avg": 2961.6,
+        "total": 14808,
+        "last": 2800
+      },
+      "completionStream.server.response.zodValidation": {
+        "unit": "ms",
+        "count": 5,
+        "min": 0,
+        "max": 2,
+        "avg": 0.6,
+        "total": 3,
+        "last": 1
+      },
+      "completionStream.server.response.stringify": {
+        "unit": "ms",
+        "count": 5,
+        "min": 0,
+        "max": 1,
+        "avg": 0.2,
+        "total": 1,
+        "last": 0
+      },
+      "completionStream.server.totalServerTime": {
+        "unit": "ms",
+        "count": 5,
+        "min": 2802,
+        "max": 3137,
+        "avg": 2963.2,
+        "total": 14816,
+        "last": 2802
+      },
+      "completionStream": {
+        "unit": "ms",
+        "count": 5,
+        "min": 2800,
+        "max": 3132,
+        "avg": 2961.4,
+        "total": 14807,
+        "last": 2800
+      },
+      "completionStream.modelExecutionTime": {
+        "unit": "ms",
+        "count": 5,
+        "min": 2800,
+        "max": 3131,
+        "avg": 2961.2,
+        "total": 14806,
+        "last": 2800
+      }
+    },
+    "recentEvents": [
+      {
+        "ts": 7614.128042,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "request.zodValidation",
+        "ms": 3.153874999999971
+      },
+      {
+        "ts": 7614.128042,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "request.stringify",
+        "ms": 0.027584000000388187
+      },
+      {
+        "ts": 7614.128042,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "request.totalSerialization",
+        "ms": 3.181459000000359
+      },
+      {
+        "ts": 7614.128042,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "ttfb",
+        "ms": 2743.3895409999996
+      },
+      {
+        "ts": 7614.128042,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "streamDuration",
+        "ms": 394.2527920000002
+      },
+      {
+        "ts": 7614.128042,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "totalClientTime",
+        "ms": 3142.074375
+      },
+      {
+        "ts": 7614.128042,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.request.jsonParse",
+        "ms": 0
+      },
+      {
+        "ts": 7614.128042,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.request.zodValidation",
+        "ms": 3
+      },
+      {
+        "ts": 7614.128042,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.handlerExecution",
+        "ms": 3133
+      },
+      {
+        "ts": 7614.128042,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.response.zodValidation",
+        "ms": 2
+      },
+      {
+        "ts": 7614.128042,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.response.stringify",
+        "ms": 0
+      },
+      {
+        "ts": 7614.128042,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.totalServerTime",
+        "ms": 3137
+      },
+      {
+        "ts": 7614.160084,
+        "op": "completionStream",
+        "kind": "handler",
+        "ms": 3132,
+        "gauges": {
+          "ttfb": 2738,
+          "modelExecutionTime": 3131
+        },
+        "tags": {
+          "modelId": "8208e8b7e8c4efe5"
+        }
+      },
+      {
+        "ts": 10582.261459,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "request.zodValidation",
+        "ms": 0.32491699999991397
+      },
+      {
+        "ts": 10582.261459,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "request.stringify",
+        "ms": 0.021208000000115135
+      },
+      {
+        "ts": 10582.261459,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "request.totalSerialization",
+        "ms": 0.3461250000000291
+      },
+      {
+        "ts": 10582.261459,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "ttfb",
+        "ms": 2548.1578329999993
+      },
+      {
+        "ts": 10582.261459,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "streamDuration",
+        "ms": 392.8758749999997
+      },
+      {
+        "ts": 10582.261459,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "totalClientTime",
+        "ms": 2941.5819169999995
+      },
+      {
+        "ts": 10582.261459,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.request.jsonParse",
+        "ms": 0
+      },
+      {
+        "ts": 10582.261459,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.request.zodValidation",
+        "ms": 1
+      },
+      {
+        "ts": 10582.261459,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.handlerExecution",
+        "ms": 2940
+      },
+      {
+        "ts": 10582.261459,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.response.zodValidation",
+        "ms": 0
+      },
+      {
+        "ts": 10582.261459,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.response.stringify",
+        "ms": 0
+      },
+      {
+        "ts": 10582.261459,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.totalServerTime",
+        "ms": 2941
+      },
+      {
+        "ts": 10582.283875,
+        "op": "completionStream",
+        "kind": "handler",
+        "ms": 2940,
+        "gauges": {
+          "ttfb": 2547,
+          "modelExecutionTime": 2940
+        },
+        "tags": {
+          "modelId": "8208e8b7e8c4efe5"
+        }
+      },
+      {
+        "ts": 13553.397209,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "request.zodValidation",
+        "ms": 0.2194999999992433
+      },
+      {
+        "ts": 13553.397209,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "request.stringify",
+        "ms": 0.022875000000567525
+      },
+      {
+        "ts": 13553.397209,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "request.totalSerialization",
+        "ms": 0.24237499999981083
+      },
+      {
+        "ts": 13553.397209,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "ttfb",
+        "ms": 2555.3942079999997
+      },
+      {
+        "ts": 13553.397209,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "streamDuration",
+        "ms": 392.32270900000003
+      },
+      {
+        "ts": 13553.397209,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "totalClientTime",
+        "ms": 2948.1307500000003
+      },
+      {
+        "ts": 13553.397209,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.request.jsonParse",
+        "ms": 0
+      },
+      {
+        "ts": 13553.397209,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.request.zodValidation",
+        "ms": 0
+      },
+      {
+        "ts": 13553.397209,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.handlerExecution",
+        "ms": 2947
+      },
+      {
+        "ts": 13553.397209,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.response.zodValidation",
+        "ms": 0
+      },
+      {
+        "ts": 13553.397209,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.response.stringify",
+        "ms": 0
+      },
+      {
+        "ts": 13553.397209,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.totalServerTime",
+        "ms": 2947
+      },
+      {
+        "ts": 13553.41975,
+        "op": "completionStream",
+        "kind": "handler",
+        "ms": 2947,
+        "gauges": {
+          "ttfb": 2555,
+          "modelExecutionTime": 2947
+        },
+        "tags": {
+          "modelId": "8208e8b7e8c4efe5"
+        }
+      },
+      {
+        "ts": 16567.969792,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "request.zodValidation",
+        "ms": 0.2132500000006985
+      },
+      {
+        "ts": 16567.969792,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "request.stringify",
+        "ms": 0.023458000001483015
+      },
+      {
+        "ts": 16567.969792,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "request.totalSerialization",
+        "ms": 0.2367080000021815
+      },
+      {
+        "ts": 16567.969792,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "ttfb",
+        "ms": 2641.2351660000004
+      },
+      {
+        "ts": 16567.969792,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "streamDuration",
+        "ms": 347.51629200000207
+      },
+      {
+        "ts": 16567.969792,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "totalClientTime",
+        "ms": 2989.1802079999998
+      },
+      {
+        "ts": 16567.969792,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.request.jsonParse",
+        "ms": 0
+      },
+      {
+        "ts": 16567.969792,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.request.zodValidation",
+        "ms": 1
+      },
+      {
+        "ts": 16567.969792,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.handlerExecution",
+        "ms": 2988
+      },
+      {
+        "ts": 16567.969792,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.response.zodValidation",
+        "ms": 0
+      },
+      {
+        "ts": 16567.969792,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.response.stringify",
+        "ms": 1
+      },
+      {
+        "ts": 16567.969792,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.totalServerTime",
+        "ms": 2989
+      },
+      {
+        "ts": 16567.992834,
+        "op": "completionStream",
+        "kind": "handler",
+        "ms": 2988,
+        "gauges": {
+          "ttfb": 2640,
+          "modelExecutionTime": 2988
+        },
+        "tags": {
+          "modelId": "8208e8b7e8c4efe5"
+        }
+      },
+      {
+        "ts": 19392.712542,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "request.zodValidation",
+        "ms": 0.20245799999975134
+      },
+      {
+        "ts": 19392.712542,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "request.stringify",
+        "ms": 0.02345900000000256
+      },
+      {
+        "ts": 19392.712542,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "request.totalSerialization",
+        "ms": 0.2259169999997539
+      },
+      {
+        "ts": 19392.712542,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "ttfb",
+        "ms": 2511.6573339999995
+      },
+      {
+        "ts": 19392.712542,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "streamDuration",
+        "ms": 289.7939579999984
+      },
+      {
+        "ts": 19392.712542,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "totalClientTime",
+        "ms": 2801.9045000000006
+      },
+      {
+        "ts": 19392.712542,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.request.jsonParse",
+        "ms": 0
+      },
+      {
+        "ts": 19392.712542,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.request.zodValidation",
+        "ms": 1
+      },
+      {
+        "ts": 19392.712542,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.handlerExecution",
+        "ms": 2800
+      },
+      {
+        "ts": 19392.712542,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.response.zodValidation",
+        "ms": 1
+      },
+      {
+        "ts": 19392.712542,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.response.stringify",
+        "ms": 0
+      },
+      {
+        "ts": 19392.712542,
+        "op": "completionStream",
+        "kind": "rpc",
+        "phase": "server.totalServerTime",
+        "ms": 2802
+      },
+      {
+        "ts": 19392.736,
+        "op": "completionStream",
+        "kind": "handler",
+        "ms": 2800,
+        "gauges": {
+          "ttfb": 2511,
+          "modelExecutionTime": 2800
+        },
+        "tags": {
+          "modelId": "8208e8b7e8c4efe5"
+        }
+      }
+    ]
+  },
+  "questions": [
+    {
+      "id": "015",
+      "question": "Who sent the email announcing the Atlas Manufacturing deal closed, and what is their title?",
+      "expected": "Maya Chen, VP Enterprise Sales",
+      "firstContentMs": 2838.82525,
+      "totalMs": 3237.8780830000005,
+      "text": "The email announcing the Atlas Manufacturing deal closed was sent by Maya Chen, who is the VP Enterprise Sales at Meridian Components Inc.",
+      "tools": [],
+      "citations": [
+        "emails/001-atlas-deal-closed.md",
+        "emails/015-atlas-kickoff-complete.md",
+        "transcripts/call-2026-06-18-q2-pipeline-review.md"
+      ]
+    },
+    {
+      "id": "015",
+      "question": "Who sent the email announcing the Atlas Manufacturing deal closed, and what is their title?",
+      "expected": "Maya Chen, VP Enterprise Sales",
+      "firstContentMs": 2570.5321669999994,
+      "totalMs": 2964.541875000001,
+      "text": "The email announcing the Atlas Manufacturing deal closed was sent by Maya Chen, who is the VP Enterprise Sales at Meridian Components Inc.",
+      "tools": [],
+      "citations": [
+        "emails/001-atlas-deal-closed.md",
+        "emails/015-atlas-kickoff-complete.md",
+        "transcripts/call-2026-06-18-q2-pipeline-review.md"
+      ]
+    },
+    {
+      "id": "015",
+      "question": "Who sent the email announcing the Atlas Manufacturing deal closed, and what is their title?",
+      "expected": "Maya Chen, VP Enterprise Sales",
+      "firstContentMs": 2577.6950830000005,
+      "totalMs": 2971.041666000001,
+      "text": "The email announcing the Atlas Manufacturing deal closed was sent by Maya Chen, who is the VP Enterprise Sales at Meridian Components Inc.",
+      "tools": [],
+      "citations": [
+        "emails/001-atlas-deal-closed.md",
+        "emails/015-atlas-kickoff-complete.md",
+        "transcripts/call-2026-06-18-q2-pipeline-review.md"
+      ]
+    },
+    {
+      "id": "001",
+      "question": "What is Atlas Manufacturing's health score as of the Q2 close?",
+      "expected": "72",
+      "firstContentMs": 2665.843917,
+      "totalMs": 3014.023791999998,
+      "text": "Based on the provided document, Atlas Manufacturing's health score as of the Q2 close is **72**.",
+      "tools": [],
+      "citations": [
+        "data/account-health-q2-close.json",
+        "reports/q2-2026-sales-performance-report.md",
+        "emails/001-atlas-deal-closed.md"
+      ]
+    },
+    {
+      "id": "208",
+      "question": "What was Q2 2026 total revenue?",
+      "expected": "$18.4M — the challenge's own example question; the citation must be the Q2 report, not the CSV or the Q1 summary",
+      "firstContentMs": 2534.166541999999,
+      "totalMs": 2824.7846249999966,
+      "text": "The total revenue for Q2 2026 was $18.4M.",
+      "tools": [],
+      "citations": [
+        "reports/q2-2026-sales-performance-report.md",
+        "reports/q1-2026-sales-summary.md"
+      ]
+    }
+  ]
+}

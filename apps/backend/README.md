@@ -24,6 +24,7 @@ Run from the repo root, or with `--workspace=apps/backend`:
 | `npm run models:fetch --workspace=apps/backend` | Pre-downloads every model asset `/v1/chat/completions` needs (chat + embedding + any vision projector), so `npm run serve` never touches the network — required by `qvac-eval.json`'s "start must not require network access" contract |
 | `npm run serve --workspace=apps/backend` | Starts the server detached (own process group), writing its pid to `.run/server.pid` and logs to `.run/server.log` — the grading harness's `start` command |
 | `npm run serve:stop --workspace=apps/backend` | Stops the process `serve` started (SIGTERM, then SIGKILL after a 5s grace period) — the grading harness's `shutdown` command |
+| `npm run perf:profile --workspace=apps/backend` | Benchmarks a server started with `QVAC_PROFILER=verbose` and writes the `@qvac/sdk` profiler export + client latencies to `docs/perf/` — see [Performance profiling](#performance-profiling-req-i6) |
 | `npm run build --workspace=apps/backend` | Produces a tree-shaken, plugin-scoped `@qvac/sdk` bundle and writes `docs/bundle-size-report.md` — see [Build](#build) |
 
 Only run **one** QVAC-backed process at a time per machine (`dev:server`, `serve`, or `provider`) — the SDK locks its local storage to a single process; running more than one concurrently fails with `File descriptor could not be locked`.
@@ -470,6 +471,54 @@ evaluator checks. Each entry is exactly `{ "file": "<corpus-relative path>", "sc
   any corpus chunks that passed `minScore`.
 - Citations are per answer, not per sentence: a small model can't reliably mark which
   sentence came from which chunk.
+
+## Performance profiling (req. I.6)
+
+The `@qvac/sdk` profiler is **opt-in**: a default `npm run serve` / `dev:server` runs exactly
+as without it - no profiler, no extra route. Start the server with `QVAC_PROFILER` to turn it on:
+
+| `QVAC_PROFILER` | Effect |
+|---|---|
+| unset / `off` | Profiler off, `/api/debug/profiler` not mounted (404). An invalid value warns and stays off. |
+| `summary` | Aggregates count/min/max/avg/total per SDK operation (`loadModel`, `completionStream`, `transcribeStream`, ...). |
+| `verbose` | `summary` + the SDK's ring buffer of the last 1000 raw events - per-request numbers, for percentiles. |
+
+Enabled before any model work in `server.ts`, so startup model loads are captured too.
+
+- `GET /api/debug/profiler` - `profiler.exportJSON()` as JSON. Every entry in `operations`
+  carries its `unit`: most are durations (`ms`), but the SDK aggregates gauges like
+  `tokensPerSecond` or `cacheTokens` in the same map (`profiling/domain/metricUnits.ts`).
+  `?events=true` adds `recentEvents` (only populated in `verbose` mode).
+- `POST /api/debug/profiler/reset` - clears the aggregates (the profiler stays on), so a
+  measurement can exclude startup.
+
+**Security:** like the rest of this API, these routes have no authentication, and the server
+listens on every network interface (`app.listen(3001)`, no host). While `QVAC_PROFILER` is on,
+anyone who can reach port 3001 can read the export - timings, model ids and model-load
+metadata, never prompts or answers - and reset it. Turn it on only to measure.
+
+### Benchmark
+
+```bash
+QVAC_PROFILER=verbose npm run dev:server     # terminal 1, wait for "Server listening"
+npm run perf:profile -- --label medium        # terminal 2
+```
+
+`perf:profile` waits for `GET /health`, exports the profiler (startup - flagged in the report when
+the server already served requests, i.e. was not restarted), resets it (and stops if that fails), sends 13
+questions from `docs/meridian-benchmark-215-en.md` (one per category, one with an image)
+through `POST /v1/chat/completions` with `stream: true` - the way the frontend calls it -
+timing the first visible token and the full answer on the client, then exports the profiler
+again (steady state). Output: `docs/perf/<label>.json` (both raw exports + client timings) and
+`docs/perf/<label>.md` (tables). Options: `--ids 001,208` (any IDs from the bank),
+`--audio "$PWD/docs/perf/p1-response-time.wav"` (adds one voice turn - 16 kHz mono 16-bit WAV; that file is the one the analysis used. Paths resolve against `apps/backend/`, where npm runs the script, so pass them absolute), `--out-dir`, `--base-url`.
+
+What it measures and why the numbers look the way they do: [`docs/i6-performance-analysis.md`](../../docs/i6-performance-analysis.md).
+
+**Not visible to the SDK profiler:** embeddings on the native path
+(`rag/infra/nativeEmbedding/`, the default since I.4) run in their own `bare` process, outside
+`@qvac/sdk` - only the SDK fallback path shows up as `embed`. Their cost is measured in
+[`docs/i4-native-addon-results.md`](../../docs/i4-native-addon-results.md).
 
 ## Conventions
 

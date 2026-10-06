@@ -238,6 +238,8 @@
   <a href="docs/i2-simultaneous-completions-results.md">Continuous batching benchmark</a>
   ·
   <a href="docs/bundle-size-report.md">Bundle report</a>
+  ·
+  <a href="docs/i6-performance-analysis.md">Profiler performance analysis</a>
 </p>
 
 <h2>Architecture</h2>
@@ -590,6 +592,11 @@ docker compose up --build</code></pre>
   <tr>
     <td>TurboQuant KV cache</td>
     <td>⚠️ Implemented but disabled pending validation</td>
+  </tr>
+
+  <tr>
+    <td>Performance instrumentation</td>
+    <td>✅ 🧪 Opt-in <code>profiler.exportJSON()</code> export + reproducible benchmark — see <a href="docs/i6-performance-analysis.md">analysis</a></td>
   </tr>
 </table>
 
