@@ -1,7 +1,7 @@
 <p align="center">
   <img
     src="docs/assets/meridian-hero.svg"
-    alt="MERIDIAN ASSISTANT — local inference, local RAG, local voice & vision, built by SpaceDev"
+    alt="MERIDIAN ASSISTANT  local inference, local RAG, local voice & vision, built by SpaceDev"
     width="900"
   />
 </p>
@@ -112,7 +112,7 @@
 <p align="center">
   <img
     src="docs/assets/qvac-langgraph.svg"
-    alt="@space-uy/qvac-langgraph — QVAC as a first-class LangGraph chat model"
+    alt="@space-uy/qvac-langgraph  QVAC as a first-class LangGraph chat model"
     width="900"
   />
 </p>
@@ -596,7 +596,7 @@ docker compose up --build</code></pre>
 
   <tr>
     <td>LangGraph ↔ QVAC integration</td>
-    <td>✅ 🧪 Published as <code>@space-uy/qvac-langgraph</code> on npm — see <a href="#our-contribution-back-to-qvac">above</a></td>
+    <td>✅ 🧪 Published as <code>@space-uy/qvac-langgraph</code> on npm  see <a href="#our-contribution-back-to-qvac">above</a></td>
   </tr>
 
   <tr>
@@ -626,7 +626,7 @@ docker compose up --build</code></pre>
 
   <tr>
     <td>Performance instrumentation</td>
-    <td>✅ 🧪 Opt-in <code>profiler.exportJSON()</code> export + reproducible benchmark — see <a href="docs/i6-performance-analysis.md">analysis</a></td>
+    <td>✅ 🧪 Opt-in <code>profiler.exportJSON()</code> export + reproducible benchmark  see <a href="docs/i6-performance-analysis.md">analysis</a></td>
   </tr>
 </table>
 
