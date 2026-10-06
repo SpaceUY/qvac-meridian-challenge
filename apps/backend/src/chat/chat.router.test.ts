@@ -13,7 +13,14 @@ import {
   type CompletionAgent,
   type VoiceAgent,
 } from "./chat.router.js";
-import { EMPTY_TRANSCRIPT_ERROR } from "./chat.router.const.js";
+import {
+  COMPLETION_ERROR,
+  EMPTY_TRANSCRIPT_ERROR,
+  INVALID_AUDIO_ERROR,
+  INVALID_MESSAGES_ERROR,
+  MODEL_NOT_READY_ERROR,
+  VOICE_COMPLETION_ERROR,
+} from "./chat.router.const.js";
 
 /** Stands in for `AgentService`: `invoke()` never settles on its own - only `cancel()` rejects it - so a test can hold a request open to abort it and observe the server's reaction, without a real model/graph. */
 const FAKE_INVOKE_RESULT: InvokeResult = { answer: "ok", chunks: [], toolsUsed: [], citations: [] };
@@ -68,6 +75,12 @@ class FakeAgentService {
   async deleteSessionCache(sessionId: string): Promise<void> {
     if (this.deleteSessionCacheShouldFail) throw new Error("boom");
     this.deletedSessionIds.push(sessionId);
+  }
+
+  preloadCallCount = 0;
+
+  async preload(): Promise<void> {
+    this.preloadCallCount += 1;
   }
 
   cancelPreloadCallCount = 0;
@@ -136,6 +149,110 @@ describe("POST /completions - client disconnect", () => {
   });
 });
 
+describe("POST /completions - validation and readiness", () => {
+  let server: http.Server | undefined;
+
+  afterEach(() => {
+    server?.close();
+    server = undefined;
+  });
+
+  async function startCompletionsServer(agent: CompletionAgent): Promise<string> {
+    const app = express();
+    app.use(express.json());
+    app.use("/v1/chat", createCompletionsRouter(agent));
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", resolve));
+    const { port } = server!.address() as AddressInfo;
+    return `http://127.0.0.1:${port}/v1/chat/completions`;
+  }
+
+  it("responds 400 with INVALID_MESSAGES_ERROR when messages is missing or malformed", async () => {
+    const url = await startCompletionsServer(new FakeAgentService() as unknown as AgentService);
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: INVALID_MESSAGES_ERROR });
+  });
+
+  it("responds 503 with MODEL_NOT_READY_ERROR while the model is still loading", async () => {
+    const fakeAgentService = new FakeAgentService();
+    const readyStatus = fakeAgentService.getStatus();
+    fakeAgentService.getStatus = () => ({ ...readyStatus, status: "loading" });
+    const url = await startCompletionsServer(fakeAgentService as unknown as AgentService);
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }),
+    });
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: MODEL_NOT_READY_ERROR });
+  });
+});
+
+describe("POST /completions - invoke failure", () => {
+  let server: http.Server | undefined;
+
+  afterEach(() => {
+    server?.close();
+    server = undefined;
+  });
+
+  it("responds 500 with COMPLETION_ERROR, without leaking the internal error, when non-streaming invoke rejects", async () => {
+    const failingAgent: CompletionAgent = {
+      getStatus: () => new FakeAgentService().getStatus(),
+      invoke: () => Object.assign(Promise.reject(new Error("graph exploded")), { requestId: "req-x" }),
+      cancel: async () => {},
+    };
+    const app = express();
+    app.use(express.json());
+    app.use("/v1/chat", createCompletionsRouter(failingAgent));
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", resolve));
+    const { port } = server!.address() as AddressInfo;
+
+    const res = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }),
+    });
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: COMPLETION_ERROR });
+  });
+
+  it("writes a COMPLETION_ERROR text chunk and still closes the stream when streaming invoke rejects mid-turn", async () => {
+    const failingAgent: CompletionAgent = {
+      getStatus: () => new FakeAgentService().getStatus(),
+      invoke: () => Object.assign(Promise.reject(new Error("graph exploded")), { requestId: "req-x" }),
+      cancel: async () => {},
+    };
+    const app = express();
+    app.use(express.json());
+    app.use("/v1/chat", createCompletionsRouter(failingAgent));
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", resolve));
+    const { port } = server!.address() as AddressInfo;
+
+    const res = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "hi" }], stream: true }),
+    });
+    const body = await res.text();
+
+    expect(body).toContain(COMPLETION_ERROR);
+    expect(body).toContain("[DONE]");
+  });
+});
+
 /** Always-ready readiness fake, reused by every `createChatStatusRouter()` call site in this file that isn't testing readiness itself. */
 const fakeReadiness = { check: () => ({ ready: true, chatStatus: "ready" as const, embeddingReady: true }) };
 
@@ -178,6 +295,50 @@ describe("GET /status", () => {
     const body = (await response.json()) as { embeddingReady: boolean };
 
     expect(body.embeddingReady).toBe(false);
+  });
+});
+
+describe("POST /preload", () => {
+  let server: http.Server | undefined;
+
+  afterEach(() => {
+    server?.close();
+    server = undefined;
+  });
+
+  it("responds 202 immediately with the agent's current status, without waiting for preload to finish", async () => {
+    const fakeAgentService = new FakeAgentService();
+    const app = express();
+    app.use("/api/chat", createChatStatusRouter(fakeAgentService as unknown as AgentService, fakeReadiness));
+
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/chat/preload`, { method: "POST" });
+
+    expect(response.status).toBe(202);
+    expect((await response.json()) as AgentStatusPayload).toEqual(fakeAgentService.getStatus());
+    await expect.poll(() => fakeAgentService.preloadCallCount).toBe(1);
+  });
+
+  it("still responds 202 when preload fails in the background - the caller learns about it by polling /status", async () => {
+    const failingAgent = {
+      getStatus: () => new FakeAgentService().getStatus(),
+      preload: async () => {
+        throw new Error("model file missing");
+      },
+    };
+    const app = express();
+    app.use("/api/chat", createChatStatusRouter(failingAgent as unknown as AgentService, fakeReadiness));
+
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server!.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/chat/preload`, { method: "POST" });
+
+    expect(response.status).toBe(202);
   });
 });
 
@@ -429,6 +590,114 @@ describe("POST /v1/chat/voice-completions", () => {
     expect(body.tools).toEqual(["lookup_stock"]);
     server.close();
   });
+
+  it("responds 400 with EMPTY_TRANSCRIPT_ERROR when transcription yields no text", async () => {
+    const emptyTranscriptAgent: VoiceAgent = {
+      invoke: async () => {
+        throw new EmptyTranscriptError();
+      },
+      invokeStreaming: fakeVoiceAgent.invokeStreaming,
+    };
+    const app = express();
+    app.use(express.json());
+    app.use("/v1/chat", createVoiceCompletionsRouter(fakeAgent, emptyTranscriptAgent));
+    const server = app.listen(0);
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const res = await fetch(`http://127.0.0.1:${port}/v1/chat/voice-completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [], audioBase64: Buffer.from("fake-wav").toString("base64") }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: EMPTY_TRANSCRIPT_ERROR });
+    server.close();
+  });
+
+  it("responds 500 with VOICE_COMPLETION_ERROR without leaking the internal error when the turn fails", async () => {
+    const failingAgent: VoiceAgent = {
+      invoke: async () => {
+        throw new Error("transcription backend crashed");
+      },
+      invokeStreaming: fakeVoiceAgent.invokeStreaming,
+    };
+    const app = express();
+    app.use(express.json());
+    app.use("/v1/chat", createVoiceCompletionsRouter(fakeAgent, failingAgent));
+    const server = app.listen(0);
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const res = await fetch(`http://127.0.0.1:${port}/v1/chat/voice-completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [], audioBase64: Buffer.from("fake-wav").toString("base64") }),
+    });
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: VOICE_COMPLETION_ERROR });
+    server.close();
+  });
+
+  it("responds 400 with INVALID_MESSAGES_ERROR when messages is malformed", async () => {
+    const app = express();
+    app.use(express.json());
+    app.use("/v1/chat", createVoiceCompletionsRouter(fakeAgent, fakeVoiceAgent));
+    const server = app.listen(0);
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const res = await fetch(`http://127.0.0.1:${port}/v1/chat/voice-completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: "not an array", audioBase64: Buffer.from("fake-wav").toString("base64") }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: INVALID_MESSAGES_ERROR });
+    server.close();
+  });
+
+  it("responds 400 with INVALID_AUDIO_ERROR when audioBase64 is missing", async () => {
+    const app = express();
+    app.use(express.json());
+    app.use("/v1/chat", createVoiceCompletionsRouter(fakeAgent, fakeVoiceAgent));
+    const server = app.listen(0);
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const res = await fetch(`http://127.0.0.1:${port}/v1/chat/voice-completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [] }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: INVALID_AUDIO_ERROR });
+    server.close();
+  });
+
+  it("responds 503 with MODEL_NOT_READY_ERROR while the model is still loading", async () => {
+    const loadingAgent = { getStatus: () => ({ ...new FakeAgentService().getStatus(), status: "loading" as const }) };
+    const app = express();
+    app.use(express.json());
+    app.use("/v1/chat", createVoiceCompletionsRouter(loadingAgent, fakeVoiceAgent));
+    const server = app.listen(0);
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const res = await fetch(`http://127.0.0.1:${port}/v1/chat/voice-completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [], audioBase64: Buffer.from("fake-wav").toString("base64") }),
+    });
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: MODEL_NOT_READY_ERROR });
+    server.close();
+  });
 });
 
 describe("POST /v1/chat/voice-completions - stream: true", () => {
@@ -518,6 +787,29 @@ describe("POST /v1/chat/voice-completions - stream: true", () => {
     const body = await res.text();
     expect(body).toContain("data: [DONE]");
     expect(parseSseEvents(body)[0]).toMatchObject({ type: "error", error: EMPTY_TRANSCRIPT_ERROR });
+  });
+
+  it("emits an SSE error event with VOICE_COMPLETION_ERROR for any other failure, without leaking the internal error", async () => {
+    const url = await startServer({
+      invoke: fakeVoiceAgent.invoke,
+      invokeStreaming: async () => {
+        throw new Error("TTS synth crashed");
+      },
+    });
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [],
+        audioBase64: Buffer.from("fake-wav").toString("base64"),
+        stream: true,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(parseSseEvents(body)[0]).toMatchObject({ type: "error", error: VOICE_COMPLETION_ERROR });
   });
 });
 

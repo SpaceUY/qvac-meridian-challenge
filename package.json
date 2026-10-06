@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "test": "npx vitest run",
+    "test:coverage": "npx vitest run --coverage",
     "dev:client": "npm run dev --workspace=apps/frontend",
     "dev:server": "npm run dev --workspace=apps/backend",
     "build:client": "npm run build --workspace=apps/frontend",
@@ -19,5 +20,8 @@
     "serve:stop": "npm run serve:stop --workspace=apps/backend",
     "provider": "npm run provider --workspace=apps/backend"
   },
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "@vitest/coverage-v8": "^5.0.3"
+  }
 }
