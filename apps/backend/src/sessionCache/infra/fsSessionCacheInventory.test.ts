@@ -54,7 +54,9 @@ describe("FsSessionCacheInventory", () => {
     try {
       await writeFile(path.join(outside, "big.bin"), Buffer.alloc(1_000));
       await writeCacheFile(`${UUID_A}/m/real.bin`, 10, 100);
-      await symlink(outside, path.join(root, UUID_A, "m", "link"));
+      // "junction" keeps this working on Windows without elevated privileges (plain symlinks need
+      // SeCreateSymbolicLinkPrivilege there); junctions are reported identically by lstat/readdir.
+      await symlink(outside, path.join(root, UUID_A, "m", "link"), "junction");
 
       const [entry] = await new FsSessionCacheInventory(root, isUuid).list();
       expect(entry?.bytes).toBe(10);

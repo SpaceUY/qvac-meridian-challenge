@@ -1,13 +1,30 @@
 import { describe, expect, it, vi } from "vitest";
 import { DelegatedProviderUnreachableError, OperationCancelledError } from "../domain/errors.js";
 
-const { loadModelMock, getLoadedModelInfoMock, completionMock, downloadAssetMock, deleteCacheMock, heartbeatMock } = vi.hoisted(() => ({
+const {
+  loadModelMock,
+  getLoadedModelInfoMock,
+  completionMock,
+  downloadAssetMock,
+  deleteCacheMock,
+  heartbeatMock,
+  modelRegistrySearchMock,
+  modelRegistryListMock,
+  unloadModelMock,
+  closeMock,
+  cancelMock,
+} = vi.hoisted(() => ({
   loadModelMock: vi.fn(),
   getLoadedModelInfoMock: vi.fn(),
   completionMock: vi.fn(),
   downloadAssetMock: vi.fn(),
   deleteCacheMock: vi.fn(),
   heartbeatMock: vi.fn(),
+  modelRegistrySearchMock: vi.fn(),
+  modelRegistryListMock: vi.fn(),
+  unloadModelMock: vi.fn(),
+  closeMock: vi.fn(),
+  cancelMock: vi.fn(),
 }));
 
 /**
@@ -24,6 +41,11 @@ vi.mock("@qvac/sdk", async (importOriginal) => {
     downloadAsset: downloadAssetMock,
     deleteCache: deleteCacheMock,
     heartbeat: heartbeatMock,
+    modelRegistrySearch: modelRegistrySearchMock,
+    modelRegistryList: modelRegistryListMock,
+    unloadModel: unloadModelMock,
+    close: closeMock,
+    cancel: cancelMock,
   };
 });
 
@@ -59,6 +81,150 @@ describe("QvacRuntimeAdapter.load", () => {
     expect(loadModelMock).toHaveBeenCalledWith(
       expect.objectContaining({ delegate }),
     );
+  });
+});
+
+describe("QvacRuntimeAdapter registry lookups", () => {
+  const sdkEntry = {
+    name: "Meridian 7B",
+    registryPath: "meridian/7b",
+    registrySource: "hf",
+    engine: "llamacpp",
+    addon: "none",
+    quantization: "q4",
+    params: "7b",
+    expectedSize: 4_200_000,
+  };
+  const summary = {
+    name: "Meridian 7B",
+    registryPath: "meridian/7b",
+    registrySource: "hf",
+    engine: "llamacpp",
+    addon: "none",
+    quantization: "q4",
+    params: "7b",
+    expectedSizeBytes: 4_200_000,
+  };
+
+  it("searchRegistry maps the SDK's expectedSize to expectedSizeBytes", async () => {
+    modelRegistrySearchMock.mockResolvedValue([sdkEntry]);
+
+    const adapter = new QvacRuntimeAdapter();
+    await expect(adapter.searchRegistry({ filter: "meridian" })).resolves.toEqual([summary]);
+  });
+
+  it("listRegistry maps every entry the same way", async () => {
+    modelRegistryListMock.mockResolvedValue([sdkEntry]);
+
+    const adapter = new QvacRuntimeAdapter();
+    await expect(adapter.listRegistry()).resolves.toEqual([summary]);
+  });
+});
+
+describe("QvacRuntimeAdapter.load progress and registry sources", () => {
+  it("maps the SDK's progress shape and reconstructs a registry:// source", () => {
+    loadModelMock.mockReturnValue(Object.assign(Promise.resolve("model-1"), { requestId: "req-8" }));
+    const onProgress = vi.fn();
+
+    const adapter = new QvacRuntimeAdapter();
+    adapter.load({ kind: "registry", registrySource: "hf", registryPath: "meridian/7b" }, undefined, onProgress);
+
+    expect(loadModelMock).toHaveBeenCalledWith(
+      expect.objectContaining({ modelSrc: "registry://hf/meridian/7b" }),
+    );
+    const { onProgress: sdkOnProgress } = loadModelMock.mock.calls[0][0];
+    sdkOnProgress({ percentage: 50, downloaded: 512, total: 1024 });
+    expect(onProgress).toHaveBeenCalledWith({ percentage: 50, downloadedBytes: 512, totalBytes: 1024 });
+  });
+});
+
+describe("QvacRuntimeAdapter.infer", () => {
+  it("resolves the completion's text", async () => {
+    completionMock.mockReturnValue({
+      requestId: "req-9",
+      final: Promise.resolve({ contentText: "22 units available", toolCalls: [], thinkingText: "" }),
+    });
+
+    const adapter = new QvacRuntimeAdapter();
+    await expect(adapter.infer("model-1", "How many in stock?")).resolves.toEqual({ text: "22 units available" });
+    expect(completionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ modelId: "model-1", stream: false, kvCache: true }),
+    );
+  });
+
+  it("translates a cancelled inference the same way as a cancelled load", async () => {
+    const cancelled = Object.assign(new Error("cancelled"), { code: SDK_SERVER_ERROR_CODES.INFERENCE_CANCELLED });
+    completionMock.mockReturnValue({ requestId: "req-10", final: Promise.reject(cancelled) });
+
+    const adapter = new QvacRuntimeAdapter();
+    await expect(adapter.infer("model-1", "hi")).rejects.toBeInstanceOf(OperationCancelledError);
+  });
+});
+
+describe("QvacRuntimeAdapter.chatComplete streaming", () => {
+  it("forwards each contentDelta token to onToken as it streams in", async () => {
+    async function* events() {
+      yield { type: "contentDelta", text: "Enter" };
+      yield { type: "contentDelta", text: "prise" };
+      yield { type: "toolCallDelta" };
+    }
+    completionMock.mockReturnValue({
+      requestId: "req-11",
+      events: events(),
+      final: Promise.resolve({ contentText: "Enterprise", toolCalls: [], thinkingText: "" }),
+    });
+
+    const adapter = new QvacRuntimeAdapter();
+    const onToken = vi.fn();
+    await adapter.chatComplete("model-1", { history: [{ role: "user", content: "hi" }] }, onToken);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(onToken.mock.calls).toEqual([["Enter"], ["prise"]]);
+  });
+
+  it("swallows a streaming error - the failure still surfaces through the final completion promise", async () => {
+    async function* events(): AsyncGenerator<{ type: string; text?: string }> {
+      yield { type: "contentDelta", text: "partial" };
+      throw new Error("stream disconnected");
+    }
+    completionMock.mockReturnValue({
+      requestId: "req-12",
+      events: events(),
+      final: Promise.reject(new Error("stream disconnected")),
+    });
+
+    const adapter = new QvacRuntimeAdapter();
+    const onToken = vi.fn();
+    const pending = adapter.chatComplete("model-1", { history: [{ role: "user", content: "hi" }] }, onToken);
+
+    await expect(pending).rejects.toThrow("stream disconnected");
+    expect(onToken).toHaveBeenCalledWith("partial");
+  });
+});
+
+describe("QvacRuntimeAdapter thin wrappers", () => {
+  it("unload forwards the modelId without clearing storage", async () => {
+    unloadModelMock.mockResolvedValue(undefined);
+    await new QvacRuntimeAdapter().unload("model-1");
+    expect(unloadModelMock).toHaveBeenCalledWith({ modelId: "model-1", clearStorage: false });
+  });
+
+  it("close shuts down the SDK", async () => {
+    closeMock.mockResolvedValue(undefined);
+    await new QvacRuntimeAdapter().close();
+    expect(closeMock).toHaveBeenCalled();
+  });
+
+  it("cancel forwards the requestId", async () => {
+    cancelMock.mockResolvedValue(undefined);
+    await new QvacRuntimeAdapter().cancel("req-1");
+    expect(cancelMock).toHaveBeenCalledWith({ requestId: "req-1" });
+  });
+
+  it("cancelCompletions targets every completion for a model, not a single request", async () => {
+    cancelMock.mockResolvedValue(undefined);
+    await new QvacRuntimeAdapter().cancelCompletions("model-1");
+    expect(cancelMock).toHaveBeenCalledWith({ modelId: "model-1", kind: "completion" });
   });
 });
 
@@ -103,6 +269,38 @@ describe("QvacRuntimeAdapter.deleteCache", () => {
     await adapter.deleteCache("session-1");
 
     expect(deleteCacheMock).toHaveBeenCalledWith({ kvCacheKey: "session-1" });
+  });
+});
+
+describe("QvacRuntimeAdapter.chatComplete attachments", () => {
+  it("writes an attached image to a temp file, passes its path to the SDK, and cleans it up afterwards", async () => {
+    const { existsSync } = await import("node:fs");
+    let capturedPath = "";
+    let existedWhenSdkSawIt = false;
+    completionMock.mockImplementation(({ history }) => {
+      capturedPath = history[0].attachments[0].path;
+      existedWhenSdkSawIt = existsSync(capturedPath);
+      return {
+        requestId: "req-img",
+        events: (async function* () {})(),
+        final: Promise.resolve({ contentText: "a dented housing", toolCalls: [], thinkingText: "" }),
+      };
+    });
+
+    const adapter = new QvacRuntimeAdapter();
+    await adapter.chatComplete("model-1", {
+      history: [
+        {
+          role: "user",
+          content: "what's wrong with this part?",
+          images: [{ mimeType: "image/png", data: new Uint8Array([1, 2, 3]) }],
+        },
+      ],
+    });
+
+    expect(capturedPath).toMatch(/qvac-vlm-.*\.png$/);
+    expect(existedWhenSdkSawIt).toBe(true);
+    expect(existsSync(capturedPath)).toBe(false);
   });
 });
 
@@ -182,6 +380,23 @@ describe("QvacRuntimeAdapter.chatComplete", () => {
         generationParams: { repeat_penalty: REPEAT_PENALTY, predict: MAX_REPLY_TOKENS },
       }),
     );
+  });
+
+  it("maps each SDK tool call to its id, name, and arguments", async () => {
+    completionMock.mockReturnValue({
+      requestId: "req-5c",
+      events: (async function* () {})(),
+      final: Promise.resolve({
+        contentText: "",
+        toolCalls: [{ id: "call_1", name: "lookup_stock", arguments: { sku: "SD-X4-001" } }],
+        thinkingText: "",
+      }),
+    });
+
+    const adapter = new QvacRuntimeAdapter();
+    const result = await adapter.chatComplete("model-1", { history: [{ role: "user", content: "stock?" }] });
+
+    expect(result.toolCalls).toEqual([{ id: "call_1", name: "lookup_stock", arguments: { sku: "SD-X4-001" } }]);
   });
 
   it("disables the KV cache outright when kvCacheEnabled is false, regardless of sessionId", () => {
