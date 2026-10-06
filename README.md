@@ -26,6 +26,12 @@
   <sub>QVAC / llama.cpp · BGE-M3 · LanceDB · cached local models</sub>
 </p>
 
+<p align="center">
+  <a href="https://youtu.be/WKsw_oYwkUI"><strong>▶ Watch the demo video</strong></a>
+  <br>
+  <sub>Chat, voice, vision, cancellation, and P2P delegation with local fallback — presented as to Meridian.</sub>
+</p>
+
 <h2>What this is</h2>
 
 <p>
