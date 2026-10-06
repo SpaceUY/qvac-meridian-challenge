@@ -75,3 +75,51 @@ describe('context budget', () => {
     expect(useChatStore.getState()).toMatchObject({ contextExhausted: false, contextNoticeOpen: false })
   })
 })
+
+describe('speech', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })))
+    useChatStore.getState().conversationReset()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('remembers which message is speaking', () => {
+    useChatStore.getState().speechStarted('assistant-1')
+    expect(useChatStore.getState().speakingMessageId).toBe('assistant-1')
+  })
+
+  it('only ends the speech of the message that is still speaking', () => {
+    useChatStore.getState().speechStarted('assistant-2')
+    useChatStore.getState().speechEnded('assistant-1')
+    expect(useChatStore.getState().speakingMessageId).toBe('assistant-2')
+
+    useChatStore.getState().speechEnded('assistant-2')
+    expect(useChatStore.getState().speakingMessageId).toBeNull()
+  })
+
+  it('Stop aborts the turn in flight and silences what is playing', () => {
+    const controller = new AbortController()
+    useChatStore.getState().activeTurnStarted(controller)
+    useChatStore.getState().speechStarted('assistant-1')
+
+    useChatStore.getState().turnStopped()
+
+    expect(controller.signal.aborted).toBe(true)
+    expect(useChatStore.getState().speakingMessageId).toBeNull()
+  })
+
+  it('Stop with only audio playing (the backend already done) just silences it', () => {
+    useChatStore.getState().speechStarted('assistant-1')
+    useChatStore.getState().turnStopped()
+    expect(useChatStore.getState().speakingMessageId).toBeNull()
+  })
+
+  it('New chat silences what is playing', () => {
+    useChatStore.getState().speechStarted('assistant-1')
+    useChatStore.getState().conversationReset()
+    expect(useChatStore.getState().speakingMessageId).toBeNull()
+  })
+})

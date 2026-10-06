@@ -12,7 +12,7 @@ import type {
   LoadedModelDelegationInfo,
   ModelSource,
 } from "../../models/domain/types.js";
-import { ConcurrencyLimiter } from "./concurrencyLimiter.js";
+import { ConcurrencyLimiter } from "../../models/service/concurrencyLimiter.js";
 
 const DEFAULT_CTX_SIZE = 4096;
 const DEFAULT_MAX_CONCURRENCY = 1;

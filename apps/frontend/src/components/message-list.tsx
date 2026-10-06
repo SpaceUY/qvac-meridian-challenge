@@ -54,7 +54,14 @@ function MessageBubble({ message }: { message: Message }) {
         </div>
       )}
       {message.status.type === 'error' && <p className="mt-1 text-xs text-destructive">{message.status.reason}</p>}
-      {message.audioChunks && message.audioChunks.length > 0 && <AudioPlayback chunks={message.audioChunks} autoPlay />}
+      {message.audioChunks && message.audioChunks.length > 0 && (
+        <AudioPlayback
+          messageId={message.id}
+          chunks={message.audioChunks}
+          streaming={message.status.type === 'streaming'}
+          autoPlay
+        />
+      )}
       {/* Tools (how), then sources (what it rests on) - each renders nothing when empty. */}
       <ToolBadges tools={message.tools} />
       <CitationSources citations={message.citations} />

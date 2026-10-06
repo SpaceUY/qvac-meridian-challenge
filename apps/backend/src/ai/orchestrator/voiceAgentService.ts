@@ -1,7 +1,9 @@
 import type { Citation, RetrievedChunk } from "../../rag/domain/types.js";
-import type { AgentService, ConversationMessage } from "./agentService.js";
+import type { AgentService, ConversationMessage, InvokeResult } from "./agentService.js";
 import type { TranscriptionService } from "../../speech/service/transcription.service.js";
 import type { TtsService } from "../../tts/service/tts.service.js";
+import type { SpeechNormalizer } from "../../tts/domain/speech/speechNormalizer.js";
+import { createEnglishSpeechNormalizer } from "../../tts/domain/speech/createEnglishSpeechNormalizer.js";
 import type { ContextUsage } from "./contextBudget.js";
 import { SentenceChunker } from "./sentenceChunker.js";
 import { DEFAULT_MIN_SENTENCE_CHUNK_CHARS } from "../../config/voice.config.js";
@@ -49,39 +51,68 @@ export interface VoiceStreamResult {
   context?: ContextUsage;
 }
 
-/** Composes AgentService (text) with STT/TTS for one voice turn: transcribe, run through the graph, then synthesize. Degrades to text-only if synthesis fails — the turn itself already succeeded. */
+/** Collaborators with a production default - overridable for tests. */
+export interface VoiceAgentOptions {
+  /** Turns each answer chunk into the words TTS should say. Defaults to the English rules. */
+  speech?: Pick<SpeechNormalizer, "normalize">;
+  /** See SentenceChunker. */
+  minSentenceChunkChars?: number;
+}
+
+export interface VoiceTurnOptions {
+  /**
+   * Aborting it stops the turn: the LLM is cancelled, no further sentence
+   * is synthesized or emitted, and the call rejects with the signal's
+   * reason. A transcription or a TTS job already running still finishes -
+   * neither can be interrupted - but nothing comes after it.
+   */
+  signal?: AbortSignal;
+}
+
+type Synthesis = { audio: Buffer; sampleRate: number };
+
+/**
+ * Composes the existing text orchestrator with STT/TTS for a single voice
+ * turn: transcribe the incoming audio, run it through AgentService's graph
+ * with the caller's prior history plus the new transcript, then synthesize
+ * the answer. Degrades to text-only (no `audio`/`sampleRate`) if synthesis
+ * fails - the turn itself already succeeded by that point.
+ */
 export class VoiceAgentService {
+  private readonly speech: Pick<SpeechNormalizer, "normalize">;
+  private readonly minSentenceChunkChars: number;
+
   constructor(
     private readonly agentService: AgentService,
     private readonly transcriptionService: TranscriptionService,
     private readonly ttsService: TtsService,
-    private readonly minSentenceChunkChars: number = DEFAULT_MIN_SENTENCE_CHUNK_CHARS,
-  ) {}
+    {
+      speech = createEnglishSpeechNormalizer(),
+      minSentenceChunkChars = DEFAULT_MIN_SENTENCE_CHUNK_CHARS,
+    }: VoiceAgentOptions = {},
+  ) {
+    this.speech = speech;
+    this.minSentenceChunkChars = minSentenceChunkChars;
+  }
 
-  async invoke(history: ConversationMessage[], audio: Buffer): Promise<VoiceInvokeResult> {
-    const transcript = await this.transcriptionService.transcribeBuffer(audio);
-    if (!transcript.trim()) {
-      // An empty string reaching the RAG embedding step throws deep inside the QVAC SDK ("Text cannot be empty") - expected here, not a 500.
-      throw new EmptyTranscriptError();
-    }
+  async invoke(
+    history: ConversationMessage[],
+    audio: Buffer,
+    { signal }: VoiceTurnOptions = {},
+  ): Promise<VoiceInvokeResult> {
+    const transcript = await this.transcribe(audio, signal);
 
     let streamedAnswer = "";
-    const result = await this.agentService.invoke(
-      [...history, { role: "user", message: transcript }],
-      undefined,
-      (textDelta) => {
-        streamedAnswer += textDelta;
-      },
-    );
-    // Prefer the streamed text; falls back to result.answer only if no stream event fired (see AgentService.runInvoke's matching safety net).
+    const result = await this.runAgent(history, transcript, signal, (textDelta) => {
+      streamedAnswer += textDelta;
+    });
+    // Prefer the text built up from the streamed deltas - falls back to the
+    // graph's own resolved answer only if generation produced no stream
+    // event at all (see AgentService.runInvoke's matching safety net).
     const answer = streamedAnswer || result.answer;
 
-    let synthesis: { audio: Buffer; sampleRate: number } | undefined;
-    try {
-      synthesis = await this.ttsService.synthesizeSync(answer);
-    } catch (err) {
-      console.error("[voice:tts]", err);
-    }
+    const synthesis = await this.synthesize(answer, signal);
+    signal?.throwIfAborted();
 
     return {
       transcript,
@@ -94,37 +125,51 @@ export class VoiceAgentService {
     };
   }
 
-  /** Same turn as `invoke()`, but synthesizes/emits audio sentence-by-sentence as the answer streams (via `SentenceChunker`), one TTS call at a time since the model isn't safe for concurrent use. A chunk whose synthesis fails still goes out with its text. Each chunk's `text` is the sentence verbatim (whitespace included) - joined back together they reproduce the exact answer; only the copy sent to TTS is trimmed. */
+  /**
+   * Same turn as `invoke()`, but synthesizes and emits audio sentence by
+   * sentence as the answer streams in, instead of waiting for the whole
+   * answer before running TTS once. Sentence boundaries come from
+   * `SentenceChunker`; each completed sentence is synthesized and passed to
+   * `onChunk` strictly in order - one TTS call at a time, since the
+   * underlying model isn't safe for concurrent use. A chunk whose synthesis
+   * fails still goes out with its text, `audio`/`sampleRate` undefined.
+   * Each chunk's `text` is the sentence verbatim, surrounding whitespace
+   * included, so the chunks joined back together are the exact answer;
+   * only the copy sent to TTS is normalized (see `synthesize`).
+   */
   async invokeStreaming(
     history: ConversationMessage[],
     audio: Buffer,
     onChunk: (chunk: VoiceStreamChunk) => void | Promise<void>,
+    { signal }: VoiceTurnOptions = {},
   ): Promise<VoiceStreamResult> {
-    const transcript = await this.transcriptionService.transcribeBuffer(audio);
-    if (!transcript.trim()) {
-      throw new EmptyTranscriptError();
-    }
+    const transcript = await this.transcribe(audio, signal);
 
     const chunker = new SentenceChunker(this.minSentenceChunkChars);
     let streamedAnswer = "";
     // Chains synthesis one sentence at a time, decoupled from the token stream since AgentService.invoke's onToken callback can't be async.
     let processingChain: Promise<void> = Promise.resolve();
     const enqueueSentence = (sentence: string) => {
-      processingChain = processingChain.then(() => this.synthesizeAndEmit(sentence, onChunk));
+      processingChain = processingChain.then(() => this.synthesizeAndEmit(sentence, onChunk, signal));
     };
 
-    const result = await this.agentService.invoke(
-      [...history, { role: "user", message: transcript }],
-      undefined,
-      (textDelta) => {
+    let result: InvokeResult;
+    try {
+      result = await this.runAgent(history, transcript, signal, (textDelta) => {
         streamedAnswer += textDelta;
         for (const sentence of chunker.push(textDelta)) enqueueSentence(sentence);
-      },
-    );
+      });
+    } catch (err) {
+      // Let the sentences already queued settle before the caller ends the
+      // response - none of them emits anything once the turn is stopped.
+      await processingChain;
+      throw err;
+    }
 
     const remainder = chunker.flush();
     if (remainder) enqueueSentence(remainder);
     await processingChain;
+    signal?.throwIfAborted();
 
     const answer = streamedAnswer || result.answer;
 
@@ -139,22 +184,70 @@ export class VoiceAgentService {
     };
   }
 
+  /** The STT call itself can't be interrupted - a turn stopped meanwhile is noticed right after it. */
+  private async transcribe(audio: Buffer, signal: AbortSignal | undefined): Promise<string> {
+    const transcript = await this.transcriptionService.transcribeBuffer(audio);
+    signal?.throwIfAborted();
+    if (!transcript.trim()) {
+      // Feeding an empty string into the RAG embedding step throws deep
+      // inside the QVAC SDK ("Text cannot be empty") - catch it here, where
+      // it's an expected outcome (silence/noise-only audio), not a 500.
+      throw new EmptyTranscriptError();
+    }
+    return transcript;
+  }
+
+  /** Runs the agent on the history plus the new transcript, cancelling the LLM as soon as `signal` aborts - the call then rejects with the signal's reason, not the cancellation error. */
+  private async runAgent(
+    history: ConversationMessage[],
+    transcript: string,
+    signal: AbortSignal | undefined,
+    onToken: (textDelta: string) => void,
+  ): Promise<InvokeResult> {
+    signal?.throwIfAborted();
+    const pending = this.agentService.invoke([...history, { role: "user", message: transcript }], undefined, onToken);
+    const cancelGeneration = () => {
+      this.agentService.cancel(pending.requestId).catch((err: unknown) => {
+        console.error("[voice:cancel]", err);
+      });
+    };
+    signal?.addEventListener("abort", cancelGeneration, { once: true });
+    try {
+      return await pending;
+    } catch (err) {
+      signal?.throwIfAborted();
+      throw err;
+    } finally {
+      signal?.removeEventListener("abort", cancelGeneration);
+    }
+  }
+
   private async synthesizeAndEmit(
     sentence: string,
     onChunk: (chunk: VoiceStreamChunk) => void | Promise<void>,
+    signal: AbortSignal | undefined,
   ): Promise<void> {
-    // The chunk goes out verbatim (its line breaks lay out the Markdown on
-    // screen), but TTS only needs the words - and the SDK rejects
-    // whitespace-only text outright, so such a chunk goes out as text only.
-    const speech = sentence.trim();
-    let synthesis: { audio: Buffer; sampleRate: number } | undefined;
-    if (speech) {
-      try {
-        synthesis = await this.ttsService.synthesizeSync(speech);
-      } catch (err) {
-        console.error("[voice:tts]", err);
-      }
-    }
+    if (signal?.aborted) return; // stopped: nothing more to say, nobody to send it to
+    const synthesis = await this.synthesize(sentence, signal);
+    if (signal?.aborted) return;
     await onChunk({ text: sentence, ...synthesis });
+  }
+
+  /**
+   * The text goes out verbatim (its line breaks lay out the Markdown on
+   * screen), but TTS gets the words to say: normalized, then trimmed. Text
+   * with nothing left to say (whitespace, a lone "---") isn't synthesized
+   * at all - the SDK rejects blank text outright. A failed synthesis
+   * degrades to text only; a stopped one isn't a failure worth logging.
+   */
+  private async synthesize(text: string, signal: AbortSignal | undefined): Promise<Synthesis | undefined> {
+    const speech = this.speech.normalize(text).trim();
+    if (!speech) return undefined;
+    try {
+      return await this.ttsService.synthesizeSync(speech, { signal });
+    } catch (err) {
+      if (!signal?.aborted) console.error("[voice:tts]", err);
+      return undefined;
+    }
   }
 }

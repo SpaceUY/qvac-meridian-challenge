@@ -331,7 +331,7 @@ While the provider is down, `@qvac/sdk` itself logs every heartbeat interval: th
 Same layering as [Local Model Management](#local-model-management), also internal (no HTTP router):
 
 ```
-service/  Business logic: a single "current synthesis" slot (no queue), reuses ModelManagementService for the model lifecycle
+service/  Business logic: a single "current synthesis" slot, a one-at-a-time queue for synthesizeSync, and ModelManagementService for the model lifecycle
 domain/   Types + interfaces (ports) — framework/SDK-agnostic
 infra/    QVAC-specific: the only layer that knows @qvac/sdk exists
 ```
@@ -357,9 +357,27 @@ flow is covered by `tts.service.test.ts` but has no production caller today.
 
 Long text is split before it reaches the engine: a single Supertonic job
 yields at most ~28 s of audio and squeezes/drops words past that, so
-`QvacTtsAdapter` uses the SDK's `sentenceStream` mode (chunks of at most
-`SUPERTONIC_MAX_CHUNK_CHARS`, see `src/config/models.config.ts`) and joins
-the chunks back into one WAV. Callers still get a single audio buffer.
+`QvacTtsAdapter` packs whole sentences into jobs of at most
+`SUPERTONIC_MAX_CHUNK_CHARS` (see `src/config/models.config.ts`), runs them
+one after another with the SDK's `sentenceStream` mode, and joins them back
+into one WAV. Callers still get a single audio buffer.
+
+Stopping: `@qvac/sdk` 0.18.2 can't interrupt a TTS job - `cancel({ kind:
+'tts' })` matches nothing, and leaving the stream early doesn't stop the
+worker. So a voice turn stops between jobs instead: `synthesizeSync` takes
+an `AbortSignal`, waits for the engine in a FIFO queue (one synthesis at a
+time), leaves the queue if aborted while waiting, and checks the signal
+before each job. `/v1/chat/voice-completions` aborts that signal when the
+client hangs up, which also cancels the LLM. At most the one job already in
+the engine (≤ `SUPERTONIC_MAX_CHUNK_CHARS`) still finishes.
+
+What reaches the engine is spoken text, not the answer as written:
+`VoiceAgentService` runs each chunk through a `SpeechNormalizer`
+(`src/tts/domain/speech/`) - an ordered list of rules that read Markdown
+tables as sentences, drop Markdown marks, and say codes, dates, fiscal
+periods, symbols, amounts, percentages and numbers as words (`$1.2M` →
+"one point two million dollars"). The screen keeps the text as written. A
+new written format is a new rule in `createEnglishSpeechNormalizer()`.
 
 ## RAG: corpus ingestion
 

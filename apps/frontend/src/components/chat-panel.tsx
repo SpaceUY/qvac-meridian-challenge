@@ -31,6 +31,8 @@ export function ChatPanel({ modelStatus, modelCancelled, embeddingReady, serverU
   const modelReady = modelStatus === 'ready'
   // Exhausted: a full conversation accepts no new messages of any kind; only New chat continues.
   const contextExhausted = useChatStore((state) => state.contextExhausted)
+  // An answer still playing keeps the turn open: Stop stays, sending waits.
+  const isSpeaking = useChatStore((state) => state.speakingMessageId !== null)
   // Text and voice disable each other, except the mic must stay enabled to stop an in-progress recording.
   const micDisabled = !modelReady || contextExhausted || (voicePhase.type !== 'recording' && isStreaming)
   const textDisabled =
@@ -42,7 +44,9 @@ export function ChatPanel({ modelStatus, modelCancelled, embeddingReady, serverU
       ? 'Processing audio…'
       : isStreaming
         ? 'Waiting for the response…'
-        : 'Ask about your documents…'
+        : isSpeaking
+          ? 'Playing the answer…'
+          : 'Ask about your documents…'
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -82,7 +86,7 @@ export function ChatPanel({ modelStatus, modelCancelled, embeddingReady, serverU
         <div className="h-8 bg-linear-to-t from-background to-background/0" />
         <div className="pointer-events-auto bg-background px-3 pb-3">
           <Composer
-            isStreaming={isStreaming}
+            isStreaming={isStreaming || isSpeaking}
             textDisabled={textDisabled}
             placeholder={placeholder}
             onSend={handleSend}
