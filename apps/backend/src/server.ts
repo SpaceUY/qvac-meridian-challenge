@@ -25,6 +25,14 @@ import {
 } from "./config/models.config.js";
 import { ReadinessService } from "./health/readinessService.js";
 import { createHealthRouter, createPublicModelsRouter } from "./health/router/health.router.js";
+import { SESSION_ID_PATTERN } from "./chat/chat.router.const.js";
+import {
+  SESSION_CACHE_DIR,
+  SESSION_CACHE_RETENTION_POLICY,
+  SESSION_CACHE_SWEEP_SCHEDULE,
+} from "./config/sessionCache.config.js";
+import { FsSessionCacheInventory } from "./sessionCache/infra/fsSessionCacheInventory.js";
+import { SessionCacheSweeper } from "./sessionCache/service/sessionCacheSweeper.js";
 
 const app = express();
 
@@ -68,6 +76,16 @@ const agentService = new AgentService(
 // Constructed before the chat status router so GET /api/chat/status can merge embeddingReady into one payload.
 const readiness = new ReadinessService(agentService, embeddingPort);
 readiness.start();
+
+// Per-session KV caches (`kvCache: sessionId`) are never evicted by the SDK; "New chat" only frees the one being left. This bounds the rest (closed tabs, API clients, crashes).
+const sessionCacheSweeper = new SessionCacheSweeper(
+  new FsSessionCacheInventory(SESSION_CACHE_DIR, (name) => SESSION_ID_PATTERN.test(name)),
+  agentService,
+  SESSION_CACHE_RETENTION_POLICY,
+  { isReady: () => agentService.getStatus().status === "ready" },
+);
+sessionCacheSweeper.start(SESSION_CACHE_SWEEP_SCHEDULE);
+
 app.use("/api/chat", createChatStatusRouter(agentService, readiness));
 app.use("/v1/chat", createCompletionsRouter(agentService));
 app.use(createHealthRouter(readiness));
@@ -91,6 +109,7 @@ let shuttingDown = false;
 async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
+  sessionCacheSweeper.stop();
 
   await Promise.race([
     // embeddingPort.unload() first: if the native path is active, asks its bare.exe worker to exit gracefully (see nativeEmbeddingClient.ts) rather than relying solely on its process.once("exit") safety net.
