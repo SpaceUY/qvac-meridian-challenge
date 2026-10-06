@@ -214,7 +214,7 @@
   <tr>
     <td><strong>RAG</strong></td>
     <td><code>BGE-M3 + LanceDB</code></td>
-    <td>Incremental local ingestion</td>
+    <td>Incremental ingestion · top-15 → min score 0.551 → max 3 chunks</td>
   </tr>
   <tr>
     <td><strong>P2P</strong></td>
@@ -385,7 +385,38 @@
     <td><strong>.env</strong></td>
     <td>Peer configuration</td>
   </tr>
+  <tr>
+    <td><strong>~/.qvac/kv-cache</strong></td>
+    <td>Session KV-cache — deleted when a new conversation starts</td>
+  </tr>
 </table>
+
+<h2>Reliability guardrails</h2>
+
+<p align="center">
+  <img
+    src="docs/assets/guardrails.svg"
+    alt="Guardrails, not guesses — 700-character prompt cap, 700-character retrieval cap, 80% context-budget hard stop, and a controlled refusal when evidence is insufficient"
+    width="900"
+  />
+</p>
+
+<p>
+  Small local models fail quietly if you let them. This product doesn't:
+  a 700-character cap keeps a pasted prompt or long transcription from
+  blowing out the embedding model's context, conversations hard-stop at
+  <strong>80% of the 16,384-token context window</strong> instead of silently
+  degrading, and when there's no retrieved evidence, image evidence, or tool
+  result, the model is not asked to improvise — it returns a controlled
+  <code>INSUFFICIENT_CONTEXT</code> refusal with no citations attached.
+</p>
+
+<p>
+  Every one of these is a config constant with a test next to it, not a
+  prompt instruction the model could ignore —
+  <code>MAX_PROMPT_CHARS</code>, <code>MAX_RETRIEVAL_QUERY_CHARS</code>,
+  <code>CONTEXT_BUDGET_THRESHOLD</code>.
+</p>
 
 <h2>Quick start</h2>
 
@@ -660,6 +691,17 @@ docker compose up --build</code></pre>
     <td>
       Heartbeats and reconciliation were added around the SDK so a disappearing provider
       causes automatic local recovery rather than a stalled session.
+    </td>
+  </tr>
+
+  <tr>
+    <td valign="top"><strong>SDK version pin</strong></td>
+    <td>
+      <code>@qvac/sdk</code> is pinned to exactly <code>0.18.2</code> — the version the
+      delegated-inference APIs this product depends on were built and tested against.
+      An upgrade is a controlled migration, not a drop-in bump: it needs a regression
+      pass across local inference, P2P delegation, lifecycle management, and the
+      OpenAI-compatible API before it ships.
     </td>
   </tr>
 </table>

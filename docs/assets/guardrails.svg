@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 260" width="900" height="260" role="img" aria-labelledby="guardrails-title">
+  <title id="guardrails-title">Guardrails, not guesses — 700-character prompt cap, 700-character retrieval cap, an 80% context-budget hard stop, and a controlled refusal when evidence is insufficient</title>
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <style>
+      text {
+        font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+    </style>
+  </defs>
+
+  <text x="450" y="32" text-anchor="middle"
+        fill="#94a3b8" font-size="13" letter-spacing="3">
+    GUARDRAILS, NOT GUESSES
+  </text>
+
+  <!-- separators -->
+  <line x1="225" y1="70" x2="225" y2="215" stroke="#334155"/>
+  <line x1="450" y1="70" x2="450" y2="215" stroke="#334155"/>
+  <line x1="675" y1="70" x2="675" y2="215" stroke="#334155"/>
+
+  <!-- guardrail 1 -->
+  <text x="112.5" y="125" text-anchor="middle"
+        fill="#18b480" font-size="30" font-weight="700"
+        filter="url(#glow)">700</text>
+  <text x="112.5" y="155" text-anchor="middle"
+        fill="#94a3b8" font-size="11">CHAR CAP ON</text>
+  <text x="112.5" y="172" text-anchor="middle"
+        fill="#94a3b8" font-size="11">USER PROMPT</text>
+
+  <!-- guardrail 2 -->
+  <text x="337.5" y="125" text-anchor="middle"
+        fill="#18b480" font-size="30" font-weight="700"
+        filter="url(#glow)">700</text>
+  <text x="337.5" y="155" text-anchor="middle"
+        fill="#94a3b8" font-size="11">CHAR CAP ON</text>
+  <text x="337.5" y="172" text-anchor="middle"
+        fill="#94a3b8" font-size="11">RETRIEVAL QUERY</text>
+
+  <!-- guardrail 3 -->
+  <text x="562.5" y="125" text-anchor="middle"
+        fill="#18b480" font-size="30" font-weight="700"
+        filter="url(#glow)">80%</text>
+  <text x="562.5" y="155" text-anchor="middle"
+        fill="#94a3b8" font-size="11">CONTEXT BUDGET</text>
+  <text x="562.5" y="172" text-anchor="middle"
+        fill="#94a3b8" font-size="11">HARD STOP</text>
+
+  <!-- guardrail 4 -->
+  <text x="787.5" y="125" text-anchor="middle"
+        fill="#18b480" font-size="26" font-weight="700"
+        filter="url(#glow)">REFUSE</text>
+  <text x="787.5" y="155" text-anchor="middle"
+        fill="#94a3b8" font-size="11">INSTEAD OF</text>
+  <text x="787.5" y="172" text-anchor="middle"
+        fill="#94a3b8" font-size="11">GUESSING</text>
+
+  <text x="450" y="235" text-anchor="middle"
+        fill="#64748b" font-size="10">
+    enforced in code on every text and voice turn — not a prompt instruction
+  </text>
+</svg>

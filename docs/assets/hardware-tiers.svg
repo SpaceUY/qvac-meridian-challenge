@@ -49,6 +49,13 @@
     8 GB DESIGN TARGET
   </text>
 
+  <text x="147.5" y="146"
+        text-anchor="middle"
+        fill="#64748b"
+        font-size="9">
+    ~2.17 GB on disk
+  </text>
+
   <text x="55" y="165" fill="#64748b" font-size="9">CHAT / VISION</text>
   <text x="55" y="184" fill="#94a3b8" font-size="11">Qwen3-VL 2B · Q4_K</text>
 
@@ -84,6 +91,13 @@
     ≥16 GB · ≥8 CORES
   </text>
 
+  <text x="450" y="146"
+        text-anchor="middle"
+        fill="#64748b"
+        font-size="9">
+    ~7.39 GB on disk
+  </text>
+
   <text x="357" y="165" fill="#64748b" font-size="9">CHAT / VISION</text>
   <text x="357" y="184" fill="#94a3b8" font-size="11">Qwen3.5 9B · Q4_K_M</text>
 
@@ -117,6 +131,13 @@
         fill="#64748b"
         font-size="10">
     ≥64 GB · ≥16 CORES
+  </text>
+
+  <text x="752.5" y="146"
+        text-anchor="middle"
+        fill="#64748b"
+        font-size="9">
+    ~25.18 GB on disk
   </text>
 
   <text x="660" y="165" fill="#64748b" font-size="9">CHAT / VISION</text>
