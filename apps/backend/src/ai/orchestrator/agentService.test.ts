@@ -504,7 +504,7 @@ describe("AgentService.deleteSessionCache", () => {
 });
 
 describe("AgentService.invoke", () => {
-  it.skipIf(!isEmbeddingModelCached())("sends the corpus content to the model as part of the chat history", async () => {
+  it.skipIf(!isEmbeddingModelCached())("sends the corpus content to the model in the latest user message of the chat history", async () => {
     const runtime = new FakeModelRuntime();
     const modelService = new ModelManagementService(runtime, runtime);
 
@@ -528,7 +528,7 @@ describe("AgentService.invoke", () => {
       expect(
         history.some(
           (message) =>
-            message.role === "system" &&
+            message.role === "user" &&
             // CORPUS_CHUNK_FIXTURES' actual wording - not FAKE_DOCUMENTS' text (that's a different fixture, used by the list_documents test below).
             message.content.includes("Standard hardware warranty"),
         ),
