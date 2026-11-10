@@ -1,4 +1,10 @@
+import * as http from "node:http";
+import type { AddressInfo } from "node:net";
+import express from "express";
 import { describe, expect, it, vi } from "vitest";
+import { ToolInputParsingException } from "@langchain/core/tools";
+import { createCompletionsRouter } from "../../chat/chat.router.js";
+import { COMPLETION_ERROR } from "../../chat/chat.router.const.js";
 import { isCancellationError, ModelManagementError, OperationCancelledError } from "../../models/domain/errors.js";
 import { ModelManagementService } from "../../models/service/models.service.js";
 import type {
@@ -935,5 +941,79 @@ describe("AgentService.cancel between LLM calls", () => {
     const error = await pending.catch((err: unknown) => err);
     expect(isCancellationError(error)).toBe(true);
     expect(runtime.chatRequests).toHaveLength(1);
+  });
+});
+
+/** The model asks for lookup_stock with a region outside the zod enum, so the tool's schema parsing throws. */
+const INVALID_STOCK_CALL = {
+  text: "",
+  toolCalls: [{ id: "call_1", name: "lookup_stock", arguments: { sku: "SD-X4-001", region: "Europe" } }],
+};
+
+describe("AgentService.invoke - lookup_stock called with arguments that fail zod parsing", () => {
+  it("rejects the whole invoke with ToolInputParsingException: the model never gets to see the error or retry", async () => {
+    const runtime = new FakeModelRuntime([INVALID_STOCK_CALL, { text: "never reached", toolCalls: [] }]);
+    const agent = await buildAgent(runtime, ALWAYS_EVIDENCE_CONFIG);
+
+    const error = await agent
+      .invoke([{ role: "user", message: "How many SD-X4-001 are in stock in Europe?" }])
+      .catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(ToolInputParsingException);
+    expect(runtime.chatRequests).toHaveLength(1);
+  });
+
+  describe("as the client sees it through POST /v1/chat/completions", () => {
+    async function withServer(run: (baseUrl: string) => Promise<void>): Promise<void> {
+      const runtime = new FakeModelRuntime([INVALID_STOCK_CALL, { text: "never reached", toolCalls: [] }]);
+      const agent = await buildAgent(runtime, ALWAYS_EVIDENCE_CONFIG);
+      await agent.preload();
+      const app = express();
+      app.use(express.json());
+      app.use("/v1/chat", createCompletionsRouter(agent));
+      const server = http.createServer(app).listen(0);
+      await new Promise<void>((resolve) => server.once("listening", resolve));
+      const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        await run(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/chat/completions`);
+      } finally {
+        errorLog.mockRestore();
+        server.close();
+      }
+    }
+
+    const messages = [{ role: "user", content: "How many SD-X4-001 are in stock in Europe?" }];
+
+    it("non-streaming: HTTP 500 with the generic COMPLETION_ERROR, and no trace of the zod failure", async () => {
+      await withServer(async (url) => {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages }),
+        });
+        const raw = await res.text();
+
+        expect(res.status).toBe(500);
+        expect(JSON.parse(raw)).toEqual({ error: COMPLETION_ERROR });
+        expect(raw).not.toMatch(/schema|Europe|region/i);
+      });
+    });
+
+    it("streaming: HTTP 200, then COMPLETION_ERROR arrives as ordinary assistant text, with no tools or citations chunk", async () => {
+      await withServer(async (url) => {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages, stream: true }),
+        });
+        const body = await res.text();
+
+        expect(res.status).toBe(200);
+        expect(body).toContain(COMPLETION_ERROR);
+        expect(body).toContain("[DONE]");
+        expect(body).not.toMatch(/schema|Europe|region/i);
+        expect(body).not.toContain("lookup_stock");
+      });
+    });
   });
 });
