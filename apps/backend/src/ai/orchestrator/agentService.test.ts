@@ -2,7 +2,6 @@ import * as http from "node:http";
 import type { AddressInfo } from "node:net";
 import express from "express";
 import { describe, expect, it, vi } from "vitest";
-import { ToolInputParsingException } from "@langchain/core/tools";
 import { createCompletionsRouter } from "../../chat/chat.router.js";
 import { COMPLETION_ERROR } from "../../chat/chat.router.const.js";
 import { isCancellationError, ModelManagementError, OperationCancelledError } from "../../models/domain/errors.js";
@@ -944,28 +943,30 @@ describe("AgentService.cancel between LLM calls", () => {
   });
 });
 
-/** The model asks for lookup_stock with a region outside the zod enum, so the tool's schema parsing throws. */
+/** The model asks for lookup_stock with a region outside the zod enum, so the tool's schema parsing throws; the graph reports that to the model as an error tool message. */
 const INVALID_STOCK_CALL = {
   text: "",
   toolCalls: [{ id: "call_1", name: "lookup_stock", arguments: { sku: "SD-X4-001", region: "Europe" } }],
 };
 
 describe("AgentService.invoke - lookup_stock called with arguments that fail zod parsing", () => {
-  it("rejects the whole invoke with ToolInputParsingException: the model never gets to see the error or retry", async () => {
-    const runtime = new FakeModelRuntime([INVALID_STOCK_CALL, { text: "never reached", toolCalls: [] }]);
+  it("hands the failure back to the model as an error tool message so it can recover", async () => {
+    const runtime = new FakeModelRuntime([INVALID_STOCK_CALL, { text: "Please use a valid region.", toolCalls: [] }]);
     const agent = await buildAgent(runtime, ALWAYS_EVIDENCE_CONFIG);
 
-    const error = await agent
-      .invoke([{ role: "user", message: "How many SD-X4-001 are in stock in Europe?" }])
-      .catch((err: unknown) => err);
+    const result = await agent.invoke([{ role: "user", message: "How many SD-X4-001 are in stock in Europe?" }]);
 
-    expect(error).toBeInstanceOf(ToolInputParsingException);
-    expect(runtime.chatRequests).toHaveLength(1);
+    expect(result.answer).toBe("Please use a valid region.");
+    expect(runtime.chatRequests).toHaveLength(2);
+
+    const toolMessage = runtime.chatRequests[1].history.find((message) => message.role === "tool");
+    expect(toolMessage?.content).toContain("failed: Received tool input did not match expected schema");
+    expect(toolMessage?.content).toMatch(/region/i);
   });
 
   describe("as the client sees it through POST /v1/chat/completions", () => {
     async function withServer(run: (baseUrl: string) => Promise<void>): Promise<void> {
-      const runtime = new FakeModelRuntime([INVALID_STOCK_CALL, { text: "never reached", toolCalls: [] }]);
+      const runtime = new FakeModelRuntime([INVALID_STOCK_CALL, { text: "Please use a valid region.", toolCalls: [] }]);
       const agent = await buildAgent(runtime, ALWAYS_EVIDENCE_CONFIG);
       await agent.preload();
       const app = express();
@@ -973,18 +974,16 @@ describe("AgentService.invoke - lookup_stock called with arguments that fail zod
       app.use("/v1/chat", createCompletionsRouter(agent));
       const server = http.createServer(app).listen(0);
       await new Promise<void>((resolve) => server.once("listening", resolve));
-      const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
       try {
         await run(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/chat/completions`);
       } finally {
-        errorLog.mockRestore();
         server.close();
       }
     }
 
     const messages = [{ role: "user", content: "How many SD-X4-001 are in stock in Europe?" }];
 
-    it("non-streaming: HTTP 500 with the generic COMPLETION_ERROR, and no trace of the zod failure", async () => {
+    it("non-streaming: HTTP 200 with the model's recovered answer, not COMPLETION_ERROR", async () => {
       await withServer(async (url) => {
         const res = await fetch(url, {
           method: "POST",
@@ -993,13 +992,13 @@ describe("AgentService.invoke - lookup_stock called with arguments that fail zod
         });
         const raw = await res.text();
 
-        expect(res.status).toBe(500);
-        expect(JSON.parse(raw)).toEqual({ error: COMPLETION_ERROR });
-        expect(raw).not.toMatch(/schema|Europe|region/i);
+        expect(res.status).toBe(200);
+        expect(raw).toContain("Please use a valid region.");
+        expect(raw).not.toContain(COMPLETION_ERROR);
       });
     });
 
-    it("streaming: HTTP 200, then COMPLETION_ERROR arrives as ordinary assistant text, with no tools or citations chunk", async () => {
+    it("streaming: HTTP 200 with the model's recovered answer, not COMPLETION_ERROR", async () => {
       await withServer(async (url) => {
         const res = await fetch(url, {
           method: "POST",
@@ -1009,10 +1008,10 @@ describe("AgentService.invoke - lookup_stock called with arguments that fail zod
         const body = await res.text();
 
         expect(res.status).toBe(200);
-        expect(body).toContain(COMPLETION_ERROR);
+        expect(body).toContain("valid");
+        expect(body).toContain("region.");
         expect(body).toContain("[DONE]");
-        expect(body).not.toMatch(/schema|Europe|region/i);
-        expect(body).not.toContain("lookup_stock");
+        expect(body).not.toContain(COMPLETION_ERROR);
       });
     });
   });
