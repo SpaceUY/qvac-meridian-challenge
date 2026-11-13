@@ -332,7 +332,9 @@ export class AgentService {
         sessionId: options?.sessionId,
         requestId,
       },
-      { streamMode: ["messages", "values"] },
+      { streamMode: ["messages", "values"],
+        recursionLimit: 10  // Set a custom limit here
+      },
     );
 
     let finalState: typeof State.State | undefined;
