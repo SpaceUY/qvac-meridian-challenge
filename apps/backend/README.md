@@ -168,9 +168,9 @@ This starts a provider service and prints its public key:
    DELEGATE_PROVIDER_PUBLIC_KEY=<hex> npm run dev:server
 ```
 
-Optional arguments: `npm run provider --workspace=apps/backend -- [seed] [allowedConsumerPublicKey]`
+Optional arguments: `npm run provider --workspace=apps/backend -- [seed] [allowedConsumerPublicKeys]`
 - `seed` — a 64-char hex identity seed for a reproducible provider public key across restarts. Prefer setting it as an actual env var instead — `QVAC_HYPERSWARM_SEED=<seed> npm run provider --workspace=apps/backend` — since a CLI argument is visible in `ps` output and shell history.
-- `allowedConsumerPublicKey` — restricts the provider to serve only that consumer (firewall allow-list); omit to accept any consumer. The consumer's public key is derived from **its own** `QVAC_HYPERSWARM_SEED` (set before starting the backend); a consumer with no seed gets a random identity every run, which the firewall can't allow-list. This backend doesn't currently print its own consumer public key — treat the firewall as an SDK-level option for a scripted/tested setup with a fixed consumer seed, not yet a turnkey feature of this backend. `npm run seed:generate` (below) gives you a seed and its public key up front, so you can set this up without needing the backend to print anything.
+- `allowedConsumerPublicKeys` — restricts the provider to serve only the listed consumers (firewall allow-list); pass one key or several comma-separated, e.g. `<keyA>,<keyB>`; omit to accept any consumer. The consumer's public key is derived from **its own** `QVAC_HYPERSWARM_SEED` (set before starting the backend); a consumer with no seed gets a random identity every run, which the firewall can't allow-list. This backend doesn't currently print its own consumer public key — treat the firewall as an SDK-level option for a scripted/tested setup with a fixed consumer seed, not yet a turnkey feature of this backend. `npm run seed:generate` (below) gives you a seed and its public key up front, so you can set this up without needing the backend to print anything.
 
 Press `Ctrl+C` to stop it.
 
@@ -187,7 +187,7 @@ QVAC_HYPERSWARM_SEED=<64-char hex seed>
 Public key: <64-char hex public key>
 ```
 
-Typical use — restrict a provider to a single consumer:
+Typical use — restrict a provider to a single consumer (to allow several, pass their public keys comma-separated as the second argument):
 
 1. On the **consumer** machine, run `seed:generate` and export the seed in the shell that will run the backend:
    ```bash
