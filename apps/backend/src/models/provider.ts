@@ -1,6 +1,6 @@
 /**
  * Starts a QVAC provider service: reachable over the DHT by public key, serving loadModel()/completion() to a delegating consumer (see ../config/delegate.config.ts).
- * Usage: npm run provider --workspace=apps/backend -- [seed] [allowedConsumerPublicKey]. `seed` is identity material - prefer the QVAC_HYPERSWARM_SEED env var over this CLI arg (visible in `ps`/shell history).
+ * Usage: npm run provider --workspace=apps/backend -- [seed] [allowedConsumerPublicKeys]. `allowedConsumerPublicKeys` is a comma-separated list of consumer keys. `seed` is identity material - prefer the QVAC_HYPERSWARM_SEED env var over this CLI arg (visible in `ps`/shell history).
  */
 import { startProvider, stopProvider } from './infra/qvacProviderAdapter.js';
 
@@ -16,18 +16,23 @@ async function main(): Promise<void> {
     process.env['QVAC_HYPERSWARM_SEED'] = seed;
   }
   // Lowercased: DHT public keys are canonical lowercase hex and the SDK's allow-list check is case-sensitive.
-  const allowedConsumerPublicKey = process.argv[3]?.toLowerCase();
-  if (allowedConsumerPublicKey && !HEX64.test(allowedConsumerPublicKey)) {
-    throw new Error('allowedConsumerPublicKey must be a 64-character hex string (see usage above)');
+  const allowedConsumerPublicKeys = (process.argv[3] ?? '')
+    .split(',')
+    .map((key) => key.trim().toLowerCase())
+    .filter(Boolean);
+  for (const key of allowedConsumerPublicKeys) {
+    if (!HEX64.test(key)) {
+      throw new Error('each allowedConsumerPublicKeys entry must be a 64-character hex string (see usage above)');
+    }
   }
 
   console.log('▸ Starting provider service...');
-  if (allowedConsumerPublicKey) {
-    console.log(`▸ Firewall enabled: only allowing consumer ${allowedConsumerPublicKey}`);
+  if (allowedConsumerPublicKeys.length > 0) {
+    console.log(`▸ Firewall enabled: only allowing consumers ${allowedConsumerPublicKeys.join(', ')}`);
   }
 
   const { publicKey } = await startProvider(
-    allowedConsumerPublicKey ? { allowedConsumerPublicKeys: [allowedConsumerPublicKey] } : undefined,
+    allowedConsumerPublicKeys.length > 0 ? { allowedConsumerPublicKeys } : undefined,
   );
 
   console.log('▸ Provider service started successfully!');

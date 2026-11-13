@@ -35,12 +35,38 @@ If the user's message is only a greeting or social small talk with no real quest
 
 For stock and inventory questions (SKU, stock levels, price, lead time, region availability), always call the lookup_stock tool instead of answering from memory. SKUs follow a specific format, e.g. SD-X4-001 — use the tool's sku field when one is recognized in the user's query. Never answer stock related queries without calling lookup_stock.
 
-For everything else, ground your answer only in the evidence actually available to you this turn: the Context section below (retrieved company documents), an image the user attached to this message, and/or tool results. Combine sources when more than one is relevant. An attached image is not automatically relevant to the question — if it doesn't actually help answer it, say so instead of guessing from it.
+For everything else, ground your answer only in the evidence actually available to you this turn: the Context section at the start of the user's latest message (retrieved company documents), an image the user attached to this message, and/or tool results. Combine sources when more than one is relevant. An attached image is not automatically relevant to the question — if it doesn't actually help answer it, say so instead of guessing from it.
 
 ${GROUNDING_INSTRUCTIONS}`;
 
 /** Tag LangGraph's "messages" stream mode checks to skip a model call's tokens (`handleChatModelStart` in `@langchain/langgraph`'s `dist/pregel/messages.js`); the final message still emits once, at node end. */
 const NO_STREAM_TAG = "nostream";
+
+/**
+ * Returns `messages` with `context` prepended to the latest user message. The retrieved chunks change on every
+ * question, so they stay out of the system prompt: the KV cache is keyed by a hash of that prompt, and a
+ * changed prompt means a brand-new cache file and a full re-read of the history. Does not touch `messages`.
+ */
+function attachContextToLatestUserMessage(
+  messages: BaseMessage[],
+  context: string,
+): BaseMessage[] {
+  const index = messages.map((m) => HumanMessage.isInstance(m)).lastIndexOf(true);
+  if (index === -1) return messages;
+
+  const original = messages[index];
+  const prefix = `Context:\n${context}\n\nUser message:\n`;
+  const content =
+    typeof original.content === "string"
+      ? `${prefix}${original.content}`
+      : [{ type: "text" as const, text: prefix }, ...original.content];
+
+  return messages.map((message, i) =>
+    i === index
+      ? new HumanMessage({ content, id: message.id, additional_kwargs: message.additional_kwargs })
+      : message,
+  );
+}
 
 /** Whether the grounding guard may still replace this turn's reply: true only when retrieval found no evidence and no tool has run yet. */
 function guardMayReplaceReply(state: typeof State.State): boolean {
@@ -119,15 +145,13 @@ export function buildLlmNode(
 ): GraphNode<typeof State> {
   return async (state) => {
     const context = buildGroundedContext(state.chunks);
-    const systemMessage = new SystemMessage(
-      `${SYSTEM_PROMPT}\n\nContext:\n${context}`,
-    );
+    const systemMessage = new SystemMessage(SYSTEM_PROMPT);
 
     // Decided before the model runs: a reply the guard may discard must never stream.
     const guardMayReplace = guardMayReplaceReply(state);
     const response = await generateReply(
       model.bindTools(tools),
-      [systemMessage, ...state.messages],
+      [systemMessage, ...attachContextToLatestUserMessage(state.messages, context)],
       {
         hidden: guardMayReplace,
         temperature: state.temperature,
@@ -189,8 +213,22 @@ export function buildToolNode(
         continue;
       }
 
-      const observation = await tool.invoke(toolCall);
-      result.push(observation);
+      try {
+        const observation = await tool.invoke(toolCall);
+        result.push(observation);
+      } catch (error) {
+        if (isCancellationError(error)) throw error;
+
+        const reason = error instanceof Error ? error.message : String(error);
+        result.push(
+          new ToolMessage({
+            content: `Tool "${toolCall.name}" failed: ${reason}`,
+            tool_call_id: toolCall.id ?? "",
+            name: toolCall.name,
+            status: "error",
+          }),
+        );
+      }
     }
 
     return { messages: result };

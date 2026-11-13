@@ -277,7 +277,10 @@ describe("VoiceAgentService.invoke", () => {
     const userMessages = finalHistory
       .filter((message) => message.role === "user")
       .map((message) => message.content);
-    expect(userMessages).toEqual(["hi", "What documents are ingested?"]);
+    expect(userMessages).toHaveLength(2);
+    expect(userMessages[0]).toBe("hi");
+    // The latest user message also carries the retrieved context, so the transcript ends it rather than equals it.
+    expect(userMessages[1]).toMatch(/What documents are ingested\?$/);
   });
 
   it("degrades to text-only (no audio/sampleRate) when TTS synthesis fails, and accepts an empty history", async () => {
