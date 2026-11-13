@@ -213,8 +213,22 @@ export function buildToolNode(
         continue;
       }
 
-      const observation = await tool.invoke(toolCall);
-      result.push(observation);
+      try {
+        const observation = await tool.invoke(toolCall);
+        result.push(observation);
+      } catch (error) {
+        if (isCancellationError(error)) throw error;
+
+        const reason = error instanceof Error ? error.message : String(error);
+        result.push(
+          new ToolMessage({
+            content: `Tool "${toolCall.name}" failed: ${reason}`,
+            tool_call_id: toolCall.id ?? "",
+            name: toolCall.name,
+            status: "error",
+          }),
+        );
+      }
     }
 
     return { messages: result };
